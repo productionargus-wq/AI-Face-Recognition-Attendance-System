@@ -6,9 +6,17 @@ from typing import List, Optional, Tuple, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-# Preload OpenCV Haar Cascades for reliable, high-speed face and eye detection
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+# Safe Haar Cascade loader
+def _get_cascade(xml_name: str):
+    try:
+        if hasattr(cv2, 'CascadeClassifier') and hasattr(cv2, 'data') and hasattr(cv2.data, 'haarcascades'):
+            return cv2.CascadeClassifier(cv2.data.haarcascades + xml_name)
+    except Exception as e:
+        logger.warning(f"Failed to load cascade {xml_name}: {e}")
+    return None
+
+face_cascade = _get_cascade('haarcascade_frontalface_default.xml')
+eye_cascade = _get_cascade('haarcascade_eye.xml')
 
 def decode_base64_image(base64_str: str) -> np.ndarray:
     """Decodes a base64 or data-URI string into an OpenCV BGR image in memory."""
@@ -30,12 +38,14 @@ def extract_face_embedding(image: np.ndarray) -> Optional[List[float]]:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = cv2.equalizeHist(gray)
     
-    # Try primary frontalface cascade
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=4, minSize=(30, 30))
-    
-    if len(faces) == 0:
-        # Try relaxed parameters
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=2, minSize=(25, 25))
+    faces = ()
+    if face_cascade is not None:
+        try:
+            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=4, minSize=(30, 30))
+            if len(faces) == 0:
+                faces = face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=2, minSize=(25, 25))
+        except Exception:
+            faces = ()
 
     if len(faces) > 0:
         (x, y, w, h) = max(faces, key=lambda rect: rect[2] * rect[3])

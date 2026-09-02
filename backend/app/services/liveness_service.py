@@ -9,7 +9,13 @@ class LivenessDetector:
     Verifies eye presence, texture micro-variance, and dynamic challenge responses.
     """
     def __init__(self):
-        self.eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+        try:
+            if hasattr(cv2, 'CascadeClassifier') and hasattr(cv2, 'data') and hasattr(cv2.data, 'haarcascades'):
+                self.eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+            else:
+                self.eye_cascade = None
+        except Exception:
+            self.eye_cascade = None
 
     def check_liveness_quality(self, image: np.ndarray) -> Dict[str, Any]:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -19,7 +25,12 @@ class LivenessDetector:
         is_sharp = laplacian_var > 15.0
 
         # 2. Eye detection in upper face region
-        eyes = self.eye_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4)
+        eyes = ()
+        if self.eye_cascade is not None:
+            try:
+                eyes = self.eye_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4)
+            except Exception:
+                eyes = ()
         has_eyes = len(eyes) >= 1
 
         # 3. Overall quality score
