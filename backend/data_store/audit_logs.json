@@ -1,0 +1,133 @@
+[
+  {
+    "id": "fe927705-68ad-41a3-bd3c-29f4362dad73",
+    "organization_id": "org-argus-101",
+    "actor_id": "usr-admin-1",
+    "actor_name": "Argus Admin",
+    "actor_role": "org_admin",
+    "action": "CREATE_EMPLOYEE",
+    "target_resource": "Employee",
+    "target_id": "886613f9-f9d3-4008-a4a6-4709ccf842da",
+    "details": {
+      "name": "Philip Matthew S",
+      "code": "ARG-001"
+    },
+    "ip_address": null,
+    "timestamp": "2026-09-02 07:22:49.461336"
+  },
+  {
+    "id": "c79dd15c-c7dc-4f18-89fe-8d5dcab8d49b",
+    "organization_id": "org-argus-101",
+    "actor_id": "usr-admin-1",
+    "actor_name": "Argus Admin",
+    "actor_role": "org_admin",
+    "action": "CREATE_EMPLOYEE",
+    "target_resource": "Employee",
+    "target_id": "5560d5a1-ece9-4aed-b032-85cd320db30a",
+    "details": {
+      "name": "Philip Matthew S",
+      "code": "ARG-002"
+    },
+    "ip_address": null,
+    "timestamp": "2026-09-02 07:28:33.753273"
+  },
+  {
+    "id": "2e64305a-fad2-4b3b-ad0b-517c69d88f7d",
+    "organization_id": "org-argus-101",
+    "actor_id": "usr-admin-1",
+    "actor_name": "Argus Admin",
+    "actor_role": "org_admin",
+    "action": "ENROLL_BIOMETRIC",
+    "target_resource": "Employee",
+    "target_id": "5560d5a1-ece9-4aed-b032-85cd320db30a",
+    "details": {
+      "valid_samples_captured": 3,
+      "consent_recorded": true,
+      "vectors_stored": 4
+    },
+    "ip_address": null,
+    "timestamp": "2026-09-02 07:28:50.398437"
+  },
+  {
+    "id": "acf73a3b-14a8-44fc-b1ee-82eb093e5aff",
+    "organization_id": "6898bc4d-86c7-4f41-8289-039eaab60c56",
+    "actor_id": "f36bd6ac-b57e-42da-a157-4ea417d887f0",
+    "actor_name": "Andrew",
+    "actor_role": "org_admin",
+    "action": "REGISTER_ORGANIZATION",
+    "target_resource": "Organization",
+    "target_id": "6898bc4d-86c7-4f41-8289-039eaab60c56",
+    "details": {
+      "name": "APPLE",
+      "slug": "apple"
+    },
+    "ip_address": null,
+    "timestamp": "2026-09-02 08:19:22.244487"
+  },
+  {
+    "id": "97e8280d-7507-4137-9c6c-c64869ab8f4a",
+    "organization_id": "6898bc4d-86c7-4f41-8289-039eaab60c56",
+    "actor_id": "f36bd6ac-b57e-42da-a157-4ea417d887f0",
+    "actor_name": "Andrew",
+    "actor_role": "org_admin",
+    "action": "CREATE_EMPLOYEE",
+    "target_resource": "Employee",
+    "target_id": "007c3a4d-f55a-4942-8040-3720019b91bf",
+    "details": {
+      "name": "Max S",
+      "code": "APP-001"
+    },
+    "ip_address": null,
+    "timestamp": "2026-09-02 08:21:25.471771"
+  },
+  {
+    "id": "13c0aa8b-a40e-43ef-ab32-5422200abfd6",
+    "organization_id": "6898bc4d-86c7-4f41-8289-039eaab60c56",
+    "actor_id": "f36bd6ac-b57e-42da-a157-4ea417d887f0",
+    "actor_name": "Andrew",
+    "actor_role": "org_admin",
+    "action": "ENROLL_BIOMETRIC",
+    "target_resource": "Employee",
+    "target_id": "007c3a4d-f55a-4942-8040-3720019b91bf",
+    "details": {
+      "valid_samples_captured": 3,
+      "consent_recorded": true,
+      "vectors_stored": 4
+    },
+    "ip_address": null,
+    "timestamp": "2026-09-02 08:21:52.968232"
+  },
+  {
+    "id": "568c1687-ba77-4c37-9721-ecff898537c2",
+    "organization_id": "6898bc4d-86c7-4f41-8289-039eaab60c56",
+    "actor_id": "f36bd6ac-b57e-42da-a157-4ea417d887f0",
+    "actor_name": "Andrew",
+    "actor_role": "org_admin",
+    "action": "CREATE_EMPLOYEE",
+    "target_resource": "Employee",
+    "target_id": "b0023b9b-5f88-4680-a06e-6bfcac1f3e75",
+    "details": {
+      "name": "Bercy S",
+      "code": "APP-002"
+    },
+    "ip_address": null,
+    "timestamp": "2026-09-02 08:22:52.657999"
+  },
+  {
+    "id": "95a4409a-d79d-47da-b017-71e46cad867e",
+    "organization_id": "6898bc4d-86c7-4f41-8289-039eaab60c56",
+    "actor_id": "f36bd6ac-b57e-42da-a157-4ea417d887f0",
+    "actor_name": "Andrew",
+    "actor_role": "org_admin",
+    "action": "ENROLL_BIOMETRIC",
+    "target_resource": "Employee",
+    "target_id": "b0023b9b-5f88-4680-a06e-6bfcac1f3e75",
+    "details": {
+      "valid_samples_captured": 3,
+      "consent_recorded": true,
+      "vectors_stored": 4
+    },
+    "ip_address": null,
+    "timestamp": "2026-09-02 08:23:21.249951"
+  }
+]

@@ -1,0 +1,79 @@
+[
+  {
+    "id": "usr-admin-1",
+    "organization_id": "org-argus-101",
+    "name": "Argus Admin",
+    "email": "admin@argustech.ai",
+    "hashed_password": "$2b$12$JNBGstPyNLKDFqAjDRLgOu9LA71hecfHy7eCDidvnDgaePYEGJEWW",
+    "role": "org_admin",
+    "employee_id": null,
+    "is_active": true,
+    "created_at": "2026-09-02 06:32:06.216228"
+  },
+  {
+    "id": "b2dfbd6b-3516-4506-aa56-cb5647c50129",
+    "organization_id": "org-argus-101",
+    "name": "Alex Vance",
+    "email": "alex.vance@argustech.ai",
+    "hashed_password": "$2b$12$iFY6bM3LfLaFOl5Hrw/jWeBUxt5L469nq5LheQI1rfTLpZRTvTyz2",
+    "role": "employee",
+    "employee_id": "emp-arg-1",
+    "is_active": true,
+    "created_at": "2026-09-02 06:32:06.627971"
+  },
+  {
+    "id": "usr-admin-2",
+    "organization_id": "org-acme-202",
+    "name": "Acme Admin",
+    "email": "admin@acmecorp.com",
+    "hashed_password": "$2b$12$VjWZTMg8TZwNcJWaS5IymOdypjxRrKwQ05uMJmxYcw6MQHguENKza",
+    "role": "org_admin",
+    "employee_id": null,
+    "is_active": true,
+    "created_at": "2026-09-02 06:32:07.044626"
+  },
+  {
+    "id": "881663cb-199d-4f42-aa93-0f0f3f05b3f0",
+    "organization_id": "org-argus-101",
+    "name": "Philip Matthew S",
+    "email": "philipmatthew26@gmail.com",
+    "hashed_password": "$2b$12$h/y8BArQprNV4BGK7Vy0q.4J9XDE71cwDWa2l0bnAvVH0YRNRb47C",
+    "role": "employee",
+    "employee_id": "886613f9-f9d3-4008-a4a6-4709ccf842da",
+    "is_active": true,
+    "created_at": "2026-09-02 07:22:49.430920"
+  },
+  {
+    "id": "f36bd6ac-b57e-42da-a157-4ea417d887f0",
+    "organization_id": "6898bc4d-86c7-4f41-8289-039eaab60c56",
+    "name": "Andrew",
+    "email": "andrew@gmail.com",
+    "hashed_password": "$2b$12$TdROf4GhIZSckKH/2l99iO8oAEHocWkV4Re0MNsnXQhdMZ6c.Ox7C",
+    "role": "org_admin",
+    "employee_id": null,
+    "is_active": true,
+    "created_at": "2026-09-02 08:19:21.911601"
+  },
+  {
+    "id": "95233351-67a1-4743-98e1-244bfd5f0818",
+    "organization_id": "6898bc4d-86c7-4f41-8289-039eaab60c56",
+    "name": "Max S",
+    "email": "max@gmail.com",
+    "hashed_password": "$2b$12$A7SzeNp4kTejZVja170RHex1YvGR/Oy45uxkXo7oFWwU18Ym4rrKi",
+    "role": "employee",
+    "employee_id": "007c3a4d-f55a-4942-8040-3720019b91bf",
+    "is_active": true,
+    "created_at": "2026-09-02 08:21:25.150506"
+  },
+  {
+    "id": "c354d0fd-7d2e-4162-8570-f5353d240d52",
+    "organization_id": "6898bc4d-86c7-4f41-8289-039eaab60c56",
+    "name": "Bercy S",
+    "email": "bercy@gmail.com",
+    "hashed_password": "$2b$12$36iR2eXPZIMFG0I2vVxIm.rT8gZ1ZbW4g/7shTOtzu1.cu3RHLJeC",
+    "role": "employee",
+    "employee_id": "b0023b9b-5f88-4680-a06e-6bfcac1f3e75",
+    "is_active": true,
+    "created_at": "2026-09-02 08:22:52.433418"
+  }
+]

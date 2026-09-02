@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 font-sans antialiased;
+  }
+}
+
+/* Custom smooth transitions and animations */
+.glow-primary {
+  box-shadow: 0 0 25px -5px rgba(37, 99, 235, 0.3);
+}
+
+.glow-success {
+  box-shadow: 0 0 25px -5px rgba(22, 163, 74, 0.4);
+}
