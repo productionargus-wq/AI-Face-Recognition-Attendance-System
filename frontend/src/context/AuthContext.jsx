@@ -1,4 +1,4 @@
-﻿import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../utils/api';
 
 const AuthContext = createContext(null);
@@ -31,8 +31,9 @@ export const AuthProvider = ({ children }) => {
     checkAuth();
   }, []);
 
-  const login = async (email, password) => {
-    const res = await api.post('/auth/login', { email, password });
+  const login = async (email, password = null) => {
+    const payload = password ? { email, password } : { email };
+    const res = await api.post('/auth/login', payload);
     localStorage.setItem('argus_token', res.data.access_token);
     setUser(res.data.user);
     setOrganization(res.data.organization);

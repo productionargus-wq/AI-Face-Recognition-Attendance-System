@@ -11,7 +11,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication & Onboarding"])
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: Optional[str] = None
 
 class LoginResponse(BaseModel):
     access_token: str
@@ -110,31 +110,82 @@ async def register_organization(payload: OrganizationCreate):
 
 @router.post("/login", response_model=LoginResponse)
 async def login(req: LoginRequest):
-    """Login with Email & Password. Auto-detects Super Admin, Org Admin, or Employee."""
-    user = await store.find_one("users", {"email": req.email})
-    if not user or not verify_password(req.password, user.get("hashed_password", "")):
+    """
+    Login endpoint supporting:
+    1. Org Admins (Email + Password)
+    2. Registered Employees (Passwordless with Work Email)
+    """
+    # 1. If password is provided, attempt standard password verification
+    if req.password:
+        user = await store.find_one("users", {"email": req.email})
+        if not user or not verify_password(req.password, user.get("hashed_password", "")):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password."
+            )
+
+        if not user.get("is_active", True):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is deactivated. Please contact administrator."
+            )
+
+        org = None
+        if user.get("organization_id"):
+            org = await store.find_one("organizations", {"id": user["organization_id"]})
+
+        token_data = {
+            "sub": user["id"],
+            "email": user["email"],
+            "name": user["name"],
+            "role": user["role"],
+            "org_id": user.get("organization_id"),
+            "emp_id": user.get("employee_id")
+        }
+        token = create_access_token(token_data)
+        user_out = {k: v for k, v in user.items() if k != "hashed_password"}
+        return LoginResponse(access_token=token, user=user_out, organization=org)
+
+    # 2. Passwordless Flow (For Registered Employees)
+    # Check if this email is an active registered employee in any organization
+    emp = await store.find_one("employees", {"email": req.email, "is_active": True})
+    user = await store.find_one("users", {"email": req.email, "is_active": True})
+
+    # If this is an admin account trying to log in without a password, prompt for password
+    if user and user.get("role") in [UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN]:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin accounts require a password. Please switch to the Admin tab and enter your password."
         )
 
-    if not user.get("is_active", True):
+    if not emp and not user:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is suspended. Please contact administrator."
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No registered employee found with this email. Please ensure you are enrolled by your organization."
         )
 
-    org = None
-    if user.get("organization_id"):
-        org = await store.find_one("organizations", {"id": user["organization_id"]})
+    org_id = emp["organization_id"] if emp else user.get("organization_id")
+    org = await store.find_one("organizations", {"id": org_id}) if org_id else None
+
+    # Guarantee an active employee user record exists
+    if not user:
+        user = User(
+            organization_id=org_id,
+            name=f"{emp['first_name']} {emp['last_name']}",
+            email=req.email,
+            hashed_password=get_password_hash("Argus@123"),
+            role=UserRole.EMPLOYEE,
+            employee_id=emp["id"]
+        ).dict()
+        await store.insert_one("users", user)
 
     token_data = {
         "sub": user["id"],
         "email": user["email"],
         "name": user["name"],
-        "role": user["role"],
-        "org_id": user.get("organization_id"),
-        "emp_id": user.get("employee_id")
+        "role": UserRole.EMPLOYEE,
+        "org_id": org_id,
+        "emp_id": emp["id"] if emp else user.get("employee_id")
     }
     token = create_access_token(token_data)
     user_out = {k: v for k, v in user.items() if k != "hashed_password"}
