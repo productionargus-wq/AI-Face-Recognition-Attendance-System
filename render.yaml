@@ -1,4 +1,4 @@
-﻿services:
+services:
   # 1. FastAPI Multi-Tenant Backend Service
   - type: web
     name: argus-attendance-api
@@ -7,13 +7,13 @@
     startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: MONGODB_URI
-        sync: false
+        value: "mongodb+srv://salesargustech_db_user:12345@cluster0.nrulvqr.mongodb.net/ai-attendance-db?appName=Cluster0"
       - key: DATABASE_NAME
-        value: argus_attendance_db
+        value: "ai-attendance-db"
       - key: JWT_SECRET
         generateValue: true
       - key: SIMILARITY_THRESHOLD
-        value: "0.65"
+        value: "0.55"
 
   # 2. React Vite Frontend Static Site
   - type: web
@@ -25,6 +25,9 @@
       - type: rewrite
         source: "/*"
         destination: "/index.html"
+      - type: rewrite
+        source: "/api/v1/*"
+        destination: "https://argus-attendance-api.onrender.com/api/v1/*"
     envVars:
       - key: VITE_API_BASE_URL
         value: "https://argus-attendance-api.onrender.com/api/v1"
