@@ -163,7 +163,7 @@ export const RegisterOrg = () => {
               <Clock className="w-3.5 h-3.5 text-blue-600" />
               Work Shift & Grace Policy
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <div>
                 <label className="block text-[11px] text-slate-500 mb-1">Start Time</label>
                 <input
@@ -171,7 +171,7 @@ export const RegisterOrg = () => {
                   name="work_start_time"
                   value={formData.work_hours.start_time}
                   onChange={handleChange}
-                  className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium"
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
@@ -181,7 +181,7 @@ export const RegisterOrg = () => {
                   name="work_end_time"
                   value={formData.work_hours.end_time}
                   onChange={handleChange}
-                  className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium"
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
@@ -191,7 +191,7 @@ export const RegisterOrg = () => {
                   name="work_late_grace_minutes"
                   value={formData.work_hours.late_grace_minutes}
                   onChange={handleChange}
-                  className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium"
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
