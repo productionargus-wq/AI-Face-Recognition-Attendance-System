@@ -2,8 +2,43 @@
 
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 font-sans antialiased;
+    @apply bg-[#f8fafc] text-slate-900 font-sans antialiased;
   }
+}
+
+/* Blueprint Grid Background */
+.bg-blueprint {
+  background-color: #f8fbff;
+  background-image: 
+    linear-gradient(to right, rgba(59, 130, 246, 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(59, 130, 246, 0.07) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.bg-blueprint-dense {
+  background-color: #f4f8fe;
+  background-image: 
+    linear-gradient(to right, rgba(14, 165, 233, 0.09) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(14, 165, 233, 0.09) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Cybernetic Glowing & HUD Elements */
+.hud-corner-tl {
+  border-top: 2px solid #0ea5e9;
+  border-left: 2px solid #0ea5e9;
+}
+.hud-corner-tr {
+  border-top: 2px solid #0ea5e9;
+  border-right: 2px solid #0ea5e9;
+}
+.hud-corner-bl {
+  border-bottom: 2px solid #0ea5e9;
+  border-left: 2px solid #0ea5e9;
+}
+.hud-corner-br {
+  border-bottom: 2px solid #0ea5e9;
+  border-right: 2px solid #0ea5e9;
 }
 
 /* Custom smooth transitions and animations */
@@ -11,6 +46,19 @@
   box-shadow: 0 0 25px -5px rgba(37, 99, 235, 0.3);
 }
 
+.glow-cyan {
+  box-shadow: 0 0 25px -5px rgba(14, 165, 233, 0.4);
+}
+
 .glow-success {
   box-shadow: 0 0 25px -5px rgba(22, 163, 74, 0.4);
+}
+
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(1000%); }
+}
+
+.animate-scanline {
+  animation: scanline 4s linear infinite;
 }

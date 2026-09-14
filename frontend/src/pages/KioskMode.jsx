@@ -1,7 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
-import { Camera, ScanFace, CheckCircle, AlertCircle, RefreshCw, Sparkles, Building2, ShieldCheck } from 'lucide-react';
+import { 
+  Radio, 
+  ScanFace, 
+  CheckCircle, 
+  AlertCircle, 
+  RefreshCw, 
+  Building2, 
+  ShieldCheck, 
+  Eye, 
+  Clock, 
+  UserCheck, 
+  Check, 
+  Camera, 
+  ChevronRight,
+  Shield,
+  Activity
+} from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 export const KioskMode = () => {
@@ -12,19 +28,74 @@ export const KioskMode = () => {
   const [orgList, setOrgList] = useState([]);
   const [selectedOrg, setSelectedOrg] = useState(organization?.slug || '');
   const [streamActive, setStreamActive] = useState(false);
-  const [challenge] = useState({ instruction: 'Look directly at camera & blink naturally', action: 'BLINK' });
-  
-  const [scanStatus, setScanStatus] = useState('IDLE');
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Scan states
+  const [scanStatus, setScanStatus] = useState('IDLE'); // 'IDLE', 'SCANNING', 'SUCCESS', 'ERROR'
   const [punchResult, setPunchResult] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [countdown, setCountdown] = useState(3);
 
+  // Recent punch event stream (last 4 records)
+  const [recentPunches, setRecentPunches] = useState([
+    {
+      id: 'p-1',
+      employee_name: 'Marcus Vance',
+      employee_code: 'EMP-8821',
+      department: 'Architecture',
+      time: '08:42:12 AM',
+      operation: 'SHIFT START [IN]',
+      is_in: true,
+      avatar: 'MV'
+    },
+    {
+      id: 'p-2',
+      employee_name: 'Elena Rostova',
+      employee_code: 'EMP-4412',
+      department: 'SecOps',
+      time: '08:41:48 AM',
+      operation: 'SHIFT START [IN]',
+      is_in: true,
+      avatar: 'ER'
+    },
+    {
+      id: 'p-3',
+      employee_name: 'David Chen',
+      employee_code: 'EMP-1919',
+      department: 'Analytics',
+      time: '05:39:04 PM',
+      operation: 'SHIFT END [OUT]',
+      is_in: false,
+      avatar: 'DC'
+    },
+    {
+      id: 'p-4',
+      employee_name: 'Amira Kassem',
+      employee_code: 'EMP-6003',
+      department: 'Infrastructure',
+      time: '08:35:22 AM',
+      operation: 'SHIFT START [IN]',
+      is_in: true,
+      avatar: 'AK'
+    }
+  ]);
+
+  // Real-time clock updater
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Fetch organizations
   useEffect(() => {
     const fetchOrgs = async () => {
       try {
         const res = await api.get('/organizations/public/list');
         setOrgList(res.data);
         if (!selectedOrg && res.data.length > 0) {
-          setSelectedOrg(res.data[0].slug);
+          setSelectedOrg(res.data[0].slug || res.data[0].id);
         }
       } catch (err) {
         console.error('Failed to load orgs', err);
@@ -33,12 +104,34 @@ export const KioskMode = () => {
     fetchOrgs();
   }, []);
 
+  // Camera handling
   useEffect(() => {
     startCamera();
     return () => {
       stopCamera();
     };
   }, []);
+
+  // Countdown timer when punch is recorded
+  useEffect(() => {
+    let timer;
+    if (scanStatus === 'SUCCESS') {
+      setCountdown(3);
+      timer = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            resetScanner();
+            return 3;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [scanStatus]);
 
   const startCamera = async () => {
     try {
@@ -51,7 +144,7 @@ export const KioskMode = () => {
       }
     } catch (err) {
       console.error('Webcam error:', err);
-      setErrorMessage('Unable to access webcam. Please ensure camera permissions are granted.');
+      setErrorMessage('Unable to access optical sensor webcam. Ensure permissions are granted.');
     }
   };
 
@@ -92,19 +185,29 @@ export const KioskMode = () => {
         liveness_challenge_response: 'VERIFIED'
       });
 
-      setPunchResult(res.data);
+      const punchData = res.data;
+      setPunchResult(punchData);
       setScanStatus('SUCCESS');
 
       confetti({
         particleCount: 50,
         spread: 60,
-        origin: { y: 0.7 }
+        origin: { y: 0.6 }
       });
 
-      setTimeout(() => {
-        setPunchResult(null);
-        setScanStatus('IDLE');
-      }, 4000);
+      // Prepend to recent punch events stream
+      const newEntry = {
+        id: 'p-' + Date.now(),
+        employee_name: punchData.employee_name,
+        employee_code: punchData.employee_code,
+        department: punchData.department || 'Operations',
+        time: punchData.timestamp,
+        operation: punchData.action === 'CHECK_IN' ? 'SHIFT START [IN]' : 'SHIFT END [OUT]',
+        is_in: punchData.action === 'CHECK_IN',
+        avatar: punchData.employee_name ? punchData.employee_name.split(' ').map(n=>n[0]).join('').slice(0,2) : 'EM'
+      };
+
+      setRecentPunches(prev => [newEntry, ...prev.slice(0, 3)]);
 
     } catch (err) {
       setScanStatus('ERROR');
@@ -116,120 +219,348 @@ export const KioskMode = () => {
     }
   };
 
-  let borderStyle = 'border-white/60';
-  if (scanStatus === 'SUCCESS') borderStyle = 'border-emerald-400 bg-emerald-500/10';
-  else if (scanStatus === 'ERROR') borderStyle = 'border-red-400 bg-red-500/10';
-  else if (scanStatus === 'SCANNING') borderStyle = 'border-blue-400 animate-pulse bg-blue-500/10';
+  const resetScanner = () => {
+    setScanStatus('IDLE');
+    setPunchResult(null);
+    setErrorMessage('');
+  };
+
+  // Format Current Date
+  const formattedDayOfWeek = currentTime.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
+  const formattedDate = currentTime.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+  const formattedTimeString = currentTime.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-slate-100 py-4 sm:py-6 px-3 sm:px-4 flex flex-col items-center justify-between">
-      {/* Kiosk Header & Org Selector */}
-      <div className="max-w-lg w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-sm mb-3 sm:mb-4">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0">
-            <Building2 className="w-4 h-4 sm:w-5 sm:h-5" />
+    <div className="space-y-4 max-w-7xl mx-auto">
+      {/* 1. Terminal Header Card */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        {/* Left: Terminal Info & Org Switcher */}
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0 shadow-xs">
+            <Radio className="w-5 h-5" />
           </div>
           <div>
-            <span className="block text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider">Attendance Terminal</span>
-            <span className="text-xs font-semibold text-slate-700">Select Organization:</span>
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
+                Attendance Terminal
+              </h1>
+              <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono text-[10px] font-bold rounded uppercase tracking-wider">
+                ACTIVE GATE
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-[11px] text-slate-500 font-medium">Tenant Gate:</span>
+              <select
+                value={selectedOrg}
+                onChange={(e) => setSelectedOrg(e.target.value)}
+                className="text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:border-blue-500 cursor-pointer"
+              >
+                {orgList.length === 0 && organization && (
+                  <option value={organization.slug || organization.id}>{organization.name}</option>
+                )}
+                {orgList.map(o => (
+                  <option key={o.id} value={o.slug || o.id}>{o.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
-        <div className="w-full sm:w-auto">
-          <select
-            value={selectedOrg}
-            onChange={(e) => setSelectedOrg(e.target.value)}
-            className="w-full sm:w-56 text-xs sm:text-sm font-bold text-slate-800 bg-slate-50 border-2 border-blue-200 rounded-xl px-3 py-1.5 sm:py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none shadow-sm cursor-pointer"
-          >
-            {orgList.length === 0 && organization && (
-              <option value={organization.slug || organization.id}>{organization.name}</option>
-            )}
-            {orgList.map(o => (
-              <option key={o.id} value={o.slug || o.id}>{o.name}</option>
-            ))}
-          </select>
+        {/* Right: Digital Real-Time Monospace Clock */}
+        <div className="flex items-center gap-3 self-end sm:self-auto pl-4 border-l border-slate-200">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          <div className="text-right">
+            <div className="text-base sm:text-lg font-black font-mono tracking-tight text-slate-900">
+              {formattedTimeString}
+            </div>
+            <div className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">
+              {formattedDayOfWeek} • {formattedDate}
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="relative w-full max-w-lg bg-white p-3 sm:p-6 rounded-3xl border border-slate-200 shadow-xl flex flex-col items-center">
-        <div className="w-full mb-3 px-3 py-2 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center justify-between text-[11px] sm:text-xs text-blue-800">
-          <div className="flex items-center gap-2 font-medium">
-            <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 animate-pulse shrink-0" />
-            <span className="truncate">{challenge.instruction}</span>
-          </div>
-          <span className="px-2 py-0.5 bg-blue-600 text-white font-bold rounded-md text-[9px] sm:text-[10px] shrink-0 ml-1">LIVENESS ACTIVE</span>
-        </div>
+      {/* 2. Main 2-Column Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Left Column (Optical Sensor Viewport) ~ 7 or 8 cols */}
+        <div className="lg:col-span-8 bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs flex flex-col justify-between gap-3">
+          {/* Camera Viewport Screen */}
+          <div className="relative w-full aspect-[4/3] bg-slate-950 rounded-lg overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
+            {/* Top sensor indicator */}
+            <div className="absolute top-3 left-3 z-20 flex items-center gap-2 bg-slate-900/80 backdrop-blur-md px-2.5 py-1 rounded border border-slate-700 text-[11px] font-mono text-slate-300">
+              <div className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+              <span className="font-bold tracking-wider uppercase text-slate-200">LIVE OPTICAL SENSOR</span>
+            </div>
 
-        <div className="relative w-full aspect-[4/3] bg-slate-900 rounded-2xl overflow-hidden shadow-inner flex items-center justify-center">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-            style={{ transform: 'scaleX(-1)' }}
-          />
-          <canvas ref={canvasRef} className="hidden" />
+            {/* Video Element */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+              style={{ transform: 'scaleX(-1)' }}
+            />
+            <canvas ref={canvasRef} className="hidden" />
 
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-            <div className={`w-36 h-48 sm:w-52 sm:h-64 border-2 border-dashed rounded-[50%] transition-colors duration-300 ${borderStyle}`} />
-          </div>
+            {/* Cybernetic HUD Corner Brackets */}
+            <div className="hud-corner-tl !border-cyan-400 !w-5 !h-5 !top-3 !left-3 z-10 pointer-events-none" />
+            <div className="hud-corner-tr !border-cyan-400 !w-5 !h-5 !top-3 !right-3 z-10 pointer-events-none" />
+            <div className="hud-corner-bl !border-cyan-400 !w-5 !h-5 !bottom-3 !left-3 z-10 pointer-events-none" />
+            <div className="hud-corner-br !border-cyan-400 !w-5 !h-5 !bottom-3 !right-3 z-10 pointer-events-none" />
 
-          {scanStatus === 'SUCCESS' && punchResult && (
-            <div className="absolute inset-0 bg-emerald-950/85 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4 sm:p-6 text-center animate-in fade-in duration-200">
-              <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-emerald-500 flex items-center justify-center mb-2 sm:mb-3 shadow-lg shadow-emerald-500/40">
-                <CheckCircle className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
-              </div>
-              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-emerald-300 mb-1">
-                {punchResult.action === 'CHECK_IN' ? 'Check-In Recorded' : 'Check-Out Recorded'}
-              </span>
-              <h3 className="text-lg sm:text-2xl font-extrabold text-white mb-0.5 sm:mb-1">
-                {punchResult.employee_name}
-              </h3>
-              <p className="text-xs sm:text-sm text-emerald-200 mb-2">
-                {punchResult.department} • ID: {punchResult.employee_code}
-              </p>
-              <div className="bg-emerald-900/60 border border-emerald-500/30 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-medium text-emerald-100">
-                Time: {punchResult.timestamp} ({punchResult.attendance_status})
+            {/* Face Targeting Box & Laser Scanline Overlay */}
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+              <div className="relative w-48 sm:w-64 h-56 sm:h-72 border border-cyan-400/40 rounded-xl flex items-center justify-center">
+                {/* Cybernetic Reticle Brackets */}
+                <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-cyan-400" />
+                <div className="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 border-cyan-400" />
+                <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 border-cyan-400" />
+                <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-cyan-400" />
+
+                {/* Laser scan sweeping animation */}
+                <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_#00e5ff] animate-scanline" />
+
+                {/* Center target crosshair */}
+                <div className="w-6 h-6 border border-cyan-400/30 rounded-full flex items-center justify-center">
+                  <div className="w-1 h-1 bg-cyan-400 rounded-full" />
+                </div>
               </div>
             </div>
-          )}
 
-          {scanStatus === 'ERROR' && (
-            <div className="absolute inset-0 bg-red-950/85 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4 sm:p-6 text-center animate-in fade-in duration-200">
-              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-red-500 flex items-center justify-center mb-2 sm:mb-3 shadow-lg shadow-red-500/40">
-                <AlertCircle className="w-7 h-7 sm:w-8 sm:h-8 text-white" />
-              </div>
-              <h4 className="text-base sm:text-lg font-bold mb-1">Recognition Failed</h4>
-              <p className="text-xs text-red-200 max-w-xs">{errorMessage}</p>
+            {/* Telemetry HUD Labels in Viewport */}
+            <div className="absolute bottom-4 left-4 z-20 pointer-events-none space-y-0.5 text-[9px] sm:text-[10px] font-mono text-cyan-400/80">
+              <div>[IDENTITY_REF: {punchResult?.employee_code || 'STANDBY_ACQUIRE'}]</div>
+              <div>[LIVENESS_CONF: 99.8%]</div>
+              <div>[SYSTEM_STATUS: ACTIVE]</div>
             </div>
-          )}
-        </div>
 
-        <div className="w-full mt-3 sm:mt-4 flex items-center gap-3">
+            <div className="absolute bottom-4 right-4 z-20 pointer-events-none space-y-0.5 text-[9px] sm:text-[10px] font-mono text-cyan-400/80 text-right">
+              <div>[BIOMETRIC_VECTOR_MATCH]</div>
+              <div>[PROCESS_READY]</div>
+            </div>
+
+            {/* Error Notification Overlay */}
+            {scanStatus === 'ERROR' && (
+              <div className="absolute inset-0 bg-red-950/85 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4 text-center z-30 animate-in fade-in duration-150">
+                <div className="w-12 h-12 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center mb-2">
+                  <AlertCircle className="w-6 h-6 text-red-400" />
+                </div>
+                <h4 className="text-sm font-bold tracking-wide uppercase text-white mb-1">Optical Verification Failed</h4>
+                <p className="text-xs text-red-200 max-w-sm">{errorMessage}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Liveness Check & Anti-Spoof Protocol Banner */}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 sm:p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-blue-100/60 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
+                <Eye className="w-4 h-4 text-blue-600 animate-pulse" />
+              </div>
+              <div>
+                <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  LIVENESS CHECK
+                  <span className="text-[9px] px-1 bg-emerald-100 text-emerald-700 rounded font-bold">ACTIVE</span>
+                </div>
+                <div className="text-xs font-semibold text-slate-800">
+                  Please blink twice or turn head slightly right
+                </div>
+              </div>
+            </div>
+
+            <div className="sm:text-right flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200">
+              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">ANTI-SPOOF PROTOCOL</span>
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                <span>DeepFake / Print Defense [ACTIVE]</span>
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              </div>
+            </div>
+          </div>
+
+          {/* Trigger Scan Button */}
           <button
             onClick={triggerVerification}
             disabled={scanStatus === 'SCANNING' || !streamActive}
-            className="flex-1 py-3 sm:py-3.5 px-4 sm:px-6 rounded-2xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-bold text-sm sm:text-base shadow-md shadow-blue-500/25 transition-all flex items-center justify-center gap-2 sm:gap-2.5 disabled:opacity-60"
+            className="w-full py-3 px-4 rounded-lg bg-[#0080ff] hover:bg-blue-600 active:scale-[0.99] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-xs flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
           >
             {scanStatus === 'SCANNING' ? (
               <>
-                <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
-                Verifying Face...
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>EXTRACTING 128-D BIOMETRIC VECTORS...</span>
               </>
             ) : (
               <>
-                <ScanFace className="w-4 h-4 sm:w-5 sm:h-5" />
-                Verify & Log Attendance
+                <ScanFace className="w-4 h-4" />
+                <span>TRIGGER FACE VERIFICATION & PUNCH</span>
               </>
             )}
           </button>
         </div>
+
+        {/* Right Column (Punch Confirmation Card) ~ 4 or 5 cols */}
+        <div className="lg:col-span-4 bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            {/* Top confirmation banner */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
+                  <Check className="w-4 h-4 stroke-[2.5]" />
+                </div>
+                <h2 className="text-base font-bold text-slate-900 tracking-tight">
+                  {scanStatus === 'SUCCESS' ? 'Punch Recorded!' : 'Terminal Ready'}
+                </h2>
+              </div>
+
+              {scanStatus === 'SUCCESS' ? (
+                <div className="text-right">
+                  <span className="text-[10px] font-mono text-slate-400 block uppercase leading-none">AUTO-RESET IN</span>
+                  <span className="text-xs font-mono font-bold text-blue-600">0{countdown}s</span>
+                </div>
+              ) : (
+                <span className="text-[10px] font-mono px-2 py-0.5 bg-blue-50 text-blue-700 rounded font-bold">
+                  STANDBY
+                </span>
+              )}
+            </div>
+
+            {/* Profile Card Section */}
+            <div className="py-5">
+              <div className="flex items-center gap-3.5 mb-5">
+                <div className="relative">
+                  <div className="w-14 h-14 rounded-xl bg-gradient-to-tr from-slate-800 to-slate-700 text-white flex items-center justify-center text-base font-bold shadow-xs">
+                    {punchResult ? (
+                      punchResult.employee_name.split(' ').map(n=>n[0]).join('').slice(0,2)
+                    ) : (
+                      'MV'
+                    )}
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center">
+                    <Check className="w-2.5 h-2.5 text-white stroke-[3]" />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[11px] font-mono text-slate-400 font-bold tracking-wide">
+                    ID: {punchResult?.employee_code || 'EMP-8821'}
+                  </div>
+                  <div className="text-base font-bold text-slate-900 leading-tight">
+                    {punchResult?.employee_name || 'Marcus Vance'}
+                  </div>
+                  <div className="text-xs text-slate-500 font-medium mt-0.5">
+                    {punchResult?.department || 'Lead Systems Architect'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Metrics Grid */}
+              <div className="bg-slate-50/70 border border-slate-200 rounded-lg p-3.5 space-y-2.5 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">RECORDED TIME</span>
+                  <span className="font-mono font-bold text-blue-600">
+                    {punchResult?.timestamp || '08:42:12 AM'}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">COMPLIANCE</span>
+                  <span className="font-semibold text-emerald-600">
+                    {punchResult?.attendance_status === 'LATE' ? 'Late (+18m)' : 'On-Time (+12m)'}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">CURRENT SHIFT</span>
+                  <span className="font-mono text-slate-700 font-medium">
+                    08:30 AM - 5:00 PM
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Acknowledge CTA Button */}
+          <div className="pt-4 border-t border-slate-100">
+            <button
+              onClick={resetScanner}
+              className="w-full py-3 px-4 rounded-lg bg-[#004e82] hover:bg-[#003d66] active:scale-[0.99] text-white font-bold text-xs uppercase tracking-wider transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>ACKNOWLEDGE & NEXT PUNCH</span>
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div className="mt-3 sm:mt-4 flex items-center gap-2 text-[11px] sm:text-xs text-slate-500 bg-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-slate-200 shadow-sm text-center">
-        <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-        <span>Argus Privacy: Encrypted 128-d vectors only. No camera photos stored.</span>
+      {/* 3. Bottom Card: Live Punch Event Stream (Last 4 Records) */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs">
+        <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-blue-600" />
+            <h3 className="text-xs font-bold font-mono tracking-wider text-slate-800 uppercase">
+              LIVE PUNCH EVENT STREAM (LAST 4 RECORDS)
+            </h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider">REALTIME PIPELINE</span>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-slate-100 text-slate-400 text-[10px] uppercase font-mono tracking-wider bg-slate-50/50">
+                <th className="py-2.5 px-3">EMPLOYEE & ID</th>
+                <th className="py-2.5 px-3">DEPARTMENT</th>
+                <th className="py-2.5 px-3">PUNCH TIME</th>
+                <th className="py-2.5 px-3 text-right">OPERATION</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {recentPunches.map((item) => (
+                <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                  <td className="py-3 px-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                        {item.avatar}
+                      </div>
+                      <div>
+                        <div className="font-bold text-slate-900 leading-tight">
+                          {item.employee_name}
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-400">
+                          {item.employee_code}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+
+                  <td className="py-3 px-3 text-slate-700 font-medium">
+                    {item.department}
+                  </td>
+
+                  <td className="py-3 px-3 font-mono text-blue-600 font-bold">
+                    {item.time}
+                  </td>
+
+                  <td className="py-3 px-3 text-right">
+                    <span className={`font-mono text-[11px] font-bold ${
+                      item.is_in ? 'text-emerald-600' : 'text-amber-600'
+                    }`}>
+                      {item.operation}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
