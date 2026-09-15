@@ -216,6 +216,18 @@ async def get_last_registered_admin():
     Returns the email of the most recently registered organization admin.
     Used for instant one-click sign-in without modal popups.
     """
+    # 1. Check most recently registered organisation in 'organisations'
+    orgs = await store.find_many(
+        "organisations",
+        {},
+        sort_key="created_at",
+        sort_desc=True,
+        limit=1
+    )
+    if orgs and orgs[0].get("contact_email"):
+        return {"email": orgs[0].get("contact_email"), "name": orgs[0].get("name")}
+
+    # 2. Check admin users in 'users'
     admin_users = await store.find_many(
         "users", 
         {"role": UserRole.ORG_ADMIN, "is_active": True}, 
@@ -384,39 +396,71 @@ async def google_login(payload: GoogleLoginRequest):
     """
     email = payload.email.strip().lower()
 
-    # 1. Check if user is an Org Admin
-    admin_user = await store.find_one("users", {"email": email, "is_active": True, "role": UserRole.ORG_ADMIN})
-    if admin_user:
-        org = await store.find_one("organizations", {"id": admin_user["organization_id"]})
+    # 1. Check if user exists in 'users' collection
+    user = await store.find_one("users", {"email": email, "is_active": True})
+    if user:
+        org_id = user.get("organization_id")
+        org = await store.find_one("organisations", {"id": org_id}) if org_id else None
+        if not org and user.get("role") == UserRole.ORG_ADMIN:
+            org = await store.find_one("organisations", {"contact_email": email})
+            if org and not org_id:
+                await store.update_one("users", {"id": user["id"]}, {"organization_id": org["id"]})
+                user["organization_id"] = org["id"]
+
+        token_data = {
+            "sub": user["id"],
+            "email": user["email"],
+            "name": user["name"],
+            "role": user.get("role", UserRole.ORG_ADMIN),
+            "org_id": user.get("organization_id")
+        }
+        if user.get("employee_id"):
+            token_data["emp_id"] = user["employee_id"]
+        token = create_access_token(token_data)
+        user_out = {k: v for k, v in user.items() if k != "hashed_password"}
+        return LoginResponse(access_token=token, user=user_out, organization=org)
+
+    # 2. Check if email belongs to a registered organisation in 'organisations'
+    org = await store.find_one("organisations", {"contact_email": email})
+    if org:
+        # Auto-create the Org Admin user record in 'users' so they can log in seamlessly
+        admin_user = User(
+            organization_id=org["id"],
+            name=payload.name or org.get("name") or email.split("@")[0],
+            email=email,
+            hashed_password=GOOGLE_AUTH_DUMMY_HASH,
+            role=UserRole.ORG_ADMIN,
+            is_active=True
+        ).dict()
+        await store.insert_one("users", admin_user)
+
         token_data = {
             "sub": admin_user["id"],
             "email": admin_user["email"],
             "name": admin_user["name"],
             "role": UserRole.ORG_ADMIN,
-            "org_id": admin_user.get("organization_id")
+            "org_id": org["id"]
         }
         token = create_access_token(token_data)
         user_out = {k: v for k, v in admin_user.items() if k != "hashed_password"}
         return LoginResponse(access_token=token, user=user_out, organization=org)
 
-    # 2. Check if user is an enrolled Employee in any organization
+    # 3. Check if user is an enrolled Employee in any organization
     emp = await store.find_one("employees", {"email": email, "is_active": True})
     if emp:
         org_id = emp["organization_id"]
-        org = await store.find_one("organizations", {"id": org_id})
+        org = await store.find_one("organisations", {"id": org_id})
         
-        # Check if a user record exists for this employee
-        emp_user = await store.find_one("users", {"email": email, "is_active": True})
-        if not emp_user:
-            emp_user = User(
-                organization_id=org_id,
-                name=f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip() or (payload.name or email.split("@")[0]),
-                email=email,
-                hashed_password=get_password_hash("GoogleAuth@Argus2026"),
-                role=UserRole.EMPLOYEE,
-                employee_id=emp["id"]
-            ).dict()
-            await store.insert_one("users", emp_user)
+        emp_user = User(
+            organization_id=org_id,
+            name=f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip() or (payload.name or email.split("@")[0]),
+            email=email,
+            hashed_password=GOOGLE_AUTH_DUMMY_HASH,
+            role=UserRole.EMPLOYEE,
+            employee_id=emp["id"],
+            is_active=True
+        ).dict()
+        await store.insert_one("users", emp_user)
 
         token_data = {
             "sub": emp_user["id"],
@@ -429,20 +473,6 @@ async def google_login(payload: GoogleLoginRequest):
         token = create_access_token(token_data)
         user_out = {k: v for k, v in emp_user.items() if k != "hashed_password"}
         return LoginResponse(access_token=token, user=user_out, organization=org)
-
-    # 3. Check if user is a Super Admin
-    super_user = await store.find_one("users", {"email": email, "is_active": True, "role": UserRole.SUPER_ADMIN})
-    if super_user:
-        token_data = {
-            "sub": super_user["id"],
-            "email": super_user["email"],
-            "name": super_user["name"],
-            "role": UserRole.SUPER_ADMIN,
-            "org_id": super_user.get("organization_id")
-        }
-        token = create_access_token(token_data)
-        user_out = {k: v for k, v in super_user.items() if k != "hashed_password"}
-        return LoginResponse(access_token=token, user=user_out, organization=None)
 
     # 4. If neither Org Admin nor Enrolled Employee, deny access
     raise HTTPException(

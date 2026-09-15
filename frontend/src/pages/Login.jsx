@@ -104,16 +104,32 @@ export const Login = () => {
       }
 
       if (!email) {
-        setError('No registered organisation account found. Please register your organisation first.');
+        setError('No registered organisation found. Please register your organisation first.');
         setLoading(false);
         return;
       }
 
-      // 3. Straightaway log in with the registered email
-      const res = await googleLogin({
-        email: email,
-        name: email.split('@')[0]
-      });
+      let res;
+      try {
+        res = await googleLogin({
+          email: email,
+          name: email.split('@')[0]
+        });
+      } catch (loginErr) {
+        // If the stored local email was rejected, clear it and query the server's latest registered organisation
+        localStorage.removeItem('argus_last_email');
+        const fallbackRes = await api.get('/auth/last-registered-admin');
+        if (fallbackRes.data?.email && fallbackRes.data.email !== email) {
+          email = fallbackRes.data.email;
+          localStorage.setItem('argus_last_email', email);
+          res = await googleLogin({
+            email: email,
+            name: email.split('@')[0]
+          });
+        } else {
+          throw loginErr;
+        }
+      }
 
       if (res.user.role === 'org_admin' || res.user.role === 'super_admin') {
         navigate('/admin');
@@ -121,7 +137,8 @@ export const Login = () => {
         navigate('/portal');
       }
     } catch (err) {
-      const detail = err.response?.data?.detail || 'Access Denied: Your Google account is not registered. Please contact your administrator.';
+      localStorage.removeItem('argus_last_email');
+      const detail = err.response?.data?.detail || 'Access Denied: Your Google account is not registered. Please register your organisation first.';
       setError(detail);
     } finally {
       setLoading(false);
