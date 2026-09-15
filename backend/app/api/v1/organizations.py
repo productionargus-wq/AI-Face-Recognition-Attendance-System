@@ -21,10 +21,9 @@ async def update_org_settings(
 ):
     org_id = auth_ctx["org_id"]
     update_data = {}
-    if "name" in settings_payload:
-        update_data["name"] = settings_payload["name"]
-    if "work_hours" in settings_payload:
-        update_data["work_hours"] = settings_payload["work_hours"]
+    for field in ["name", "work_hours", "gstin", "industry", "phone", "website", "address"]:
+        if field in settings_payload:
+            update_data[field] = settings_payload[field]
 
     await store.update_one("organizations", {"id": org_id}, update_data)
 

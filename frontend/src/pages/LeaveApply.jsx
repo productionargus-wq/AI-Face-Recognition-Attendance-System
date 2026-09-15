@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   CalendarDays, 
   Plus, 
@@ -14,105 +14,73 @@ import {
   FileText, 
   ExternalLink,
   Phone,
-  Info
+  Info,
+  Inbox
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import api from '../utils/api';
 
 export const LeaveApply = () => {
-  const { user } = useAuth();
+  const { user, organization } = useAuth();
   const [activeTab, setActiveTab] = useState('my-leaves'); // 'my-leaves' or 'team-approvals'
   const [selectedCategory, setSelectedCategory] = useState('PL'); // 'PL', 'CL', 'SL', 'LOP'
   const [durationMode, setDurationMode] = useState('FULL'); // 'FULL' or 'HALF'
-  const [fromDate, setFromDate] = useState('2024-10-24');
-  const [toDate, setToDate] = useState('2024-10-25');
-  const [reason, setReason] = useState('Annual medical health checkup and travel');
-  const [contactPhone, setContactPhone] = useState('+91 98765 43210');
+  const [fromDate, setFromDate] = useState(new Date().toISOString().split('T')[0]);
+  const [toDate, setToDate] = useState(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+  const [reason, setReason] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-  const [leaveBalances, setLeaveBalances] = useState({
-    PL: { available: 12, used: 6, total: 18, name: 'Paid Leave (PL)' },
-    CL: { available: 5, used: 3, total: 8, name: 'Casual Leave (CL)' },
-    SL: { available: 7, used: 3, total: 10, name: 'Sick Leave (SL)' },
-    LOP: { available: 0, used: 0, total: 0, name: 'Unpaid Leave (LOP)' }
-  });
+  const [leaveHistory, setLeaveHistory] = useState([]);
 
-  const [leaveHistory, setLeaveHistory] = useState([
-    {
-      id: 'LVR-201',
-      name: 'Marcus Vance',
-      empCode: 'EMP-1049',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-      category: 'Paid Leave (PL)',
-      categoryCode: 'PL',
-      dates: 'Oct 14 – Oct 15, 2024',
-      days: '2 Days • Full Shift',
-      reason: 'Family Wedding in hometown',
-      status: 'Approved',
-      approvedBy: 'Dr. S. Jenkins',
-      statusType: 'approved',
-      payrollEffect: 'Salary Protected'
-    },
-    {
-      id: 'LVR-202',
-      name: 'Marcus Vance',
-      empCode: 'EMP-1049',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-      category: 'Sick Leave (SL)',
-      categoryCode: 'SL',
-      dates: 'Nov 02, 2024',
-      days: '1 Day • Medical',
-      reason: 'Viral Fever consultation',
-      status: 'Pending Review',
-      approvedBy: 'Tier 1 Approval',
-      statusType: 'pending',
-      payrollEffect: 'Awaiting Node Audit'
-    },
-    {
-      id: 'LVR-203',
-      name: 'Marcus Vance',
-      empCode: 'EMP-1049',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-      category: 'Unpaid LOP',
-      categoryCode: 'LOP',
-      dates: 'Sep 19, 2024',
-      days: '1 Day • Personal',
-      reason: 'Extended travel transit delay',
-      status: 'Logged LOP',
-      approvedBy: 'HR Auto-Process',
-      statusType: 'lop',
-      payrollEffect: '-₹1,333 Ded. (Processed)'
+  useEffect(() => {
+    fetchLeaves();
+  }, []);
+
+  const fetchLeaves = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/leaves');
+      setLeaveHistory(res.data || []);
+    } catch (err) {
+      console.error('Failed to load leave history', err);
+    } finally {
+      setLoading(false);
     }
-  ]);
+  };
 
-  const handleSubmitLeave = (e) => {
+  const handleSubmitLeave = async (e) => {
     e.preventDefault();
     if (!reason.trim()) {
-      alert('Please specify a reason for leave.');
+      setErrorMessage('Please specify a reason for taking absence.');
       return;
     }
 
-    const newLeave = {
-      id: `LVR-${Date.now().toString().slice(-4)}`,
-      name: user?.name || 'Marcus Vance',
-      empCode: user?.employee_id || 'EMP-1049',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-      category: selectedCategory === 'PL' ? 'Paid Leave (PL)' : 
-                selectedCategory === 'CL' ? 'Casual Leave (CL)' :
-                selectedCategory === 'SL' ? 'Sick Leave (SL)' : 'Unpaid LOP',
-      categoryCode: selectedCategory,
-      dates: `${fromDate} to ${toDate}`,
-      days: durationMode === 'FULL' ? '2 Days • Full Shift' : '1 Day • Half Day',
-      reason: reason,
-      status: 'Pending Review',
-      approvedBy: 'Tier 1 Approval',
-      statusType: 'pending',
-      payrollEffect: selectedCategory === 'LOP' ? '-₹1,333 Ded. (Pending)' : 'Salary Protected'
-    };
+    setSubmitting(true);
+    setErrorMessage('');
+    try {
+      const res = await api.post('/leaves', {
+        category: selectedCategory,
+        from_date: fromDate,
+        to_date: toDate,
+        duration_mode: durationMode,
+        reason: reason.trim(),
+        contact_phone: contactPhone || null
+      });
 
-    setLeaveHistory([newLeave, ...leaveHistory]);
-    setStatusMessage('Leave application submitted successfully for supervisor approval.');
-    setTimeout(() => setStatusMessage(''), 4000);
+      setLeaveHistory(prev => [res.data, ...prev]);
+      setStatusMessage('Leave application submitted successfully for supervisor approval.');
+      setTimeout(() => setStatusMessage(''), 4000);
+      setReason('');
+    } catch (err) {
+      setErrorMessage(err.response?.data?.detail || 'Failed to submit leave application.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleClear = () => {
@@ -120,6 +88,18 @@ export const LeaveApply = () => {
     setSelectedCategory('PL');
     setDurationMode('FULL');
   };
+
+  const displayName = user?.name || user?.email?.split('@')[0] || 'Employee';
+  const displayCode = user?.employee_id ? `EMP-${user.employee_id.slice(0,4)}` : 'STAFF';
+
+  const filteredHistory = leaveHistory.filter(item => {
+    const name = item.name || '';
+    const code = item.emp_code || item.empCode || '';
+    const res = item.reason || '';
+    const cat = item.category || '';
+    const q = searchQuery.toLowerCase();
+    return name.toLowerCase().includes(q) || code.toLowerCase().includes(q) || res.toLowerCase().includes(q) || cat.toLowerCase().includes(q);
+  });
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
@@ -134,7 +114,7 @@ export const LeaveApply = () => {
             Leave Application &amp; Manager Approvals
           </h1>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-            Apply for leaves, view remaining leave balances, and manage manager approvals for seamless payroll reconciliation.
+            Apply for leaves, view remaining leave balances, and manage supervisor approvals for {organization?.name || 'your organisation'}.
           </p>
         </div>
 
@@ -159,7 +139,7 @@ export const LeaveApply = () => {
             >
               <span>Team Approvals</span>
               <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center font-bold">
-                3
+                {leaveHistory.filter(l => (l.status_type || l.statusType) === 'pending').length}
               </span>
             </button>
           </div>
@@ -184,6 +164,13 @@ export const LeaveApply = () => {
         </div>
       )}
 
+      {errorMessage && (
+        <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+          <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
+
       {/* 4 Leave Balance Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Paid Leave (PL) */}
@@ -199,12 +186,12 @@ export const LeaveApply = () => {
           <div className="my-2">
             <div className="text-xs font-bold text-slate-700 mb-0.5">Paid Leave (PL)</div>
             <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              12 <span className="text-xs font-medium text-slate-500">Days Available</span>
+              12 <span className="text-xs font-medium text-slate-500">Days Allocated</span>
             </div>
           </div>
           <div className="space-y-1 pt-1 border-t border-slate-100">
             <div className="text-[10px] text-slate-400 font-mono">
-              Used: 6 days • Total: 18 days
+              Full year entitlement
             </div>
             <div className="text-[11px] text-emerald-600 font-bold flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3" />
@@ -226,12 +213,12 @@ export const LeaveApply = () => {
           <div className="my-2">
             <div className="text-xs font-bold text-slate-700 mb-0.5">Casual Leave (CL)</div>
             <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              5 <span className="text-xs font-medium text-slate-500">Days Available</span>
+              5 <span className="text-xs font-medium text-slate-500">Days Allocated</span>
             </div>
           </div>
           <div className="space-y-1 pt-1 border-t border-slate-100">
             <div className="text-[10px] text-slate-400 font-mono">
-              Used: 3 days • Total: 8 days
+              Personal emergency quota
             </div>
             <div className="text-[11px] text-slate-600 font-medium">
               Max 2 consecutive days
@@ -252,12 +239,12 @@ export const LeaveApply = () => {
           <div className="my-2">
             <div className="text-xs font-bold text-slate-700 mb-0.5">Sick Leave (SL)</div>
             <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              7 <span className="text-xs font-medium text-slate-500">Days Available</span>
+              7 <span className="text-xs font-medium text-slate-500">Days Allocated</span>
             </div>
           </div>
           <div className="space-y-1 pt-1 border-t border-slate-100">
             <div className="text-[10px] text-slate-400 font-mono">
-              Used: 3 days • Total: 10 days
+              Medical health allowance
             </div>
             <div className="text-[11px] text-slate-600 font-medium">
               Full pay with certificate (&gt;2d)
@@ -278,12 +265,13 @@ export const LeaveApply = () => {
           <div className="my-2">
             <div className="text-xs font-bold text-slate-700 mb-0.5">Unpaid Leave (LOP)</div>
             <div className="text-2xl sm:text-3xl font-black text-red-600 tracking-tight">
-              0 <span className="text-xs font-medium text-slate-500">Days Incurred</span>
+              {leaveHistory.filter(l => (l.category_code || l.categoryCode) === 'LOP').length}{' '}
+              <span className="text-xs font-medium text-slate-500">Days Incurred</span>
             </div>
           </div>
           <div className="space-y-1 pt-1 border-t border-slate-100">
             <div className="text-[10px] text-slate-400 font-mono">
-              Active cycle deductions: ₹0.00
+              Active cycle deductions
             </div>
             <div className="text-[11px] text-red-600 font-bold flex items-center gap-1">
               <span>▲</span>
@@ -307,7 +295,7 @@ export const LeaveApply = () => {
               </h2>
             </div>
             <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-              EMP-1049
+              {displayCode}
             </span>
           </div>
 
@@ -318,7 +306,6 @@ export const LeaveApply = () => {
                 1. Select Leave Category
               </label>
               <div className="grid grid-cols-2 gap-2">
-                {/* PL */}
                 <button
                   type="button"
                   onClick={() => setSelectedCategory('PL')}
@@ -332,10 +319,9 @@ export const LeaveApply = () => {
                     <span>Paid Leave</span>
                     {selectedCategory === 'PL' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
                   </div>
-                  <div className="text-[10px] text-slate-500 font-mono mt-0.5">12 Days balance</div>
+                  <div className="text-[10px] text-slate-500 font-mono mt-0.5">Annual entitlement</div>
                 </button>
 
-                {/* CL */}
                 <button
                   type="button"
                   onClick={() => setSelectedCategory('CL')}
@@ -349,10 +335,9 @@ export const LeaveApply = () => {
                     <span>Casual Leave</span>
                     {selectedCategory === 'CL' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
                   </div>
-                  <div className="text-[10px] text-slate-500 font-mono mt-0.5">5 Days balance</div>
+                  <div className="text-[10px] text-slate-500 font-mono mt-0.5">Short-notice leave</div>
                 </button>
 
-                {/* SL */}
                 <button
                   type="button"
                   onClick={() => setSelectedCategory('SL')}
@@ -366,10 +351,9 @@ export const LeaveApply = () => {
                     <span>Sick Leave</span>
                     {selectedCategory === 'SL' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
                   </div>
-                  <div className="text-[10px] text-slate-500 font-mono mt-0.5">7 Days balance</div>
+                  <div className="text-[10px] text-slate-500 font-mono mt-0.5">Medical provision</div>
                 </button>
 
-                {/* LOP */}
                 <button
                   type="button"
                   onClick={() => setSelectedCategory('LOP')}
@@ -396,6 +380,7 @@ export const LeaveApply = () => {
                 </label>
                 <input
                   type="date"
+                  required
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -408,6 +393,7 @@ export const LeaveApply = () => {
                 </label>
                 <input
                   type="date"
+                  required
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -415,7 +401,7 @@ export const LeaveApply = () => {
               </div>
             </div>
 
-            {/* Duration type pills & badge */}
+            {/* Duration type */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
@@ -441,14 +427,14 @@ export const LeaveApply = () => {
               </div>
 
               <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                Calculated Duration: {durationMode === 'FULL' ? '2 Days' : '1 Day'}
+                Shift: {durationMode === 'FULL' ? 'Full Shift' : 'Half Day'}
               </span>
             </div>
 
             {/* Reason */}
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
-                Reason for Leave
+                Reason for Leave *
               </label>
               <textarea
                 rows="2"
@@ -466,9 +452,9 @@ export const LeaveApply = () => {
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
                   REPORTING APPROVER
                 </label>
-                <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Dr. Sarah Jenkins</span>
+                <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium truncate">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <span className="truncate">{organization?.name ? `${organization.name} Admin` : 'Organisation Admin'}</span>
                 </div>
               </div>
 
@@ -476,14 +462,13 @@ export const LeaveApply = () => {
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
                   CONTACT DURING LEAVE
                 </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={contactPhone}
-                    onChange={(e) => setContactPhone(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+                <input
+                  type="text"
+                  placeholder="+91 98765 43210"
+                  value={contactPhone}
+                  onChange={(e) => setContactPhone(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
             </div>
 
@@ -494,7 +479,7 @@ export const LeaveApply = () => {
                 <span>Payroll Reconciliation Protection</span>
               </div>
               <p className="text-[11px] text-blue-700 leading-relaxed">
-                Paid leaves will <span className="font-bold">NOT deduct</span> from your regular base pay of ₹40,000/month. Unapproved or LOP requests trigger a ₹1,333/day compensation offset.
+                Approved Paid Leaves do not deduct from your regular salary. Unapproved absences trigger a compensation adjustment on cycle cut.
               </p>
             </div>
 
@@ -509,9 +494,10 @@ export const LeaveApply = () => {
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                disabled={submitting}
+                className="px-5 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer disabled:opacity-60"
               >
-                Submit Leave Application
+                {submitting ? 'Submitting...' : 'Submit Leave Application'}
               </button>
             </div>
           </form>
@@ -553,98 +539,90 @@ export const LeaveApply = () => {
 
           {/* History List Table */}
           <div className="overflow-x-auto mt-2">
-            <table className="w-full text-left text-xs text-slate-600 border-collapse min-w-[550px]">
-              <thead>
-                <tr className="border-b border-slate-100 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
-                  <th className="py-2.5 px-3">EMPLOYEE</th>
-                  <th className="py-2.5 px-3">LEAVE DETAILS</th>
-                  <th className="py-2.5 px-3">REASON</th>
-                  <th className="py-2.5 px-3">STATUS</th>
-                  <th className="py-2.5 px-3 text-right">PAYROLL EFFECT</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {leaveHistory.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
-                    {/* Employee */}
-                    <td className="py-3 px-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs">
-                          MV
-                        </div>
-                        <div>
-                          <div className="font-bold text-slate-900">{item.name}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">{item.empCode}</div>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Details */}
-                    <td className="py-3 px-3">
-                      <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold font-mono mb-1 ${
-                        item.categoryCode === 'PL' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                        item.categoryCode === 'SL' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                        'bg-red-50 text-red-700 border border-red-200'
-                      }`}>
-                        {item.category}
-                      </span>
-                      <div className="font-bold text-slate-800 text-[11px]">{item.dates}</div>
-                      <div className="text-[10px] text-slate-400">{item.days}</div>
-                    </td>
-
-                    {/* Reason */}
-                    <td className="py-3 px-3 text-slate-700 max-w-[160px] truncate">
-                      {item.reason}
-                    </td>
-
-                    {/* Status */}
-                    <td className="py-3 px-3 whitespace-nowrap">
-                      {item.statusType === 'approved' && (
-                        <div>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            Approved
-                          </span>
-                          <div className="text-[9px] text-slate-400 mt-0.5">{item.approvedBy}</div>
-                        </div>
-                      )}
-                      {item.statusType === 'pending' && (
-                        <div>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                            Pending Review
-                          </span>
-                          <div className="text-[9px] text-slate-400 mt-0.5">{item.approvedBy}</div>
-                        </div>
-                      )}
-                      {item.statusType === 'lop' && (
-                        <div>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-bold border border-red-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                            Logged LOP
-                          </span>
-                          <div className="text-[9px] text-slate-400 mt-0.5">{item.approvedBy}</div>
-                        </div>
-                      )}
-                    </td>
-
-                    {/* Payroll Effect */}
-                    <td className="py-3 px-3 text-right">
-                      {item.categoryCode === 'LOP' ? (
-                        <span className="text-red-600 font-bold font-mono text-[11px]">
-                          {item.payrollEffect}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-slate-700 font-medium text-[11px]">
-                          <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                          {item.payrollEffect}
-                        </span>
-                      )}
-                    </td>
+            {filteredHistory.length > 0 ? (
+              <table className="w-full text-left text-xs text-slate-600 border-collapse min-w-[550px]">
+                <thead>
+                  <tr className="border-b border-slate-100 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
+                    <th className="py-2.5 px-3">EMPLOYEE</th>
+                    <th className="py-2.5 px-3">LEAVE DETAILS</th>
+                    <th className="py-2.5 px-3">REASON</th>
+                    <th className="py-2.5 px-3">STATUS</th>
+                    <th className="py-2.5 px-3 text-right">PAYROLL EFFECT</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredHistory.map((item) => {
+                    const empName = item.name || 'Employee';
+                    const empCode = item.emp_code || item.empCode || 'STAFF';
+                    const initials = empName.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+                    const catCode = item.category_code || item.categoryCode || 'PL';
+
+                    return (
+                      <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                        {/* Employee */}
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs">
+                              {initials}
+                            </div>
+                            <div>
+                              <div className="font-bold text-slate-900">{empName}</div>
+                              <div className="text-[10px] text-slate-400 font-mono">{empCode}</div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Details */}
+                        <td className="py-3 px-3">
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold font-mono mb-1 ${
+                            catCode === 'PL' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                            catCode === 'SL' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                            'bg-red-50 text-red-700 border border-red-200'
+                          }`}>
+                            {item.category || 'Leave'}
+                          </span>
+                          <div className="font-bold text-slate-800 text-[11px]">{item.dates}</div>
+                          <div className="text-[10px] text-slate-400">{item.days}</div>
+                        </td>
+
+                        {/* Reason */}
+                        <td className="py-3 px-3 text-slate-700 max-w-[160px] truncate">
+                          {item.reason}
+                        </td>
+
+                        {/* Status */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                            {item.status || 'Pending Review'}
+                          </span>
+                        </td>
+
+                        {/* Payroll Effect */}
+                        <td className="py-3 px-3 text-right">
+                          <span className="inline-flex items-center gap-1 text-slate-700 font-medium text-[11px]">
+                            <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                            {item.payroll_effect || item.payrollEffect || 'Salary Protected'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <div className="py-12 px-4 text-center">
+                <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                  <Inbox className="w-6 h-6" />
+                </div>
+                <h3 className="text-sm font-bold text-slate-800 mb-1">
+                  No leave requests submitted yet
+                </h3>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Submit a leave application using the form on the left. All submissions will be audited and tracked here.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Table Footer */}
@@ -653,21 +631,7 @@ export const LeaveApply = () => {
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
               <span>Ledger Synchronized with Argus Biometric Timecard Node 01</span>
             </div>
-
-            <div className="flex items-center gap-2">
-              <span>Showing 3 records</span>
-              <div className="inline-flex items-center gap-1">
-                <button type="button" className="px-2 py-0.5 border border-slate-200 rounded text-[10px] font-bold hover:bg-slate-50 cursor-pointer disabled:opacity-50" disabled>
-                  Prev
-                </button>
-                <button type="button" className="px-2 py-0.5 bg-blue-600 text-white rounded text-[10px] font-bold">
-                  1
-                </button>
-                <button type="button" className="px-2 py-0.5 border border-slate-200 rounded text-[10px] font-bold hover:bg-slate-50 cursor-pointer">
-                  Next
-                </button>
-              </div>
-            </div>
+            <div>Showing {filteredHistory.length} records</div>
           </div>
         </div>
       </div>
@@ -693,7 +657,7 @@ export const LeaveApply = () => {
 
         <button
           type="button"
-          onClick={() => alert('Downloading Organizational Attendance Rulebook PDF...')}
+          onClick={() => alert('Downloading handbook...')}
           className="text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 whitespace-nowrap cursor-pointer"
         >
           Download Handbook

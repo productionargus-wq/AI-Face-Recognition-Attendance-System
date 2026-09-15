@@ -181,16 +181,16 @@ export const AppLayout = ({ children }) => {
             <div className="flex items-center gap-2.5 pl-2 border-l border-slate-200">
               <div className="text-right hidden sm:block">
                 <div className="text-xs font-bold text-slate-900 leading-tight">
-                  {user?.name || 'Dr. Sarah Jenkins'}
+                  {user?.name || user?.email?.split('@')[0] || 'Administrator'}
                 </div>
                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                  {user?.role === 'org_admin' ? 'Chief Executive Officer' : 'Staff Member'}
+                  {user?.role === 'org_admin' || user?.role === 'super_admin' ? 'Chief Executive Officer' : 'Staff Member'}
                 </div>
               </div>
 
               {/* Avatar Photo */}
               <div className="w-9 h-9 rounded-full ring-2 ring-blue-500/20 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs overflow-hidden">
-                {user?.name ? user.name.split(' ').map(n=>n[0]).join('').slice(0,2) : 'SJ'}
+                {(user?.name || user?.email || 'AD').split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()}
               </div>
 
               <button

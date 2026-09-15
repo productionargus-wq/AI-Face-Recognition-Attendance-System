@@ -23,16 +23,17 @@ export const OrgSettings = () => {
   const { user, organization } = useAuth();
   const [activeTab, setActiveTab] = useState('details'); // 'details' or 'shifts'
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
-    name: organization?.name || 'Argus Technologies Pvt Ltd',
-    industry: 'Artificial Intelligence & Security Hardware',
-    gstin: organization?.gstin || 'U72900MH2021PTC368912',
-    email: organization?.contact_email || user?.email || 'admin@argustech.ai',
-    phone: '+91 6389247897',
-    website: 'https://www.argustech.ai',
-    address: 'Argus Tech Tower, Sector 5, Bandra Kurla Complex, Mumbai, Maharashtra 400051, India',
+    name: organization?.name || '',
+    industry: organization?.industry || 'Technology & Services',
+    gstin: organization?.gstin || '',
+    email: organization?.contact_email || user?.email || '',
+    phone: organization?.phone || '',
+    website: organization?.website || '',
+    address: organization?.address || '',
     // Shift timings
     shiftStart: organization?.work_hours?.start_time || '09:00',
     shiftEnd: organization?.work_hours?.end_time || '18:00',
@@ -46,8 +47,12 @@ export const OrgSettings = () => {
       setFormData(prev => ({
         ...prev,
         name: organization.name || prev.name,
+        industry: organization.industry || prev.industry,
         gstin: organization.gstin || prev.gstin,
         email: organization.contact_email || prev.email,
+        phone: organization.phone || prev.phone,
+        website: organization.website || prev.website,
+        address: organization.address || prev.address,
         shiftStart: organization.work_hours?.start_time || prev.shiftStart,
         shiftEnd: organization.work_hours?.end_time || prev.shiftEnd,
         graceMinutes: organization.work_hours?.late_grace_minutes || prev.graceMinutes,
@@ -66,46 +71,53 @@ export const OrgSettings = () => {
   const handleSave = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setErrorMessage('');
     try {
-      if (organization?.id) {
-        await api.put(`/organizations/${organization.id}`, {
-          name: formData.name,
-          gstin: formData.gstin || null,
-          work_hours: {
-            start_time: formData.shiftStart,
-            end_time: formData.shiftEnd,
-            late_grace_minutes: parseInt(formData.graceMinutes) || 15,
-            half_day_hours: parseFloat(formData.halfDayHours) || 4.5
-          }
-        });
-      }
+      await api.put('/organizations/my-org/settings', {
+        name: formData.name.trim(),
+        industry: formData.industry,
+        gstin: formData.gstin?.trim() ? formData.gstin.trim().toUpperCase() : null,
+        phone: formData.phone,
+        website: formData.website,
+        address: formData.address,
+        work_hours: {
+          start_time: formData.shiftStart,
+          end_time: formData.shiftEnd,
+          late_grace_minutes: parseInt(formData.graceMinutes) || 15,
+          half_day_hours: parseFloat(formData.halfDayHours) || 4.5
+        }
+      });
+
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 4000);
     } catch (err) {
-      console.warn('Saved locally (network error fallback):', err);
-      setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 4000);
+      setErrorMessage(err.response?.data?.detail || 'Failed to update organisation settings.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleReset = () => {
-    setFormData({
-      name: organization?.name || 'Argus Technologies Pvt Ltd',
-      industry: 'Artificial Intelligence & Security Hardware',
-      gstin: organization?.gstin || 'U72900MH2021PTC368912',
-      email: organization?.contact_email || user?.email || 'admin@argustech.ai',
-      phone: '+91 6389247897',
-      website: 'https://www.argustech.ai',
-      address: 'Argus Tech Tower, Sector 5, Bandra Kurla Complex, Mumbai, Maharashtra 400051, India',
-      shiftStart: '09:00',
-      shiftEnd: '18:00',
-      graceMinutes: 15,
-      halfDayHours: 4.5,
-      otMultiplier: 1.5
-    });
+    if (organization) {
+      setFormData({
+        name: organization.name || '',
+        industry: organization.industry || 'Technology & Services',
+        gstin: organization.gstin || '',
+        email: organization.contact_email || user?.email || '',
+        phone: organization.phone || '',
+        website: organization.website || '',
+        address: organization.address || '',
+        shiftStart: organization.work_hours?.start_time || '09:00',
+        shiftEnd: organization.work_hours?.end_time || '18:00',
+        graceMinutes: organization.work_hours?.late_grace_minutes || 15,
+        halfDayHours: organization.work_hours?.half_day_hours || 4.5,
+        otMultiplier: 1.5
+      });
+    }
   };
+
+  const ceoName = user?.name || user?.email?.split('@')[0] || 'Organisation Admin';
+  const orgDisplayName = formData.name || organization?.name || 'Your Organisation';
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
@@ -116,7 +128,7 @@ export const OrgSettings = () => {
             Organisation Settings &amp; Preferences
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Configure legal tenancy parameters, corporate coordinates, shift schedules, and operational policies.
+            Configure legal tenancy parameters, corporate coordinates, shift schedules, and operational policies for {orgDisplayName}.
           </p>
         </div>
 
@@ -127,13 +139,11 @@ export const OrgSettings = () => {
           </span>
 
           <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-200">
-            <img
-              src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=80&auto=format&fit=crop&q=80"
-              alt="CEO"
-              className="w-8 h-8 rounded-full object-cover border border-slate-200"
-            />
+            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xs">
+              {ceoName.slice(0, 2).toUpperCase()}
+            </div>
             <div>
-              <div className="text-xs font-bold text-slate-800">{user?.name || 'Dr. Sarah Jenkins'}</div>
+              <div className="text-xs font-bold text-slate-800">{ceoName}</div>
               <div className="text-[10px] text-slate-400 font-mono">CHIEF EXECUTIVE OFFICER</div>
             </div>
           </div>
@@ -143,7 +153,14 @@ export const OrgSettings = () => {
       {savedSuccess && (
         <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>Organisation settings and policy schedules updated successfully!</span>
+          <span>Organisation settings and operational parameters updated successfully in database!</span>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+          <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+          <span>{errorMessage}</span>
         </div>
       )}
 
@@ -190,7 +207,9 @@ export const OrgSettings = () => {
                 <div className="relative w-24 h-24 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center p-2 shrink-0">
                   <div className="text-center">
                     <Building2 className="w-8 h-8 text-blue-600 mx-auto" />
-                    <span className="text-[10px] font-black text-slate-700 tracking-wider">ARGUS</span>
+                    <span className="text-[10px] font-black text-slate-700 tracking-wider">
+                      {(formData.name || 'ORG').slice(0, 5).toUpperCase()}
+                    </span>
                   </div>
                   <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] shadow-xs">
                     ✓
@@ -199,26 +218,19 @@ export const OrgSettings = () => {
 
                 <div className="space-y-2">
                   <div className="font-extrabold text-base text-slate-900">
-                    {formData.name}
+                    {orgDisplayName}
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed max-w-md">
-                    Recommended: High-resolution PNG or SVG vector format. Dimensions 512×512px, maximum 2.0MB.
+                    Customise your organisation profile and legal credentials saved in your database partition.
                   </p>
                   <div className="flex items-center gap-3 pt-1">
                     <button
                       type="button"
-                      onClick={() => alert('Logo file picker simulation')}
+                      onClick={() => alert('Logo upload simulation')}
                       className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
                     >
                       <Upload className="w-3.5 h-3.5 text-slate-500" />
                       Change Logo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => alert('Logo removed')}
-                      className="text-xs font-bold text-red-600 hover:text-red-700 cursor-pointer"
-                    >
-                      Remove
                     </button>
                   </div>
                 </div>
@@ -237,14 +249,12 @@ export const OrgSettings = () => {
               </div>
 
               <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl flex items-center gap-3 my-auto">
-                <img
-                  src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=100&auto=format&fit=crop&q=80"
-                  alt="Sarah Jenkins"
-                  className="w-12 h-12 rounded-xl object-cover border border-slate-200 shrink-0"
-                />
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-extrabold flex items-center justify-center text-sm shadow-xs shrink-0">
+                  {ceoName.slice(0, 2).toUpperCase()}
+                </div>
                 <div>
                   <div className="font-bold text-slate-900 text-xs sm:text-sm">
-                    {user?.name || 'Dr. Sarah Jenkins'}
+                    {ceoName}
                   </div>
                   <div className="text-[11px] text-slate-500">
                     Chief Executive Officer &amp; Founder
@@ -275,13 +285,15 @@ export const OrgSettings = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Organisation Legal Name
+                  Organisation Legal Name *
                 </label>
                 <input
                   type="text"
+                  required
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
+                  placeholder="e.g. Argus Technologies Ltd."
                   className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
               </div>
@@ -295,6 +307,7 @@ export const OrgSettings = () => {
                   name="industry"
                   value={formData.industry}
                   onChange={handleChange}
+                  placeholder="e.g. Artificial Intelligence & Hardware"
                   className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
               </div>
@@ -303,20 +316,21 @@ export const OrgSettings = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Corporate Registration / GSTIN
+                  Corporate Registration / GSTIN (Optional)
                 </label>
                 <input
                   type="text"
                   name="gstin"
                   value={formData.gstin}
                   onChange={handleChange}
+                  placeholder="33AAAAANM1RZN"
                   className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none uppercase"
                 />
               </div>
 
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Official Email
+                  Official Contact Email
                 </label>
                 <div className="relative">
                   <Mail className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -342,6 +356,7 @@ export const OrgSettings = () => {
                   name="phone"
                   value={formData.phone}
                   onChange={handleChange}
+                  placeholder="+91 98765 43210"
                   className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
               </div>
@@ -358,6 +373,7 @@ export const OrgSettings = () => {
                   name="website"
                   value={formData.website}
                   onChange={handleChange}
+                  placeholder="https://yourcompany.com"
                   className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
               </div>
@@ -372,6 +388,7 @@ export const OrgSettings = () => {
                 name="address"
                 value={formData.address}
                 onChange={handleChange}
+                placeholder="Office address / headquarters location"
                 className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"
               />
             </div>
@@ -381,7 +398,7 @@ export const OrgSettings = () => {
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-2 text-xs text-slate-500">
               <Clock className="w-4 h-4 text-slate-400" />
-              <span>Last modified on Oct 25, 2024 by <span className="font-bold text-slate-700">{user?.name || 'Dr. Sarah Jenkins (CEO)'}</span></span>
+              <span>Admin Account: <span className="font-bold text-slate-700">{user?.email}</span></span>
             </div>
 
             <div className="flex items-center gap-3">
@@ -390,7 +407,7 @@ export const OrgSettings = () => {
                 onClick={handleReset}
                 className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
               >
-                Reset to Default
+                Reset
               </button>
               <button
                 type="submit"
@@ -412,7 +429,7 @@ export const OrgSettings = () => {
                 Work Shift Timing &amp; Attendance Rules
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Set baseline operational hours, grace thresholds, and automatic deduction boundaries.
+                Set baseline operational hours, grace thresholds, and automatic deduction boundaries for your organisation.
               </p>
             </div>
 
@@ -503,7 +520,7 @@ export const OrgSettings = () => {
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-2 bg-[#0052cc] hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-2 cursor-pointer"
+              className="px-5 py-2 bg-[#0052cc] hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-60"
             >
               <Save className="w-4 h-4" />
               <span>{loading ? 'Saving...' : 'Save Shift Timings'}</span>
