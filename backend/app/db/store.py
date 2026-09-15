@@ -57,20 +57,26 @@ class UnifiedDataStore:
         except Exception as e:
             logger.warning(f"Error saving {collection}: {e}")
 
+    def _resolve_collection(self, collection: str) -> str:
+        if collection in ("organizations", "organisation"):
+            return "organisations"
+        return collection
+
     async def find_one(self, collection: str, query: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        target_col = self._resolve_collection(collection)
         db = await self.get_active_db()
         if db is not None:
             try:
-                res = await db[collection].find_one(query)
+                res = await db[target_col].find_one(query)
                 if res and "_id" in res:
                     del res["_id"]
                 return res
             except Exception as e:
-                logger.warning(f"Error in MongoDB find_one {collection}: {e}")
+                logger.warning(f"Error in MongoDB find_one {target_col}: {e}")
         
         # Local fallback
         async with self.lock:
-            items = self._cache.get(collection, [])
+            items = self._cache.get(target_col, []) or self._cache.get(collection, [])
             for item in items:
                 match = all(item.get(k) == v for k, v in query.items())
                 if match:
@@ -78,10 +84,11 @@ class UnifiedDataStore:
             return None
 
     async def find_many(self, collection: str, query: Dict[str, Any], sort_key: str = None, sort_desc: bool = False, limit: int = None) -> List[Dict[str, Any]]:
+        target_col = self._resolve_collection(collection)
         db = await self.get_active_db()
         if db is not None:
             try:
-                cursor = db[collection].find(query)
+                cursor = db[target_col].find(query)
                 if sort_key:
                     cursor = cursor.sort(sort_key, -1 if sort_desc else 1)
                 if limit:
@@ -92,16 +99,15 @@ class UnifiedDataStore:
                         del d["_id"]
                 return docs
             except Exception as e:
-                logger.warning(f"Error in MongoDB find_many {collection}: {e}")
+                logger.warning(f"Error in MongoDB find_many {target_col}: {e}")
 
         async with self.lock:
-            items = self._cache.get(collection, [])
+            items = self._cache.get(target_col, []) or self._cache.get(collection, [])
             matched = []
             for item in items:
                 match = True
                 for k, v in query.items():
                     if isinstance(v, dict):
-                        # Simple operator support like $gte, $lte, $in
                         val = item.get(k)
                         if "$in" in v and val not in v["$in"]:
                             match = False; break
@@ -122,73 +128,62 @@ class UnifiedDataStore:
             return matched
 
     async def insert_one(self, collection: str, doc: Dict[str, Any]):
+        target_col = self._resolve_collection(collection)
         db = await self.get_active_db()
         if db is not None:
             try:
                 mongo_doc = doc.copy()
                 if "_id" in mongo_doc:
                     del mongo_doc["_id"]
-                await db[collection].insert_one(mongo_doc)
-                
-                # Mirror to 'organisations' and 'organisation' so users see their records regardless of UK/US spelling or singular/plural
-                if collection == "organizations":
-                    try:
-                        await db["organisations"].update_one({"id": mongo_doc.get("id")}, {"$set": mongo_doc.copy()}, upsert=True)
-                        await db["organisation"].update_one({"id": mongo_doc.get("id")}, {"$set": mongo_doc.copy()}, upsert=True)
-                    except Exception:
-                        pass
-                        
-                logger.info(f"MongoDB stored '{collection}': id={doc.get('id')}, name={doc.get('name')}")
+                await db[target_col].insert_one(mongo_doc)
+                logger.info(f"MongoDB stored in '{target_col}': id={doc.get('id')}, name={doc.get('name')}")
             except Exception as e:
-                logger.error(f"MongoDB insert error in '{collection}': {e}", exc_info=True)
+                logger.error(f"MongoDB insert error in '{target_col}': {e}", exc_info=True)
         
         async with self.lock:
-            if collection not in self._cache:
-                self._cache[collection] = []
-            self._cache[collection].append(dict(doc))
-            self._save_local_storage(collection)
+            if target_col not in self._cache:
+                self._cache[target_col] = []
+            self._cache[target_col].append(dict(doc))
+            self._save_local_storage(target_col)
         return doc
 
     async def update_one(self, collection: str, query: Dict[str, Any], update: Dict[str, Any]) -> bool:
+        target_col = self._resolve_collection(collection)
         db = await self.get_active_db()
         if db is not None:
             try:
-                await db[collection].update_one(query, {"$set": update})
-                if collection == "organizations":
-                    try:
-                        await db["organisations"].update_one(query, {"$set": update})
-                        await db["organisation"].update_one(query, {"$set": update})
-                    except Exception:
-                        pass
+                await db[target_col].update_one(query, {"$set": update})
             except Exception as e:
-                logger.warning(f"Error in MongoDB update_one {collection}: {e}")
+                logger.warning(f"Error in MongoDB update_one {target_col}: {e}")
 
         async with self.lock:
-            items = self._cache.get(collection, [])
+            items = self._cache.get(target_col, []) or self._cache.get(collection, [])
             for item in items:
                 match = all(item.get(k) == v for k, v in query.items())
                 if match:
                     item.update(update)
-                    self._save_local_storage(collection)
+                    self._save_local_storage(target_col)
                     return True
             return False
 
     async def delete_one(self, collection: str, query: Dict[str, Any]) -> bool:
+        target_col = self._resolve_collection(collection)
         db = await self.get_active_db()
         if db is not None:
             try:
-                await db[collection].delete_one(query)
+                await db[target_col].delete_one(query)
             except Exception as e:
-                logger.warning(f"Error in MongoDB delete_one {collection}: {e}")
+                logger.warning(f"Error in MongoDB delete_one {target_col}: {e}")
 
         async with self.lock:
-            items = self._cache.get(collection, [])
+            items = self._cache.get(target_col, []) or self._cache.get(collection, [])
             for idx, item in enumerate(items):
                 match = all(item.get(k) == v for k, v in query.items())
                 if match:
                     items.pop(idx)
-                    self._save_local_storage(collection)
+                    self._save_local_storage(target_col)
                     return True
-            return False
+        return False
+
 
 store = UnifiedDataStore()

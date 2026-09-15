@@ -25,16 +25,8 @@ async def connect_to_mongo():
         
         # Create multi-tenant indexes
         try:
-            # Replace non-sparse gstin index if present
-            existing_indexes = await db.organizations.index_information()
-            if "gstin_1" in existing_indexes and not existing_indexes["gstin_1"].get("sparse"):
-                await db.organizations.drop_index("gstin_1")
-        except Exception:
-            pass
-
-        try:
-            await db.organizations.create_index("slug", unique=True)
-            await db.organizations.create_index("gstin", sparse=True)
+            await db.organisations.create_index("slug", unique=True)
+            await db.organisations.create_index("gstin", sparse=True)
             await db.users.create_index([("email", 1)], unique=True)
             await db.users.create_index([("organization_id", 1)])
             await db.employees.create_index([("organization_id", 1), ("employee_code", 1)], unique=True)
@@ -42,7 +34,7 @@ async def connect_to_mongo():
             await db.attendance.create_index([("organization_id", 1), ("employee_id", 1), ("date", 1)])
             await db.audit_logs.create_index([("organization_id", 1), ("timestamp", -1)])
             await db.kiosks.create_index([("organization_id", 1), ("kiosk_key", 1)])
-            logger.info("Multi-tenant MongoDB indexes initialized.")
+            logger.info("Multi-tenant MongoDB indexes initialized on 'organisations'.")
         except Exception as idx_err:
             logger.warning(f"Notice on MongoDB indexes: {idx_err}")
             
