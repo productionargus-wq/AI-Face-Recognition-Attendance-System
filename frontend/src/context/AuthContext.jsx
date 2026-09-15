@@ -35,9 +35,6 @@ export const AuthProvider = ({ children }) => {
     const payload = password ? { email, password } : { email };
     const res = await api.post('/auth/login', payload);
     localStorage.setItem('argus_token', res.data.access_token);
-    if (res.data.user?.email) {
-      localStorage.setItem('argus_last_email', res.data.user.email);
-    }
     setUser(res.data.user);
     setOrganization(res.data.organization);
     return res.data;
@@ -46,9 +43,6 @@ export const AuthProvider = ({ children }) => {
   const registerOrg = async (formData) => {
     const res = await api.post('/auth/register-organization', formData);
     localStorage.setItem('argus_token', res.data.access_token);
-    if (res.data.user?.email) {
-      localStorage.setItem('argus_last_email', res.data.user.email);
-    }
     setUser(res.data.user);
     setOrganization(res.data.organization);
     return res.data;
@@ -57,9 +51,6 @@ export const AuthProvider = ({ children }) => {
   const googleLogin = async (googleUserData) => {
     const res = await api.post('/auth/google-login', googleUserData);
     localStorage.setItem('argus_token', res.data.access_token);
-    if (res.data.user?.email) {
-      localStorage.setItem('argus_last_email', res.data.user.email);
-    }
     setUser(res.data.user);
     setOrganization(res.data.organization);
     return res.data;
@@ -68,9 +59,6 @@ export const AuthProvider = ({ children }) => {
   const googleRegisterOrg = async (formData) => {
     const res = await api.post('/auth/google-register-org', formData);
     localStorage.setItem('argus_token', res.data.access_token);
-    if (res.data.user?.email) {
-      localStorage.setItem('argus_last_email', res.data.user.email);
-    }
     setUser(res.data.user);
     setOrganization(res.data.organization);
     return res.data;
@@ -78,7 +66,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem('argus_token');
-    // Keep 'argus_last_email' intact so re-login knows the user's account without opening a modal
+    localStorage.removeItem('argus_last_email');
     setUser(null);
     setOrganization(null);
   };

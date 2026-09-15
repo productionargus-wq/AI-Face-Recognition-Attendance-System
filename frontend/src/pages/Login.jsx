@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -12,13 +12,14 @@ import {
   RefreshCw, 
   Sparkles
 } from 'lucide-react';
-import api from '../utils/api';
+
+const GOOGLE_CLIENT_ID = '640635826843-g3jv0g9jfk79hohe6b1t1vbr60fegkut.apps.googleusercontent.com';
 
 export const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
-  const [faceScanStatus, setFaceScanStatus] = useState('IDLE'); // 'IDLE', 'SCANNING', 'SUCCESS', 'ERROR'
+  const [faceScanStatus, setFaceScanStatus] = useState('IDLE');
   
   const videoRef = useRef(null);
   const { user, googleLogin } = useAuth();
@@ -63,73 +64,36 @@ export const Login = () => {
     return () => stopCamera();
   }, []);
 
-  const handleFaceLogin = async () => {
-    setFaceScanStatus('SCANNING');
-    setError('');
-    
-    // Quick biometric verification simulation or capture
-    setTimeout(async () => {
-      try {
-        const res = await googleLogin({ email: 'alex.vance@argustech.ai', name: 'Alex Vance' });
-        setFaceScanStatus('SUCCESS');
-        setTimeout(() => {
-          navigate(res.user.role === 'org_admin' ? '/admin' : '/portal');
-        }, 1200);
-      } catch (err) {
-        setFaceScanStatus('ERROR');
-        setError('Face verification failed. Please sign in with your registered Google account.');
-      }
-    }, 1500);
+  // Decode Google credential JWT to extract email and name
+  const decodeGoogleJwt = (credential) => {
+    try {
+      const payload = credential.split('.')[1];
+      const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+      return { email: decoded.email, name: decoded.name };
+    } catch (e) {
+      console.error('Failed to decode Google credential:', e);
+      return null;
+    }
   };
 
-  const handleGoogleSignIn = async () => {
+  // Handle Google OAuth callback
+  const handleGoogleCallback = useCallback(async (response) => {
     setError('');
     setLoading(true);
 
     try {
-      // 1. Get the registered organisation email stored on this browser
-      let email = localStorage.getItem('argus_last_email');
-
-      // 2. If not stored locally, query the backend for the most recently registered organisation admin
-      if (!email) {
-        try {
-          const res = await api.get('/auth/last-registered-admin');
-          if (res.data?.email) {
-            email = res.data.email;
-            localStorage.setItem('argus_last_email', email);
-          }
-        } catch (e) {
-          console.warn('Could not retrieve last registered admin account:', e);
-        }
-      }
-
-      if (!email) {
-        setError('No registered organisation found. Please register your organisation first.');
+      const userData = decodeGoogleJwt(response.credential);
+      if (!userData || !userData.email) {
+        setError('Could not retrieve your Google account details. Please try again.');
         setLoading(false);
         return;
       }
 
-      let res;
-      try {
-        res = await googleLogin({
-          email: email,
-          name: email.split('@')[0]
-        });
-      } catch (loginErr) {
-        // If the stored local email was rejected, clear it and query the server's latest registered organisation
-        localStorage.removeItem('argus_last_email');
-        const fallbackRes = await api.get('/auth/last-registered-admin');
-        if (fallbackRes.data?.email && fallbackRes.data.email !== email) {
-          email = fallbackRes.data.email;
-          localStorage.setItem('argus_last_email', email);
-          res = await googleLogin({
-            email: email,
-            name: email.split('@')[0]
-          });
-        } else {
-          throw loginErr;
-        }
-      }
+      const res = await googleLogin({
+        email: userData.email,
+        name: userData.name,
+        google_token: response.credential
+      });
 
       if (res.user.role === 'org_admin' || res.user.role === 'super_admin') {
         navigate('/admin');
@@ -137,12 +101,49 @@ export const Login = () => {
         navigate('/portal');
       }
     } catch (err) {
-      localStorage.removeItem('argus_last_email');
-      const detail = err.response?.data?.detail || 'Access Denied: Your Google account is not registered. Please register your organisation first.';
+      const detail = err.response?.data?.detail || 'Access Denied: Your Google account is not registered with any organisation. Please register your organisation first.';
       setError(detail);
     } finally {
       setLoading(false);
     }
+  }, [googleLogin, navigate]);
+
+  // Handle "Continue with Google" button click — triggers Google One Tap / popup
+  const handleGoogleSignIn = () => {
+    setError('');
+    setLoading(true);
+
+    if (!window.google?.accounts?.id) {
+      setError('Google Sign-In is still loading. Please wait a moment and try again.');
+      setLoading(false);
+      return;
+    }
+
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: handleGoogleCallback,
+      auto_select: false,
+      cancel_on_tap_outside: true,
+    });
+
+    // Use prompt() for One Tap, but if it's dismissed/unavailable, fall back to renderButton approach
+    window.google.accounts.id.prompt((notification) => {
+      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+        // One Tap not available (e.g. user dismissed before, or 3rd party cookies blocked)
+        // Fall back to popup mode
+        const popupBtn = document.getElementById('google-signin-fallback');
+        if (popupBtn) {
+          window.google.accounts.id.renderButton(popupBtn, {
+            theme: 'outline',
+            size: 'large',
+            width: '100%',
+            text: 'continue_with',
+          });
+          popupBtn.querySelector('div[role="button"]')?.click();
+        }
+        setLoading(false);
+      }
+    });
   };
 
   return (
@@ -186,7 +187,7 @@ export const Login = () => {
             Sign In
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Sign in with your face or account details.
+            Sign in with your Google account to access your organisation dashboard.
           </p>
         </div>
 
@@ -199,9 +200,9 @@ export const Login = () => {
                 <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
                   FACE RECOGNITION
                 </span>
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  CAMERA READY
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  COMING SOON
                 </span>
               </div>
 
@@ -248,30 +249,21 @@ export const Login = () => {
               </div>
             </div>
 
-            {/* Quick Action Button for Face Login */}
+            {/* Face Login Button — Disabled until implemented */}
             <div>
               <button
                 type="button"
-                onClick={handleFaceLogin}
-                disabled={faceScanStatus === 'SCANNING'}
-                className="mt-4 w-full py-2.5 px-4 rounded-xl bg-[#0080ff] hover:bg-blue-600 active:scale-[0.99] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-70 cursor-pointer"
+                disabled={true}
+                className="mt-4 w-full py-2.5 px-4 rounded-xl bg-slate-300 text-slate-500 font-bold text-xs flex items-center justify-center gap-2 shadow-xs cursor-not-allowed"
+                title="Face recognition login will be available soon"
               >
-                {faceScanStatus === 'SCANNING' ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Verifying Face Vector...
-                  </>
-                ) : (
-                  <>
-                    <ScanFace className="w-4 h-4" />
-                    Sign In with Face
-                  </>
-                )}
+                <ScanFace className="w-4 h-4" />
+                Sign In with Face (Coming Soon)
               </button>
 
               <div className="mt-2 text-center text-[10px] text-slate-400 font-medium flex items-center justify-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-                Optical sensor active • Fast & secure
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                Face recognition login is under development
               </div>
             </div>
           </div>
@@ -303,8 +295,11 @@ export const Login = () => {
                   <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
                   <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
                 </svg>
-                <span>{loading ? 'Signing in with Google...' : 'Continue with Google'}</span>
+                <span>{loading ? 'Signing in...' : 'Continue with Google'}</span>
               </button>
+
+              {/* Hidden fallback container for Google rendered button */}
+              <div id="google-signin-fallback" className="hidden mt-2" />
             </div>
 
             {/* Need an Account Footer Link */}

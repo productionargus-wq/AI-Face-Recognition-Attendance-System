@@ -210,46 +210,6 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user_payload
     user_out = {k: v for k, v in user.items() if k != "hashed_password"}
     return {"user": user_out, "organization": org}
 
-@router.get("/last-registered-admin")
-async def get_last_registered_admin():
-    """
-    Returns the email of the most recently registered organization admin.
-    Used for instant one-click sign-in without modal popups.
-    """
-    # 1. Check most recently registered organisation in 'organisations'
-    orgs = await store.find_many(
-        "organisations",
-        {},
-        sort_key="created_at",
-        sort_desc=True,
-        limit=1
-    )
-    if orgs and orgs[0].get("contact_email"):
-        return {"email": orgs[0].get("contact_email"), "name": orgs[0].get("name")}
-
-    # 2. Check admin users in 'users'
-    admin_users = await store.find_many(
-        "users", 
-        {"role": UserRole.ORG_ADMIN, "is_active": True}, 
-        sort_key="created_at", 
-        sort_desc=True, 
-        limit=1
-    )
-    if admin_users:
-        return {"email": admin_users[0].get("email"), "name": admin_users[0].get("name")}
-    
-    users = await store.find_many(
-        "users", 
-        {"is_active": True}, 
-        sort_key="created_at", 
-        sort_desc=True, 
-        limit=1
-    )
-    if users:
-        return {"email": users[0].get("email"), "name": users[0].get("name")}
-        
-    return {"email": None, "name": None}
-
 @router.get("/health")
 def health_route():
     return {"status": "healthy"}
@@ -300,7 +260,7 @@ async def google_register_organization(payload: GoogleRegisterOrgRequest):
             detail=f"This Google account is already registered as an active employee under '{org_name_str}'. You cannot register a new organization with this email."
         )
 
-    # 3. Check if an active user with this email already exists
+    # 3. Check if an active user with this email already exists as org_admin (re-registration)
     if existing_user and existing_user.get("role") == UserRole.ORG_ADMIN:
         existing_org = await store.find_one("organizations", {"id": existing_user.get("organization_id")})
         if not existing_org:
@@ -389,30 +349,26 @@ async def google_register_organization(payload: GoogleRegisterOrgRequest):
 @router.post("/google-login", response_model=LoginResponse)
 async def google_login(payload: GoogleLoginRequest):
     """
-    Unified Google OAuth login for:
-    1. Organization Admins / Managers
-    2. Enrolled Employees (registered by their organization)
-    If the email is not registered with any organization, raises HTTP 403 Access Denied.
+    Secure Google OAuth login.
+    Only allows login for emails that are already registered as:
+    1. Organization Admins (registered via /google-register-org)
+    2. Enrolled Employees (added by their org admin)
+    If the email is not registered, returns HTTP 403 — no auto-creation, no fallback.
     """
     email = payload.email.strip().lower()
 
-    # 1. Check if user exists in 'users' collection
+    # 1. Check if this email exists as an active user in 'users' collection
     user = await store.find_one("users", {"email": email, "is_active": True})
     if user:
         org_id = user.get("organization_id")
-        org = await store.find_one("organisations", {"id": org_id}) if org_id else None
-        if not org and user.get("role") == UserRole.ORG_ADMIN:
-            org = await store.find_one("organisations", {"contact_email": email})
-            if org and not org_id:
-                await store.update_one("users", {"id": user["id"]}, {"organization_id": org["id"]})
-                user["organization_id"] = org["id"]
+        org = await store.find_one("organizations", {"id": org_id}) if org_id else None
 
         token_data = {
             "sub": user["id"],
             "email": user["email"],
             "name": user["name"],
             "role": user.get("role", UserRole.ORG_ADMIN),
-            "org_id": user.get("organization_id")
+            "org_id": org_id
         }
         if user.get("employee_id"):
             token_data["emp_id"] = user["employee_id"]
@@ -420,37 +376,13 @@ async def google_login(payload: GoogleLoginRequest):
         user_out = {k: v for k, v in user.items() if k != "hashed_password"}
         return LoginResponse(access_token=token, user=user_out, organization=org)
 
-    # 2. Check if email belongs to a registered organisation in 'organisations'
-    org = await store.find_one("organisations", {"contact_email": email})
-    if org:
-        # Auto-create the Org Admin user record in 'users' so they can log in seamlessly
-        admin_user = User(
-            organization_id=org["id"],
-            name=payload.name or org.get("name") or email.split("@")[0],
-            email=email,
-            hashed_password=GOOGLE_AUTH_DUMMY_HASH,
-            role=UserRole.ORG_ADMIN,
-            is_active=True
-        ).dict()
-        await store.insert_one("users", admin_user)
-
-        token_data = {
-            "sub": admin_user["id"],
-            "email": admin_user["email"],
-            "name": admin_user["name"],
-            "role": UserRole.ORG_ADMIN,
-            "org_id": org["id"]
-        }
-        token = create_access_token(token_data)
-        user_out = {k: v for k, v in admin_user.items() if k != "hashed_password"}
-        return LoginResponse(access_token=token, user=user_out, organization=org)
-
-    # 3. Check if user is an enrolled Employee in any organization
+    # 2. Check if this email is an enrolled employee (but doesn't have a user record yet)
     emp = await store.find_one("employees", {"email": email, "is_active": True})
     if emp:
         org_id = emp["organization_id"]
-        org = await store.find_one("organisations", {"id": org_id})
-        
+        org = await store.find_one("organizations", {"id": org_id})
+
+        # Create user record for this enrolled employee
         emp_user = User(
             organization_id=org_id,
             name=f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip() or (payload.name or email.split("@")[0]),
@@ -474,7 +406,7 @@ async def google_login(payload: GoogleLoginRequest):
         user_out = {k: v for k, v in emp_user.items() if k != "hashed_password"}
         return LoginResponse(access_token=token, user=user_out, organization=org)
 
-    # 4. If neither Org Admin nor Enrolled Employee, deny access
+    # 3. Email is NOT registered anywhere — deny access
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail=f"Access Denied: Your Google account ({email}) is not registered with any organisation. Please ask your administrator to enroll your email, or register a new organisation."
