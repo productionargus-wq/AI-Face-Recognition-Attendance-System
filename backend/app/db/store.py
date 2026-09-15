@@ -129,6 +129,15 @@ class UnifiedDataStore:
                 if "_id" in mongo_doc:
                     del mongo_doc["_id"]
                 await db[collection].insert_one(mongo_doc)
+                
+                # Mirror to 'organisations' and 'organisation' so users see their records regardless of UK/US spelling or singular/plural
+                if collection == "organizations":
+                    try:
+                        await db["organisations"].update_one({"id": mongo_doc.get("id")}, {"$set": mongo_doc.copy()}, upsert=True)
+                        await db["organisation"].update_one({"id": mongo_doc.get("id")}, {"$set": mongo_doc.copy()}, upsert=True)
+                    except Exception:
+                        pass
+                        
                 logger.info(f"MongoDB stored '{collection}': id={doc.get('id')}, name={doc.get('name')}")
             except Exception as e:
                 logger.error(f"MongoDB insert error in '{collection}': {e}", exc_info=True)
@@ -145,6 +154,12 @@ class UnifiedDataStore:
         if db is not None:
             try:
                 await db[collection].update_one(query, {"$set": update})
+                if collection == "organizations":
+                    try:
+                        await db["organisations"].update_one(query, {"$set": update})
+                        await db["organisation"].update_one(query, {"$set": update})
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.warning(f"Error in MongoDB update_one {collection}: {e}")
 

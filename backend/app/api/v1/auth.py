@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, EmailStr
 from typing import Optional, Dict, Any
 from app.models.schemas import (
-    Organization, OrganizationCreate, User, UserCreate, UserRole, AuditLog,
+    generate_uuid, Organization, OrganizationCreate, User, UserCreate, UserRole, AuditLog,
     GoogleLoginRequest, GoogleRegisterOrgRequest
 )
 from app.core.security import get_password_hash, verify_password, create_access_token, get_current_user_payload
@@ -291,12 +291,32 @@ async def google_register_organization(payload: GoogleRegisterOrgRequest):
     # 3. Check if an active user with this email already exists
     if existing_user and existing_user.get("role") == UserRole.ORG_ADMIN:
         existing_org = await store.find_one("organizations", {"id": existing_user.get("organization_id")})
+        if not existing_org:
+            # Organization was missing in MongoDB! Create it now.
+            existing_org = Organization(
+                id=existing_user.get("organization_id") or generate_uuid(),
+                name=org_name,
+                slug=slug,
+                gstin=gstin,
+                contact_email=email
+            ).dict()
+            await store.insert_one("organizations", existing_org)
+            if not existing_user.get("organization_id"):
+                await store.update_one("users", {"id": existing_user["id"]}, {"organization_id": existing_org["id"]})
+        else:
+            # Update organization name and details if re-registering
+            update_fields = {"name": org_name, "slug": slug}
+            if gstin:
+                update_fields["gstin"] = gstin
+            await store.update_one("organizations", {"id": existing_org["id"]}, update_fields)
+            existing_org.update(update_fields)
+
         token_data = {
             "sub": existing_user["id"],
             "email": existing_user["email"],
             "name": existing_user["name"],
             "role": UserRole.ORG_ADMIN,
-            "org_id": existing_user.get("organization_id")
+            "org_id": existing_user.get("organization_id") or existing_org["id"]
         }
         token = create_access_token(token_data)
         user_out = {k: v for k, v in existing_user.items() if k != "hashed_password"}
