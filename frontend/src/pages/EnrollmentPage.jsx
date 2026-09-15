@@ -14,12 +14,16 @@ import {
   ChevronDown,
   Sparkles,
   Terminal,
-  RefreshCw
+  RefreshCw,
+  Plus,
+  UserPlus
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { EnrollEmployeeModal } from '../components/EnrollEmployeeModal';
 
 export const EnrollmentPage = () => {
   const { organization } = useAuth();
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
@@ -198,18 +202,29 @@ export const EnrollmentPage = () => {
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
       {/* 1. Header Banner */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0 shadow-xs">
-          <Fingerprint className="w-5 h-5" />
+      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0 shadow-xs">
+            <Fingerprint className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-sm sm:text-base font-bold font-mono tracking-wider text-slate-900 uppercase">
+              BIOMETRIC ENROLLMENT
+            </h1>
+            <p className="text-xs text-slate-500 font-medium">
+              Register personnel credentials and vectorize 128-dimensional facial embeddings.
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-sm sm:text-base font-bold font-mono tracking-wider text-slate-900 uppercase">
-            BIOMETRIC ENROLLMENT
-          </h1>
-          <p className="text-xs text-slate-500 font-medium">
-            Register personnel credentials and vectorize 128-dimensional facial embeddings.
-          </p>
-        </div>
+
+        <button
+          type="button"
+          onClick={() => setIsModalOpen(true)}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all self-start sm:self-auto cursor-pointer"
+        >
+          <Plus className="w-4 h-4" />
+          Add Employee
+        </button>
       </div>
 
       {/* 2. Main 2-Column Section */}
@@ -523,6 +538,16 @@ export const EnrollmentPage = () => {
           </table>
         </div>
       </div>
+
+      {/* Replicated Add Employee Modal from Admin Dashboard */}
+      <EnrollEmployeeModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onEmployeeCreated={() => {
+          fetchRecentEmployees();
+          setIsModalOpen(false);
+        }}
+      />
     </div>
   );
 };

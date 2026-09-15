@@ -20,6 +20,18 @@ class ManualOverridePayload(BaseModel):
     reason: str
     hours: Optional[float] = 8.5
 
+def format_time_12h(time_str: str) -> str:
+    try:
+        parts = time_str.split(":")
+        h, m = int(parts[0]), int(parts[1])
+        suffix = "AM" if h < 12 else "PM"
+        h12 = h % 12
+        if h12 == 0:
+            h12 = 12
+        return f"{h12:02d}:{m:02d} {suffix}"
+    except Exception:
+        return time_str
+
 @operations_router.post("/attendance/manual")
 async def create_manual_override(
     payload: ManualOverridePayload,
@@ -32,6 +44,8 @@ async def create_manual_override(
 
     override_id = f"OVR-{uuid.uuid4().hex[:6].upper()}"
     emp_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+    punch_in_12h = format_time_12h(payload.punch_in)
+    punch_out_12h = format_time_12h(payload.punch_out)
 
     record = {
         "id": override_id,
@@ -41,8 +55,10 @@ async def create_manual_override(
         "employee_code": emp.get("employee_code", "EMP"),
         "department": emp.get("department", "Operations"),
         "date": payload.log_date,
-        "punch_in": payload.punch_in,
-        "punch_out": payload.punch_out,
+        "punch_in": punch_in_12h,
+        "punch_out": punch_out_12h,
+        "check_in_time": punch_in_12h,
+        "check_out_time": punch_out_12h,
         "hours": f"{payload.hours} hrs",
         "total_hours": payload.hours,
         "shift": payload.shift,
@@ -66,6 +82,10 @@ async def create_manual_override(
     if existing_att:
         await store.update_one("attendance", {"id": existing_att["id"]}, {
             "status": "PRESENT",
+            "check_in": f"{payload.log_date}T{payload.punch_in}:00",
+            "check_out": f"{payload.log_date}T{payload.punch_out}:00",
+            "check_in_time": punch_in_12h,
+            "check_out_time": punch_out_12h,
             "total_hours": payload.hours,
             "verification_mode": "MANUAL_OVERRIDE"
         })
@@ -80,6 +100,8 @@ async def create_manual_override(
             "date": payload.log_date,
             "check_in": f"{payload.log_date}T{payload.punch_in}:00",
             "check_out": f"{payload.log_date}T{payload.punch_out}:00",
+            "check_in_time": punch_in_12h,
+            "check_out_time": punch_out_12h,
             "total_hours": payload.hours,
             "status": "PRESENT",
             "verification_mode": "MANUAL_OVERRIDE",

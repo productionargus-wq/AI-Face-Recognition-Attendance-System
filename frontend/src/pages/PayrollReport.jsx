@@ -537,10 +537,10 @@ export const PayrollReport = () => {
                           {log.date}
                         </td>
                         <td className="py-3.5 px-4 font-mono font-bold text-slate-800">
-                          {log.check_in ? strTime(log.check_in) : '--:--'}
+                          {log.check_in_time || (log.check_in ? strTime(log.check_in) : '--:--')}
                         </td>
                         <td className="py-3.5 px-4 font-mono font-bold text-slate-800">
-                          {log.check_out ? strTime(log.check_out) : '--:--'}
+                          {log.check_out_time || (log.check_out ? strTime(log.check_out) : '--:--')}
                         </td>
                         <td className="py-3.5 px-4 font-bold text-slate-900">
                           {log.total_hours || 0} hrs
@@ -579,11 +579,16 @@ export const PayrollReport = () => {
   );
 };
 
-function strTime(isoStr) {
+function strTime(isoOrTimeStr) {
+  if (!isoOrTimeStr) return '--:--';
+  if (typeof isoOrTimeStr === 'string' && !isoOrTimeStr.includes('T')) {
+    return isoOrTimeStr;
+  }
   try {
-    const d = new Date(isoStr);
+    const d = new Date(isoOrTimeStr);
+    if (isNaN(d.getTime())) return String(isoOrTimeStr);
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   } catch (e) {
-    return isoStr;
+    return String(isoOrTimeStr);
   }
 }

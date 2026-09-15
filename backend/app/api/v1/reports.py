@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.responses import StreamingResponse
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import io
 import pandas as pd
 from app.models.schemas import Attendance, AttendanceStatus
@@ -11,6 +11,9 @@ from app.services.face_service import decode_base64_image, extract_face_embeddin
 from app.services.liveness_service import liveness_service
 from app.core.config import settings
 from pydantic import BaseModel
+
+# Standard Indian Standard Time (UTC+5:30)
+IST_TZ = timezone(timedelta(hours=5, minutes=30))
 
 reports_router = APIRouter(prefix="/reports", tags=["Export Reports"])
 attendance_router = APIRouter(prefix="/attendance", tags=["Attendance Capture & Logs"])
@@ -79,9 +82,12 @@ async def kiosk_punch(payload: KioskPunchPayload):
             detail=f"Face not recognized in {org.get('name')}. Please make sure you are enrolled."
         )
 
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")
-    now_dt = datetime.utcnow()
-    
+    # Calculate exact local time in organization's timezone
+    now_utc = datetime.now(timezone.utc)
+    now_local = now_utc.astimezone(IST_TZ)
+    today_str = now_local.strftime("%Y-%m-%d")
+    time_str = now_local.strftime("%I:%M:%S %p")
+
     existing_record = await store.find_one("attendance", {
         "organization_id": org_id,
         "employee_id": matched_emp["id"],
@@ -95,7 +101,7 @@ async def kiosk_punch(payload: KioskPunchPayload):
     grace = org.get("work_hours", {}).get("late_grace_minutes", 15)
     
     start_h, start_m = map(int, work_start.split(":"))
-    cur_h, cur_m = now_dt.hour, now_dt.minute
+    cur_h, cur_m = now_local.hour, now_local.minute
     total_start_mins = start_h * 60 + start_m + grace
     total_cur_mins = cur_h * 60 + cur_m
 
@@ -104,20 +110,25 @@ async def kiosk_punch(payload: KioskPunchPayload):
 
     if not existing_record:
         punch_action = "CHECK_IN"
-        new_att = Attendance(
-            organization_id=org_id,
-            employee_id=matched_emp["id"],
-            employee_code=matched_emp["employee_code"],
-            employee_name=f"{matched_emp['first_name']} {matched_emp['last_name']}",
-            department=matched_emp.get("department", "General"),
-            date=today_str,
-            check_in=now_dt,
-            status=record_status,
-            verification_mode="FACE_KIOSK",
-            confidence_score=confidence,
-            liveness_verified=True,
-            kiosk_id=payload.kiosk_id
-        ).dict()
+        new_att = {
+            "id": f"ATT-{now_utc.strftime('%Y%m%d%H%M%S')}-{matched_emp['employee_code']}",
+            "organization_id": org_id,
+            "employee_id": matched_emp["id"],
+            "employee_code": matched_emp["employee_code"],
+            "employee_name": f"{matched_emp['first_name']} {matched_emp['last_name']}",
+            "department": matched_emp.get("department", "General"),
+            "date": today_str,
+            "check_in": now_utc.isoformat(),
+            "check_in_time": time_str,
+            "check_out": None,
+            "check_out_time": None,
+            "total_hours": 0.0,
+            "status": record_status,
+            "verification_mode": "FACE_KIOSK",
+            "confidence_score": confidence,
+            "liveness_verified": True,
+            "kiosk_id": payload.kiosk_id
+        }
         await store.insert_one("attendance", new_att)
         res_record = new_att
     else:
@@ -127,19 +138,21 @@ async def kiosk_punch(payload: KioskPunchPayload):
             try:
                 check_in_time = datetime.fromisoformat(check_in_time.replace("Z", "+00:00"))
             except Exception:
-                check_in_time = now_dt
+                check_in_time = now_utc
         elif not isinstance(check_in_time, datetime):
-            check_in_time = now_dt
+            check_in_time = now_utc
 
-        duration_sec = (now_dt - check_in_time).total_seconds()
+        duration_sec = (now_utc - check_in_time).total_seconds()
         total_hours = round(max(0.1, duration_sec / 3600.0), 2)
         
         await store.update_one("attendance", {"id": existing_record["id"]}, {
-            "check_out": now_dt.isoformat(),
+            "check_out": now_utc.isoformat(),
+            "check_out_time": time_str,
             "total_hours": total_hours,
             "confidence_score": max(confidence, existing_record.get("confidence_score", 0))
         })
-        existing_record["check_out"] = now_dt
+        existing_record["check_out"] = now_utc.isoformat()
+        existing_record["check_out_time"] = time_str
         existing_record["total_hours"] = total_hours
         res_record = existing_record
 
@@ -149,7 +162,7 @@ async def kiosk_punch(payload: KioskPunchPayload):
         "employee_name": f"{matched_emp['first_name']} {matched_emp['last_name']}",
         "employee_code": matched_emp["employee_code"],
         "department": matched_emp.get("department", "General"),
-        "timestamp": now_dt.strftime("%I:%M:%S %p"),
+        "timestamp": time_str,
         "date": today_str,
         "attendance_status": res_record.get("status", "PRESENT"),
         "confidence": round(confidence * 100, 1),
@@ -159,7 +172,7 @@ async def kiosk_punch(payload: KioskPunchPayload):
 @attendance_router.get("/today")
 async def get_today_attendance(auth_ctx: Dict[str, Any] = Depends(require_org_admin)):
     org_id = auth_ctx["org_id"]
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+    today_str = datetime.now(IST_TZ).strftime("%Y-%m-%d")
     
     records = await store.find_many("attendance", {
         "organization_id": org_id,
@@ -187,6 +200,7 @@ async def get_today_attendance(auth_ctx: Dict[str, Any] = Depends(require_org_ad
 
 @attendance_router.get("/history")
 async def get_attendance_history(
+    employee_id: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     department: Optional[str] = None,
@@ -195,6 +209,9 @@ async def get_attendance_history(
     org_id = auth_ctx["org_id"]
     query = {"organization_id": org_id}
     
+    if employee_id:
+        query["employee_id"] = employee_id
+
     if start_date and end_date:
         query["date"] = {"$gte": start_date, "$lte": end_date}
     elif start_date:

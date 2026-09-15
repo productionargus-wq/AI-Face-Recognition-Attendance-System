@@ -360,12 +360,12 @@ export const AdminDashboard = () => {
 
                   {/* Punch In */}
                   <td className="p-3.5 font-mono text-xs font-bold text-blue-600">
-                    {rec.check_in ? (typeof rec.check_in === 'string' && rec.check_in.includes('T') ? new Date(rec.check_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : rec.check_in) : '—'}
+                    {rec.check_in_time || (rec.check_in ? (typeof rec.check_in === 'string' && rec.check_in.includes('T') ? new Date(rec.check_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : rec.check_in) : '—')}
                   </td>
 
                   {/* Punch Out */}
                   <td className="p-3.5 font-mono text-xs text-slate-700">
-                    {rec.check_out ? (
+                    {rec.check_out_time || (rec.check_out ? (
                       typeof rec.check_out === 'string' && rec.check_out.includes('T')
                         ? new Date(rec.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                         : rec.check_out
@@ -375,7 +375,7 @@ export const AdminDashboard = () => {
                           ACTIVE (IN SHIFT)
                         </span>
                       ) : '—'
-                    )}
+                    ))}
                   </td>
 
                   {/* Dept */}
