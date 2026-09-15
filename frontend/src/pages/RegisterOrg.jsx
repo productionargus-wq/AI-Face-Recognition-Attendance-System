@@ -38,10 +38,6 @@ export const RegisterOrg = () => {
       setError('Please enter your Organisation Name first.');
       return;
     }
-    if (!formData.gstin.trim()) {
-      setError('Please enter your Company GSTIN Number first.');
-      return;
-    }
     setError('');
     setLoading(true);
 
@@ -53,7 +49,7 @@ export const RegisterOrg = () => {
 
       await googleRegisterOrg({
         org_name: cleanName,
-        gstin: formData.gstin.trim().toUpperCase(),
+        gstin: formData.gstin?.trim() ? formData.gstin.trim().toUpperCase() : null,
         email: userEmail,
         name: userName
       });
@@ -200,21 +196,20 @@ export const RegisterOrg = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  COMPANY GSTIN NUMBER *
+                  COMPANY GSTIN NUMBER (OPTIONAL)
                 </label>
                 <div className="relative">
                   <input
                     type="text"
                     name="gstin"
-                    required
                     value={formData.gstin}
                     onChange={handleChange}
-                    placeholder="33AAAAANM1RZN"
+                    placeholder="33AAAAANM1RZN (Optional)"
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase font-bold tracking-wide"
                   />
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1 font-mono">
-                  Must be a valid 15-character Goods and Services Tax Identification Number.
+                  Optional 15-character Goods and Services Tax Identification Number.
                 </p>
               </div>
 

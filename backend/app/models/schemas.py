@@ -40,7 +40,7 @@ class GoogleLoginRequest(BaseModel):
 
 class GoogleRegisterOrgRequest(BaseModel):
     org_name: str
-    gstin: str
+    gstin: Optional[str] = None
     email: EmailStr
     name: Optional[str] = None
     google_token: Optional[str] = None

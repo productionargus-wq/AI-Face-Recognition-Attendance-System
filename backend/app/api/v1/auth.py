@@ -238,35 +238,42 @@ async def get_last_registered_admin():
         
     return {"email": None, "name": None}
 
+@router.get("/health")
+def health_route():
+    return {"status": "healthy"}
+
 @router.post("/google-register-org", response_model=LoginResponse)
 async def google_register_organization(payload: GoogleRegisterOrgRequest):
     """
     Onboard a new organization via Google OAuth.
-    Captures Organisation Name, GSTIN number, and uses the verified Google email and name.
+    Captures Organisation Name, GSTIN number (optional), and uses the verified Google email and name.
     Creates Tenant + Org Admin user.
     """
     org_name = payload.org_name.strip()
-    gstin = payload.gstin.strip().upper()
+    gstin = payload.gstin.strip().upper() if payload.gstin and payload.gstin.strip() else None
     email = payload.email.strip().lower()
     admin_name = (payload.name or email.split("@")[0]).strip()
 
     if not org_name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Organisation name is required.")
-    if not gstin:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Company GSTIN number is required.")
 
     slug = re.sub(r'[^a-zA-Z0-9]', '-', org_name.lower()).strip('-')
 
     # Run verification queries in parallel for ultra-fast response
+    existing_gstin_task = store.find_one("organizations", {"gstin": gstin}) if gstin else asyncio.sleep(0, result=None)
+    active_emp_task = store.find_one("employees", {"email": email, "is_active": True})
+    existing_user_task = store.find_one("users", {"email": email, "is_active": True})
+    existing_slug_task = store.find_one("organizations", {"slug": slug})
+
     existing_gstin, active_employee, existing_user, existing_slug = await asyncio.gather(
-        store.find_one("organizations", {"gstin": gstin}),
-        store.find_one("employees", {"email": email, "is_active": True}),
-        store.find_one("users", {"email": email, "is_active": True}),
-        store.find_one("organizations", {"slug": slug})
+        existing_gstin_task,
+        active_emp_task,
+        existing_user_task,
+        existing_slug_task
     )
 
-    # 1. Check if organization with this GSTIN already exists
-    if existing_gstin:
+    # 1. Check if organization with this GSTIN already exists (only if GSTIN provided)
+    if gstin and existing_gstin:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"An organization with GSTIN '{gstin}' is already registered ({existing_gstin.get('name')})."
