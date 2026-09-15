@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.core.config import settings
 
@@ -22,9 +22,11 @@ async def connect_to_mongo():
         
         # Create multi-tenant indexes
         await db_manager.db.organizations.create_index("slug", unique=True)
+        await db_manager.db.organizations.create_index("gstin")
         await db_manager.db.users.create_index([("email", 1)], unique=True)
         await db_manager.db.users.create_index([("organization_id", 1)])
         await db_manager.db.employees.create_index([("organization_id", 1), ("employee_code", 1)], unique=True)
+        await db_manager.db.employees.create_index([("email", 1)])
         await db_manager.db.attendance.create_index([("organization_id", 1), ("employee_id", 1), ("date", 1)])
         await db_manager.db.audit_logs.create_index([("organization_id", 1), ("timestamp", -1)])
         await db_manager.db.kiosks.create_index([("organization_id", 1), ("kiosk_key", 1)])

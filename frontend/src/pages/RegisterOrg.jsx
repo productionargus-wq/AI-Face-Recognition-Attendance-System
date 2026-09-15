@@ -58,6 +58,8 @@ export const RegisterOrg = () => {
         name: userName
       });
 
+      localStorage.setItem('argus_last_email', userEmail);
+
       // Directly route the CEO/Manager into the Admin Dashboard
       navigate('/admin');
     } catch (err) {

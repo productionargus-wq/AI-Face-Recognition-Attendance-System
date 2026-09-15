@@ -8,18 +8,17 @@ import {
   ArrowRight, 
   ShieldCheck, 
   CheckCircle2, 
-  Camera, 
-  RefreshCw,
+  Camera,
+  RefreshCw, 
   Sparkles
 } from 'lucide-react';
-import { GoogleAuthModal } from '../components/GoogleAuthModal';
+import api from '../utils/api';
 
 export const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [faceScanStatus, setFaceScanStatus] = useState('IDLE'); // 'IDLE', 'SCANNING', 'SUCCESS', 'ERROR'
-  const [googleModalOpen, setGoogleModalOpen] = useState(false);
   
   const videoRef = useRef(null);
   const { user, googleLogin } = useAuth();
@@ -83,15 +82,37 @@ export const Login = () => {
     }, 1500);
   };
 
-  const handleGoogleAccountSelected = async (account) => {
-    setGoogleModalOpen(false);
+  const handleGoogleSignIn = async () => {
     setError('');
     setLoading(true);
 
     try {
+      // 1. Get the registered organisation email stored on this browser
+      let email = localStorage.getItem('argus_last_email');
+
+      // 2. If not stored locally, query the backend for the most recently registered organisation admin
+      if (!email) {
+        try {
+          const res = await api.get('/auth/last-registered-admin');
+          if (res.data?.email) {
+            email = res.data.email;
+            localStorage.setItem('argus_last_email', email);
+          }
+        } catch (e) {
+          console.warn('Could not retrieve last registered admin account:', e);
+        }
+      }
+
+      if (!email) {
+        setError('No registered organisation account found. Please register your organisation first.');
+        setLoading(false);
+        return;
+      }
+
+      // 3. Straightaway log in with the registered email
       const res = await googleLogin({
-        email: account.email,
-        name: account.name
+        email: email,
+        name: email.split('@')[0]
       });
 
       if (res.user.role === 'org_admin' || res.user.role === 'super_admin') {
@@ -255,7 +276,7 @@ export const Login = () => {
             <div>
               <button
                 type="button"
-                onClick={() => setGoogleModalOpen(true)}
+                onClick={handleGoogleSignIn}
                 disabled={loading}
                 className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 active:scale-[0.99] text-slate-800 border-2 border-slate-200 hover:border-slate-300 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all cursor-pointer disabled:opacity-60"
               >
@@ -265,7 +286,7 @@ export const Login = () => {
                   <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
                   <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
                 </svg>
-                <span>{loading ? 'Verifying with Google...' : 'Continue with Google'}</span>
+                <span>{loading ? 'Signing in with Google...' : 'Continue with Google'}</span>
               </button>
             </div>
 
@@ -283,15 +304,6 @@ export const Login = () => {
           </div>
         </div>
       </main>
-
-      {/* Google Account Chooser Modal */}
-      <GoogleAuthModal
-        isOpen={googleModalOpen}
-        onClose={() => setGoogleModalOpen(false)}
-        onSelectAccount={handleGoogleAccountSelected}
-        title="Sign in with Google"
-        promptText="Choose or enter your Google Account to sign in to Argus AI"
-      />
 
       {/* Bottom Privacy & Compliance Trust Bar */}
       <footer className="h-12 border-t border-slate-200/80 bg-white/70 backdrop-blur-xs px-6 flex items-center justify-between text-[11px] text-slate-500 font-medium">

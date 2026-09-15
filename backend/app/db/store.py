@@ -36,10 +36,13 @@ class UnifiedDataStore:
                     self._cache[col] = []
 
     def _save_local_storage(self, collection: str):
+        if db_manager.db is not None:
+            # MongoDB is active; skip slow synchronous disk writes to ephemeral filesystem
+            return
         path = self._file_path(collection)
         try:
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(self._cache[collection], f, default=str, indent=2)
+                json.dump(self._cache[collection], f, default=str)
         except Exception as e:
             print(f"Error saving {collection}: {e}")
 

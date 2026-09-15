@@ -31,4 +31,9 @@ api.interceptors.response.use(
   }
 );
 
+// Proactively warm up backend service to eliminate Render free tier cold-start delays
+setTimeout(() => {
+  api.get('/health').catch(() => {});
+}, 100);
+
 export default api;
