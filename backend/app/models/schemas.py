@@ -1,4 +1,4 @@
-﻿from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import uuid
@@ -16,20 +16,34 @@ class WorkHoursConfig(BaseModel):
 class OrganizationCreate(BaseModel):
     name: str
     slug: Optional[str] = None
+    gstin: Optional[str] = None
     contact_email: EmailStr
     admin_name: str
-    admin_password: str
+    admin_password: Optional[str] = None
     work_hours: Optional[WorkHoursConfig] = Field(default_factory=WorkHoursConfig)
 
 class Organization(BaseModel):
     id: str = Field(default_factory=generate_uuid)
     name: str
     slug: str
+    gstin: Optional[str] = None
     contact_email: EmailStr
     logo_url: Optional[str] = None
     work_hours: WorkHoursConfig = Field(default_factory=WorkHoursConfig)
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class GoogleLoginRequest(BaseModel):
+    email: EmailStr
+    name: Optional[str] = None
+    google_token: Optional[str] = None
+
+class GoogleRegisterOrgRequest(BaseModel):
+    org_name: str
+    gstin: str
+    email: EmailStr
+    name: Optional[str] = None
+    google_token: Optional[str] = None
 
 # ----------------- USERS -----------------
 class UserRole:

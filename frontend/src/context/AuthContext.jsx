@@ -48,6 +48,22 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
+  const googleLogin = async (googleUserData) => {
+    const res = await api.post('/auth/google-login', googleUserData);
+    localStorage.setItem('argus_token', res.data.access_token);
+    setUser(res.data.user);
+    setOrganization(res.data.organization);
+    return res.data;
+  };
+
+  const googleRegisterOrg = async (formData) => {
+    const res = await api.post('/auth/google-register-org', formData);
+    localStorage.setItem('argus_token', res.data.access_token);
+    setUser(res.data.user);
+    setOrganization(res.data.organization);
+    return res.data;
+  };
+
   const logout = () => {
     localStorage.removeItem('argus_token');
     setUser(null);
@@ -55,7 +71,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, organization, loading, login, registerOrg, logout }}>
+    <AuthContext.Provider value={{ user, organization, loading, login, registerOrg, googleLogin, googleRegisterOrg, logout }}>
       {children}
     </AuthContext.Provider>
   );

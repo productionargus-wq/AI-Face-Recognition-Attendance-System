@@ -1,9 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { Navbar } from './components/Navbar';
 import { AppLayout } from './components/AppLayout';
-import { Home } from './pages/Home';
 import { Login } from './pages/Login';
 import { RegisterOrg } from './pages/RegisterOrg';
 import { KioskMode } from './pages/KioskMode';
@@ -34,18 +32,8 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Public Landing Page */}
-          <Route
-            path="/"
-            element={
-              <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
-                <Navbar />
-                <main className="flex-1">
-                  <Home />
-                </main>
-              </div>
-            }
-          />
+          {/* Root page loads the newly redesigned Login interface directly */}
+          <Route path="/" element={<Login />} />
 
           {/* Standalone Auth Screens (Screen 1 & Screen 2) */}
           <Route path="/login" element={<Login />} />
