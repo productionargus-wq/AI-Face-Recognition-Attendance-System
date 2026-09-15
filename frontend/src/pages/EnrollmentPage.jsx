@@ -23,12 +23,12 @@ export const EnrollmentPage = () => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
-  // Form State
+  // Form State - Clean blank start for new organizations
   const [formData, setFormData] = useState({
-    fullName: 'Dr. Aris Thorne',
-    employeeId: 'ARG-4092-ENG',
-    department: 'Systems Architecture',
-    email: 'a.thorne@argus-sec.internal',
+    fullName: '',
+    employeeId: '',
+    department: '',
+    email: '',
     assignedSchedule: '08:30 AM - 05:00 PM'
   });
 
@@ -39,33 +39,8 @@ export const EnrollmentPage = () => {
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Recent Terminal Verification Audit table data
-  const [auditList, setAuditList] = useState([
-    {
-      id: 'aud-1',
-      registeredTime: '4:00 PM',
-      employeeName: 'Elena Vance',
-      employeeId: 'ARG-8821-BIO',
-      department: 'Bio-Hardware Eng',
-      status: 'ENROLLED'
-    },
-    {
-      id: 'aud-2',
-      registeredTime: '2:00 PM',
-      employeeName: 'Marcus Brody',
-      employeeId: 'ARG-1104-SEC',
-      department: 'Security Command',
-      status: 'ENROLLED'
-    },
-    {
-      id: 'aud-3',
-      registeredTime: '9:00 AM',
-      employeeName: 'Kaelen Voss',
-      employeeId: 'ARG-3091-AUD',
-      department: 'External Auditor',
-      status: 'RE-CALIBRATE'
-    }
-  ]);
+  // Recent Terminal Verification Audit table data (empty by default)
+  const [auditList, setAuditList] = useState([]);
 
   useEffect(() => {
     startCamera();
@@ -88,9 +63,11 @@ export const EnrollmentPage = () => {
           status: e.has_biometric ? 'ENROLLED' : 'RE-CALIBRATE'
         }));
         setAuditList(mapped);
+      } else {
+        setAuditList([]);
       }
     } catch (err) {
-      console.log('Using default mock audit records');
+      setAuditList([]);
     }
   };
 
@@ -501,7 +478,21 @@ export const EnrollmentPage = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {auditList.map((row) => (
+              {auditList.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-8 text-center text-slate-400">
+                    <div className="flex flex-col items-center justify-center gap-1.5">
+                      <Fingerprint className="w-7 h-7 text-slate-300 stroke-1" />
+                      <p className="text-xs font-bold text-slate-600">
+                        No personnel enrolled yet.
+                      </p>
+                      <p className="text-[11px] text-slate-400 max-w-sm">
+                        Fill in the personnel record above and capture an optical frame to enroll your first employee.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              ) : auditList.map((row) => (
                 <tr key={row.id} className="hover:bg-slate-50/70 transition-colors">
                   <td className="py-3 px-3 font-mono text-slate-600 font-medium">
                     {row.registeredTime}

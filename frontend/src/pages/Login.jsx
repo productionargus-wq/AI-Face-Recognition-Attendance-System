@@ -10,9 +10,7 @@ import {
   CheckCircle2, 
   Camera, 
   RefreshCw,
-  Sparkles,
-  Building2,
-  Users
+  Sparkles
 } from 'lucide-react';
 import { GoogleAuthModal } from '../components/GoogleAuthModal';
 
@@ -269,29 +267,6 @@ export const Login = () => {
                   </svg>
                   <span>{loading ? 'Verifying with Google...' : 'Continue with Google'}</span>
                 </button>
-
-                {/* Role Guidance Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 mb-1">
-                      <Building2 className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Company Admins</span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">
-                      Sign in with the Google email used when registering your organisation.
-                    </p>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 mb-1">
-                      <Users className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Employees & Staff</span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">
-                      Sign in with the Google email registered by your company manager.
-                    </p>
-                  </div>
-                </div>
               </div>
             </div>
 

@@ -74,89 +74,20 @@ export const AdminDashboard = () => {
     }
   };
 
-  // Metrics computation matching Image 1
-  const totalEmployees = todayData.summary?.total_employees || employees.length || 328;
-  const totalRoster = Math.max(totalEmployees, 428);
-  const presentCount = todayData.summary?.present || 302;
-  const lateCount = todayData.summary?.late || 26;
-  const absentCount = todayData.summary?.absent || (totalRoster - presentCount);
+  // Real metrics computation (no mock fallbacks)
+  const totalEmployees = todayData.summary?.total_employees ?? employees.length ?? 0;
+  const totalRoster = totalEmployees;
+  const presentCount = todayData.summary?.present ?? 0;
+  const lateCount = todayData.summary?.late ?? 0;
+  const absentCount = todayData.summary?.absent ?? Math.max(0, totalRoster - presentCount);
 
-  const presentRate = ((presentCount / totalRoster) * 100).toFixed(1);
-  const onTimeRate = (((presentCount - lateCount) / totalRoster) * 100).toFixed(1);
-  const lateRate = ((lateCount / totalRoster) * 100).toFixed(1);
-  const absentRate = ((absentCount / totalRoster) * 100).toFixed(1);
+  const presentRate = totalRoster > 0 ? ((presentCount / totalRoster) * 100).toFixed(1) : '0.0';
+  const onTimeRate = totalRoster > 0 ? (((presentCount - lateCount) / totalRoster) * 100).toFixed(1) : '0.0';
+  const lateRate = totalRoster > 0 ? ((lateCount / totalRoster) * 100).toFixed(1) : '0.0';
+  const absentRate = totalRoster > 0 ? ((absentCount / totalRoster) * 100).toFixed(1) : '0.0';
 
-  // Sample or live records combined
-  const records = todayData.records && todayData.records.length > 0 
-    ? todayData.records 
-    : [
-        {
-          id: 'emp-1',
-          employee_name: 'Marcus Vance',
-          employee_code: 'EMP-8821',
-          department: 'Engineering',
-          check_in: '2026-10-23T09:02:14',
-          check_out: '2026-10-23T18:05:12',
-          shift_status: 'ON-TIME',
-          status: 'PRESENT',
-          avatar_init: 'MV'
-        },
-        {
-          id: 'emp-2',
-          employee_name: 'Elena Rostov',
-          employee_code: 'EMP-90234',
-          department: 'R&D Lab',
-          check_in: '2026-10-23T08:55:30',
-          check_out: '2026-10-23T17:58:30',
-          shift_status: 'ON-TIME',
-          status: 'PRESENT',
-          avatar_init: 'ER'
-        },
-        {
-          id: 'emp-3',
-          employee_name: 'David K. Zhao',
-          employee_code: 'EMP-45129',
-          department: 'Field Ops',
-          check_in: '2026-10-23T09:18:45',
-          check_out: null,
-          shift_status: 'LATE +14M',
-          status: 'PRESENT',
-          avatar_init: 'DZ'
-        },
-        {
-          id: 'emp-4',
-          employee_name: 'Dr. Sarah Jenkins',
-          employee_code: 'EMP-10022',
-          department: 'Chief Executive Officer',
-          check_in: '2026-10-23T08:45:10',
-          check_out: '2026-10-23T18:15:00',
-          shift_status: 'ON-TIME',
-          status: 'PRESENT',
-          avatar_init: 'SJ'
-        },
-        {
-          id: 'emp-5',
-          employee_name: 'Liam Thorne',
-          employee_code: 'EMP-65311',
-          department: 'Product Dev',
-          check_in: null,
-          check_out: null,
-          shift_status: '-',
-          status: 'ABSENT',
-          avatar_init: 'LT'
-        },
-        {
-          id: 'emp-6',
-          employee_name: 'Priya Nair',
-          employee_code: 'EMP-34901',
-          department: 'Operations',
-          check_in: '2026-10-23T09:00:22',
-          check_out: null,
-          shift_status: 'ON-TIME',
-          status: 'PRESENT',
-          avatar_init: 'PN'
-        }
-      ];
+  // Live records only
+  const records = todayData.records || [];
 
   // Filtering records by department & search
   const filteredRecords = records.filter(r => {
@@ -168,6 +99,25 @@ export const AdminDashboard = () => {
       r.department?.toLowerCase().includes(query);
     return matchesDept && matchesQuery;
   });
+
+  // Dynamic department attendance ratios based on actual enrolled employees
+  const departmentStats = React.useMemo(() => {
+    if (!employees || employees.length === 0) return [];
+    const deptMap = {};
+    employees.forEach(emp => {
+      const dept = emp.department || 'General';
+      if (!deptMap[dept]) deptMap[dept] = { total: 0, present: 0 };
+      deptMap[dept].total += 1;
+    });
+    records.forEach(rec => {
+      const dept = rec.department || 'General';
+      if (deptMap[dept]) deptMap[dept].present += 1;
+    });
+    return Object.entries(deptMap).map(([dept, data]) => {
+      const pct = data.total > 0 ? Math.round((data.present / data.total) * 100) : 0;
+      return { dept, present: data.present, total: data.total, pct };
+    });
+  }, [employees, records]);
 
   return (
     <div className="space-y-6">
@@ -381,7 +331,21 @@ export const AdminDashboard = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
-              {filteredRecords.map((rec) => (
+              {filteredRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="p-10 text-center text-slate-400">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <Clock className="w-8 h-8 text-slate-300 stroke-1" />
+                      <p className="text-xs font-bold text-slate-600">
+                        No attendance records logged for today.
+                      </p>
+                      <p className="text-[11px] text-slate-400 max-w-sm">
+                        Live punches from the attendance kiosk will appear here in real-time as employees verify their face.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredRecords.map((rec) => (
                 <tr key={rec.id} className="hover:bg-slate-50/80 transition-colors">
                   {/* Employee & ID */}
                   <td className="p-3.5 flex items-center gap-3">
@@ -501,51 +465,30 @@ export const AdminDashboard = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs font-semibold text-slate-700">
-          {/* Dept 1 */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between">
-              <span>Engineering & R&D</span>
-              <span className="font-mono text-blue-600 font-bold">142/148 (96%)</span>
-            </div>
-            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-              <div className="bg-blue-600 h-full rounded-full" style={{ width: '96%' }} />
-            </div>
+        {departmentStats.length === 0 ? (
+          <div className="p-6 text-center text-slate-400 text-xs">
+            No departments or employees registered yet. Enrolled department attendance ratios will appear here automatically.
           </div>
-
-          {/* Dept 2 */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between">
-              <span>Operations & Logistics</span>
-              <span className="font-mono text-emerald-600 font-bold">112/119 (94%)</span>
-            </div>
-            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-              <div className="bg-emerald-500 h-full rounded-full" style={{ width: '94%' }} />
-            </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs font-semibold text-slate-700">
+            {departmentStats.map((ds) => (
+              <div key={ds.dept} className="space-y-1.5">
+                <div className="flex justify-between">
+                  <span>{ds.dept}</span>
+                  <span className="font-mono text-blue-600 font-bold">
+                    {ds.present}/{ds.total} ({ds.pct}%)
+                  </span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                  <div 
+                    className="bg-blue-600 h-full rounded-full transition-all duration-300" 
+                    style={{ width: `${ds.pct}%` }} 
+                  />
+                </div>
+              </div>
+            ))}
           </div>
-
-          {/* Dept 3 */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between">
-              <span>Product & System Architecture</span>
-              <span className="font-mono text-slate-800 font-bold">88/75 (91%)</span>
-            </div>
-            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-              <div className="bg-slate-800 h-full rounded-full" style={{ width: '91%' }} />
-            </div>
-          </div>
-
-          {/* Dept 4 */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between">
-              <span>Enterprise Growth & Sales</span>
-              <span className="font-mono text-slate-600 font-bold">62/70 (88%)</span>
-            </div>
-            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-              <div className="bg-slate-400 h-full rounded-full" style={{ width: '88%' }} />
-            </div>
-          </div>
-        </div>
+        )}
       </div>
 
       <EnrollEmployeeModal

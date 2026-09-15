@@ -36,49 +36,8 @@ export const KioskMode = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [countdown, setCountdown] = useState(3);
 
-  // Recent punch event stream (last 4 records)
-  const [recentPunches, setRecentPunches] = useState([
-    {
-      id: 'p-1',
-      employee_name: 'Marcus Vance',
-      employee_code: 'EMP-8821',
-      department: 'Architecture',
-      time: '08:42:12 AM',
-      operation: 'SHIFT START [IN]',
-      is_in: true,
-      avatar: 'MV'
-    },
-    {
-      id: 'p-2',
-      employee_name: 'Elena Rostova',
-      employee_code: 'EMP-4412',
-      department: 'SecOps',
-      time: '08:41:48 AM',
-      operation: 'SHIFT START [IN]',
-      is_in: true,
-      avatar: 'ER'
-    },
-    {
-      id: 'p-3',
-      employee_name: 'David Chen',
-      employee_code: 'EMP-1919',
-      department: 'Analytics',
-      time: '05:39:04 PM',
-      operation: 'SHIFT END [OUT]',
-      is_in: false,
-      avatar: 'DC'
-    },
-    {
-      id: 'p-4',
-      employee_name: 'Amira Kassem',
-      employee_code: 'EMP-6003',
-      department: 'Infrastructure',
-      time: '08:35:22 AM',
-      operation: 'SHIFT START [IN]',
-      is_in: true,
-      avatar: 'AK'
-    }
-  ]);
+  // Recent punch event stream (last 4 records - starts empty for fresh organizations)
+  const [recentPunches, setRecentPunches] = useState([]);
 
   // Real-time clock updater
   useEffect(() => {
@@ -431,58 +390,66 @@ export const KioskMode = () => {
             </div>
 
             {/* Profile Card Section */}
-            <div className="py-5">
-              <div className="flex items-center gap-3.5 mb-5">
-                <div className="relative">
-                  <div className="w-14 h-14 rounded-xl bg-gradient-to-tr from-slate-800 to-slate-700 text-white flex items-center justify-center text-base font-bold shadow-xs">
-                    {punchResult ? (
-                      punchResult.employee_name.split(' ').map(n=>n[0]).join('').slice(0,2)
-                    ) : (
-                      'MV'
-                    )}
+            {punchResult ? (
+              <div className="py-5">
+                <div className="flex items-center gap-3.5 mb-5">
+                  <div className="relative">
+                    <div className="w-14 h-14 rounded-xl bg-gradient-to-tr from-slate-800 to-slate-700 text-white flex items-center justify-center text-base font-bold shadow-xs">
+                      {punchResult.employee_name ? punchResult.employee_name.split(' ').map(n=>n[0]).join('').slice(0,2) : 'EM'}
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center">
+                      <Check className="w-2.5 h-2.5 text-white stroke-[3]" />
+                    </div>
                   </div>
-                  <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center">
-                    <Check className="w-2.5 h-2.5 text-white stroke-[3]" />
+
+                  <div>
+                    <div className="text-[11px] font-mono text-slate-400 font-bold tracking-wide">
+                      ID: {punchResult.employee_code}
+                    </div>
+                    <div className="text-base font-bold text-slate-900 leading-tight">
+                      {punchResult.employee_name}
+                    </div>
+                    <div className="text-xs text-slate-500 font-medium mt-0.5">
+                      {punchResult.department || 'Staff Member'}
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <div className="text-[11px] font-mono text-slate-400 font-bold tracking-wide">
-                    ID: {punchResult?.employee_code || 'EMP-8821'}
+                {/* Metrics Grid */}
+                <div className="bg-slate-50/70 border border-slate-200 rounded-lg p-3.5 space-y-2.5 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">RECORDED TIME</span>
+                    <span className="font-mono font-bold text-blue-600">
+                      {punchResult.timestamp}
+                    </span>
                   </div>
-                  <div className="text-base font-bold text-slate-900 leading-tight">
-                    {punchResult?.employee_name || 'Marcus Vance'}
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">COMPLIANCE</span>
+                    <span className="font-semibold text-emerald-600">
+                      {punchResult.attendance_status === 'LATE' ? 'Late' : 'On-Time'}
+                    </span>
                   </div>
-                  <div className="text-xs text-slate-500 font-medium mt-0.5">
-                    {punchResult?.department || 'Lead Systems Architect'}
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">CURRENT SHIFT</span>
+                    <span className="font-mono text-slate-700 font-medium">
+                      08:30 AM - 5:00 PM
+                    </span>
                   </div>
                 </div>
               </div>
-
-              {/* Metrics Grid */}
-              <div className="bg-slate-50/70 border border-slate-200 rounded-lg p-3.5 space-y-2.5 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">RECORDED TIME</span>
-                  <span className="font-mono font-bold text-blue-600">
-                    {punchResult?.timestamp || '08:42:12 AM'}
-                  </span>
+            ) : (
+              <div className="py-12 flex flex-col items-center justify-center text-center">
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 mb-3 shadow-xs">
+                  <ScanFace className="w-6 h-6 animate-pulse" />
                 </div>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">COMPLIANCE</span>
-                  <span className="font-semibold text-emerald-600">
-                    {punchResult?.attendance_status === 'LATE' ? 'Late (+18m)' : 'On-Time (+12m)'}
-                  </span>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">CURRENT SHIFT</span>
-                  <span className="font-mono text-slate-700 font-medium">
-                    08:30 AM - 5:00 PM
-                  </span>
-                </div>
+                <h3 className="text-sm font-bold text-slate-800">Awaiting Attendance Scan</h3>
+                <p className="text-xs text-slate-400 max-w-xs mt-1">
+                  Stand directly in front of the optical sensor and trigger verification to record attendance.
+                </p>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Bottom Acknowledge CTA Button */}
@@ -523,7 +490,21 @@ export const KioskMode = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {recentPunches.map((item) => (
+              {recentPunches.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="p-8 text-center text-slate-400">
+                    <div className="flex flex-col items-center justify-center gap-1.5">
+                      <Clock className="w-6 h-6 text-slate-300 stroke-1" />
+                      <p className="text-xs font-bold text-slate-600">
+                        No punches recorded today.
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        Live attendance punches will appear here as employees verify their face at this terminal.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              ) : recentPunches.map((item) => (
                 <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
                   <td className="py-3 px-3">
                     <div className="flex items-center gap-3">
