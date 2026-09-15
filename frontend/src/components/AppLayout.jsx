@@ -5,6 +5,9 @@ import {
   LayoutDashboard, 
   ScanFace, 
   Fingerprint, 
+  CalendarCheck,
+  Banknote,
+  CalendarDays,
   CreditCard, 
   Settings as SettingsIcon, 
   ShieldCheck, 
@@ -40,17 +43,34 @@ export const AppLayout = ({ children }) => {
       roles: ['org_admin', 'super_admin']
     },
     {
+      name: 'Manual Entry',
+      path: '/manual-entry',
+      icon: CalendarCheck,
+      roles: ['org_admin', 'super_admin']
+    },
+    {
+      name: 'Advance Money',
+      path: '/advance-money',
+      icon: Banknote,
+      roles: ['org_admin', 'super_admin']
+    },
+    {
+      name: 'Leave Apply',
+      path: '/leave-apply',
+      icon: CalendarDays,
+      roles: ['all']
+    },
+    {
       name: 'Salary & Payroll',
-      path: '#payroll',
+      path: '/payroll',
       icon: CreditCard,
-      badge: 'SOON',
       roles: ['org_admin', 'super_admin']
     },
     {
       name: 'Settings',
-      path: '#settings',
+      path: '/settings',
       icon: SettingsIcon,
-      roles: ['all']
+      roles: ['org_admin', 'super_admin']
     }
   ];
 

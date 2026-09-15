@@ -8,6 +8,11 @@ import { KioskMode } from './pages/KioskMode';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { EnrollmentPage } from './pages/EnrollmentPage';
 import { EmployeePortal } from './pages/EmployeePortal';
+import { ManualEntry } from './pages/ManualEntry';
+import { AdvanceMoney } from './pages/AdvanceMoney';
+import { LeaveApply } from './pages/LeaveApply';
+import { PayrollReport } from './pages/PayrollReport';
+import { OrgSettings } from './pages/OrgSettings';
 
 const ProtectedAdminRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -39,7 +44,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register-org" element={<RegisterOrg />} />
 
-          {/* Enterprise Suite Screens with AppLayout Shell (Screens 3, 4, 5) */}
+          {/* Enterprise Suite Screens with AppLayout Shell */}
           <Route
             path="/kiosk"
             element={
@@ -66,6 +71,62 @@ function App() {
               <ProtectedAdminRoute>
                 <AppLayout>
                   <EnrollmentPage />
+                </AppLayout>
+              </ProtectedAdminRoute>
+            }
+          />
+
+          {/* 5 Newly Integrated Tabs from Uploaded Designs */}
+          <Route
+            path="/manual-entry"
+            element={
+              <ProtectedAdminRoute>
+                <AppLayout>
+                  <ManualEntry />
+                </AppLayout>
+              </ProtectedAdminRoute>
+            }
+          />
+
+          <Route
+            path="/advance-money"
+            element={
+              <ProtectedAdminRoute>
+                <AppLayout>
+                  <AdvanceMoney />
+                </AppLayout>
+              </ProtectedAdminRoute>
+            }
+          />
+
+          <Route
+            path="/leave-apply"
+            element={
+              <ProtectedEmployeeRoute>
+                <AppLayout>
+                  <LeaveApply />
+                </AppLayout>
+              </ProtectedEmployeeRoute>
+            }
+          />
+
+          <Route
+            path="/payroll"
+            element={
+              <ProtectedAdminRoute>
+                <AppLayout>
+                  <PayrollReport />
+                </AppLayout>
+              </ProtectedAdminRoute>
+            }
+          />
+
+          <Route
+            path="/settings"
+            element={
+              <ProtectedAdminRoute>
+                <AppLayout>
+                  <OrgSettings />
                 </AppLayout>
               </ProtectedAdminRoute>
             }
