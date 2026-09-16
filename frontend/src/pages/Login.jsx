@@ -150,14 +150,14 @@ export const Login = () => {
   };
 
   return (
-    <div className="min-h-screen relative flex flex-col justify-between text-slate-800 overflow-x-hidden">
+    <div className="min-h-screen relative flex flex-col justify-between text-slate-100 overflow-x-hidden bg-[#030712]/40">
       {/* 3D Precision Identity Matrix Background */}
       <PrecisionIdentityMatrix />
 
       {/* Top Brand Header */}
-      <header className="h-16 border-b border-slate-200/70 bg-white/75 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 relative z-20 shadow-2xs">
+      <header className="h-16 border-b border-slate-800/80 bg-slate-950/75 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 relative z-20 shadow-2xl shadow-black/60">
         <div className="flex items-center gap-3 shrink-0">
-          <div className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center shadow-xs border border-slate-200/80 bg-white p-0.5">
+          <div className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center shadow-lg border border-slate-700/80 bg-slate-900 p-0.5">
             <img 
               src="/company-logo.jpg" 
               alt="Argus Logo" 
@@ -166,16 +166,16 @@ export const Login = () => {
                 e.target.onerror = null;
                 e.target.style.display = 'none';
                 if (e.target.parentElement) {
-                  e.target.parentElement.innerHTML = '<span class="text-blue-600 font-bold text-xs">AI</span>';
+                  e.target.parentElement.innerHTML = '<span class="text-cyan-400 font-bold text-xs">AI</span>';
                 }
               }} 
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="font-extrabold tracking-wider text-slate-900 text-sm">
+            <span className="font-extrabold tracking-wider text-white text-sm drop-shadow-sm">
               ARGUS
             </span>
-            <span className="hidden sm:inline text-[11px] font-mono font-semibold px-2 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200">
+            <span className="hidden sm:inline text-[11px] font-mono font-semibold px-2 py-0.5 bg-cyan-950/60 text-cyan-300 rounded border border-cyan-800/50 shadow-inner">
               AI ATTENDANCE
             </span>
           </div>
@@ -186,14 +186,14 @@ export const Login = () => {
           <button
             type="button"
             onClick={() => setShowTerminal(true)}
-            className="group relative inline-flex items-center gap-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 hover:shadow-lg transition-all cursor-pointer border border-blue-400/30 active:scale-95"
+            className="group relative inline-flex items-center gap-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-cyan-900/30 hover:shadow-cyan-500/25 transition-all cursor-pointer border border-cyan-400/40 active:scale-95"
             title="Open Live Kiosk Attendance Punch Terminal"
           >
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
             </span>
-            <ScanFace className="w-4 h-4 text-blue-200 group-hover:scale-110 transition-transform" />
+            <ScanFace className="w-4 h-4 text-cyan-200 group-hover:scale-110 transition-transform" />
             <span className="tracking-wide font-semibold text-xs sm:text-sm">Attendance Capture Terminal</span>
             <span className="hidden md:inline text-[9px] font-mono uppercase bg-white/20 text-white px-1.5 py-0.5 rounded ml-0.5 font-bold">
               LIVE
@@ -201,11 +201,11 @@ export const Login = () => {
           </button>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-medium text-slate-500 shrink-0">
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-400 shrink-0">
           <span className="hidden lg:inline">New organisation?</span>
           <Link
             to="/register-org"
-            className="px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 hover:border-blue-500 hover:text-blue-600 bg-white font-semibold transition-colors shadow-2xs text-[11px] sm:text-xs"
+            className="px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-700 hover:border-cyan-500/70 hover:text-cyan-300 bg-slate-900/80 text-slate-200 font-semibold transition-all shadow-md text-[11px] sm:text-xs"
           >
             Register Organisation
           </Link>
@@ -216,14 +216,14 @@ export const Login = () => {
       <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8 relative z-10">
         {/* Page Top Heading */}
         <div className="max-w-4xl w-full mx-auto mb-6">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50/90 border border-blue-200 text-blue-700 text-[10px] font-mono font-bold mb-2 backdrop-blur-xs">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-            WELCOME BACK
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/70 border border-cyan-700/50 text-cyan-300 text-[10px] font-mono font-bold mb-2 backdrop-blur-md shadow-xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
+            PRECISION IDENTITY MATRIX
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight drop-shadow-md">
             Sign In
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-slate-400 mt-1">
             Sign in with your Google account to access your organisation dashboard.
           </p>
         </div>
@@ -231,20 +231,20 @@ export const Login = () => {
         <div className="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
           
           {/* Left Column: Live Optical Face Scanner Viewport */}
-          <div className="lg:col-span-5 bg-white/85 backdrop-blur-md p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xl shadow-blue-900/5 flex flex-col justify-between">
+          <div className="lg:col-span-5 bg-slate-950/80 backdrop-blur-2xl p-5 sm:p-6 rounded-2xl border border-slate-800/80 shadow-2xl shadow-cyan-950/30 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">
                   FACE RECOGNITION
                 </span>
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-800/60 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_#f59e0b]" />
                   COMING SOON
                 </span>
               </div>
 
               {/* Viewport Frame with Cybernetic HUD Brackets */}
-              <div className="relative w-full aspect-square bg-slate-950 rounded-xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
+              <div className="relative w-full aspect-square bg-black/90 rounded-xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
                 {/* HUD Corner Brackets */}
                 <div className="hud-corner-tl" />
                 <div className="hud-corner-tr" />
@@ -291,29 +291,29 @@ export const Login = () => {
               <button
                 type="button"
                 disabled={true}
-                className="mt-4 w-full py-2.5 px-4 rounded-xl bg-slate-300 text-slate-500 font-bold text-xs flex items-center justify-center gap-2 shadow-xs cursor-not-allowed"
+                className="mt-4 w-full py-2.5 px-4 rounded-xl bg-slate-900/90 border border-slate-800 text-slate-500 font-bold text-xs flex items-center justify-center gap-2 shadow-xs cursor-not-allowed"
                 title="Face recognition login will be available soon"
               >
                 <ScanFace className="w-4 h-4" />
                 Sign In with Face (Coming Soon)
               </button>
 
-              <div className="mt-2 text-center text-[10px] text-slate-400 font-medium flex items-center justify-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+              <div className="mt-2 text-center text-[10px] text-slate-500 font-medium flex items-center justify-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400/80 inline-block" />
                 Face recognition login is under development
               </div>
             </div>
           </div>
 
           {/* Right Column: Google Single Sign-On Account Portal */}
-          <div className="lg:col-span-7 bg-white/85 backdrop-blur-md p-6 sm:p-8 rounded-2xl border border-slate-200/80 shadow-xl shadow-blue-900/5 flex flex-col justify-center">
+          <div className="lg:col-span-7 bg-slate-950/80 backdrop-blur-2xl p-6 sm:p-8 rounded-2xl border border-slate-800/80 shadow-2xl shadow-cyan-950/30 flex flex-col justify-center">
             {/* Error / Access Denied Notification Banner */}
             {error && (
-              <div className="mb-4 p-3.5 rounded-xl bg-red-50/90 border border-red-200 text-red-700 text-xs flex items-start gap-2.5 animate-in fade-in duration-200 backdrop-blur-xs">
-                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <div className="mb-4 p-3.5 rounded-xl bg-red-950/60 border border-red-800/60 text-red-300 text-xs flex items-start gap-2.5 animate-in fade-in duration-200 backdrop-blur-sm">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                 <div className="space-y-1">
-                  <div className="font-bold text-red-800">Authentication Failed</div>
-                  <div className="text-red-700 text-[11px] leading-relaxed">{error}</div>
+                  <div className="font-bold text-red-300">Authentication Failed</div>
+                  <div className="text-red-300/90 text-[11px] leading-relaxed">{error}</div>
                 </div>
               </div>
             )}
@@ -324,7 +324,7 @@ export const Login = () => {
                 type="button"
                 onClick={handleGoogleSignIn}
                 disabled={loading}
-                className="w-full py-3.5 px-4 bg-white/90 hover:bg-white active:scale-[0.99] text-slate-800 border-2 border-slate-200 hover:border-slate-300 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all cursor-pointer disabled:opacity-60"
+                className="w-full py-3.5 px-4 bg-white hover:bg-slate-100 active:scale-[0.99] text-slate-900 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-3 shadow-xl transition-all cursor-pointer disabled:opacity-60"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -340,11 +340,11 @@ export const Login = () => {
             </div>
 
             {/* Need an Account Footer Link */}
-            <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <div className="mt-5 pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
               <span>Need an account?</span>
               <Link 
                 to="/register-org" 
-                className="font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                className="font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition-colors"
               >
                 Register Organization
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -355,9 +355,9 @@ export const Login = () => {
       </main>
 
       {/* Bottom Privacy & Compliance Trust Bar */}
-      <footer className="h-12 border-t border-slate-200/70 bg-white/75 backdrop-blur-md px-6 flex items-center justify-between text-[11px] text-slate-500 font-medium relative z-20">
-        <div className="flex items-center gap-1.5 text-emerald-700">
-          <ShieldCheck className="w-4 h-4 text-emerald-600" />
+      <footer className="h-12 border-t border-slate-800/80 bg-slate-950/75 backdrop-blur-xl px-6 flex items-center justify-between text-[11px] text-slate-400 font-medium relative z-20">
+        <div className="flex items-center gap-1.5 text-emerald-400">
+          <ShieldCheck className="w-4 h-4 text-emerald-400" />
           <span>Zero-Knowledge Architecture: Encrypted 128-d vectors only.</span>
         </div>
         <div className="flex items-center gap-1 text-slate-400">
