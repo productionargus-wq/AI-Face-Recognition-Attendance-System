@@ -21,10 +21,9 @@ async def update_org_settings(
 ):
     org_id = auth_ctx["org_id"]
     update_data = {}
-    if "name" in settings_payload:
-        update_data["name"] = settings_payload["name"]
-    if "work_hours" in settings_payload:
-        update_data["work_hours"] = settings_payload["work_hours"]
+    for field in ["name", "work_hours", "gstin", "industry", "phone", "website", "address", "logo_url"]:
+        if field in settings_payload:
+            update_data[field] = settings_payload[field]
 
     await store.update_one("organizations", {"id": org_id}, update_data)
 
@@ -42,6 +41,27 @@ async def update_org_settings(
     await store.insert_one("audit_logs", audit)
 
     return {"status": "success", "message": "Organization settings updated successfully."}
+
+@router.post("/my-org/logo")
+async def upload_org_logo(
+    payload: Dict[str, Any],
+    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+):
+    org_id = auth_ctx["org_id"]
+    logo_data = payload.get("logo") or payload.get("logo_url")
+    if not logo_data:
+        raise HTTPException(status_code=400, detail="Logo data is required.")
+
+    await store.update_one("organizations", {"id": org_id}, {"logo_url": logo_data})
+    return {"status": "success", "logo_url": logo_data, "message": "Organization logo updated successfully."}
+
+@router.delete("/my-org/logo")
+async def remove_org_logo(
+    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+):
+    org_id = auth_ctx["org_id"]
+    await store.update_one("organizations", {"id": org_id}, {"logo_url": None})
+    return {"status": "success", "message": "Organization logo removed successfully."}
 
 @router.get("/public/list")
 async def get_public_orgs_list():

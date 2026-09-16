@@ -67,7 +67,11 @@ export const Navbar = () => {
         <div className="flex items-center space-x-2 sm:space-x-3">
           {organization && (
             <div className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-full">
-              <Building2 className="w-3.5 h-3.5 text-slate-500" />
+              {organization.logo_url ? (
+                <img src={organization.logo_url} alt="Logo" className="w-4 h-4 rounded-full object-cover shrink-0" />
+              ) : (
+                <Building2 className="w-3.5 h-3.5 text-slate-500" />
+              )}
               <span className="max-w-[120px] lg:max-w-[180px] truncate">{organization.name}</span>
             </div>
           )}

@@ -21,7 +21,7 @@ async def update_org_settings(
 ):
     org_id = auth_ctx["org_id"]
     update_data = {}
-    for field in ["name", "work_hours", "gstin", "industry", "phone", "website", "address"]:
+    for field in ["name", "work_hours", "gstin", "industry", "phone", "website", "address", "logo_url"]:
         if field in settings_payload:
             update_data[field] = settings_payload[field]
 
@@ -41,6 +41,55 @@ async def update_org_settings(
     await store.insert_one("audit_logs", audit)
 
     return {"status": "success", "message": "Organization settings updated successfully."}
+
+@router.post("/my-org/logo")
+async def upload_org_logo(
+    payload: Dict[str, Any],
+    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+):
+    """Upload or update company branding logo for the authenticated organization."""
+    org_id = auth_ctx["org_id"]
+    logo_data = payload.get("logo") or payload.get("logo_url")
+    if not logo_data:
+        raise HTTPException(status_code=400, detail="Logo data or image URL is required.")
+
+    await store.update_one("organizations", {"id": org_id}, {"logo_url": logo_data})
+
+    audit = AuditLog(
+        organization_id=org_id,
+        actor_id=auth_ctx["sub"],
+        actor_name=auth_ctx.get("name", "Admin"),
+        actor_role=auth_ctx.get("role", "org_admin"),
+        action="UPLOAD_ORG_LOGO",
+        target_resource="Organization",
+        target_id=org_id,
+        details={"has_logo": True}
+    ).dict()
+    await store.insert_one("audit_logs", audit)
+
+    return {"status": "success", "logo_url": logo_data, "message": "Organization logo uploaded and saved successfully."}
+
+@router.delete("/my-org/logo")
+async def remove_org_logo(
+    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+):
+    """Remove company branding logo for the authenticated organization."""
+    org_id = auth_ctx["org_id"]
+    await store.update_one("organizations", {"id": org_id}, {"logo_url": None})
+
+    audit = AuditLog(
+        organization_id=org_id,
+        actor_id=auth_ctx["sub"],
+        actor_name=auth_ctx.get("name", "Admin"),
+        actor_role=auth_ctx.get("role", "org_admin"),
+        action="REMOVE_ORG_LOGO",
+        target_resource="Organization",
+        target_id=org_id,
+        details={"has_logo": False}
+    ).dict()
+    await store.insert_one("audit_logs", audit)
+
+    return {"status": "success", "message": "Organization logo removed successfully."}
 
 @router.get("/public/list")
 async def get_public_orgs_list():

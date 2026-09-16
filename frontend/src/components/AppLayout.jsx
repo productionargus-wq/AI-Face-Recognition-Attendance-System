@@ -130,14 +130,25 @@ export const AppLayout = ({ children }) => {
 
         {/* Sidebar Footer / Org Details */}
         <div className="p-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
-          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">
+          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1.5">
             Current Tenant
           </div>
-          <div className="text-xs font-bold text-slate-800 truncate">
-            {organization?.name || 'Argus Technologies'}
-          </div>
-          <div className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">
-            ID: {organization?.slug || 'ARGUS-MAIN'}
+          <div className="flex items-center gap-2.5">
+            {organization?.logo_url ? (
+              <img
+                src={organization.logo_url}
+                alt="Logo"
+                className="w-8 h-8 rounded-lg object-contain bg-white border border-slate-200 p-0.5 shrink-0 shadow-2xs"
+              />
+            ) : null}
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-bold text-slate-800 truncate">
+                {organization?.name || 'Argus Technologies'}
+              </div>
+              <div className="text-[10px] text-slate-500 font-mono truncate">
+                ID: {organization?.slug || 'ARGUS-MAIN'}
+              </div>
+            </div>
           </div>
         </div>
       </aside>
@@ -162,9 +173,15 @@ export const AppLayout = ({ children }) => {
             </div>
           </div>
 
-          <div className="hidden md:block">
-            {/* Context breadcrumb or subtle tenant title */}
-            <div className="text-xs font-semibold text-slate-500">
+          <div className="hidden md:flex items-center gap-2">
+            {organization?.logo_url ? (
+              <img
+                src={organization.logo_url}
+                alt="Logo"
+                className="w-6 h-6 rounded-md object-contain bg-white border border-slate-200 p-0.5"
+              />
+            ) : null}
+            <div className="text-xs font-semibold text-slate-600">
               {organization?.name || 'Argus Technologies'}
             </div>
           </div>

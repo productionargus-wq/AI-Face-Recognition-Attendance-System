@@ -20,11 +20,14 @@ import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 
 export const OrgSettings = () => {
-  const { user, organization } = useAuth();
+  const { user, organization, updateOrganization } = useAuth();
   const [activeTab, setActiveTab] = useState('details'); // 'details' or 'shifts'
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [logoUrl, setLogoUrl] = useState(organization?.logo_url || '');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const fileInputRef = React.useRef(null);
 
   const [formData, setFormData] = useState({
     name: organization?.name || '',
@@ -44,6 +47,7 @@ export const OrgSettings = () => {
 
   useEffect(() => {
     if (organization) {
+      setLogoUrl(organization.logo_url || '');
       setFormData(prev => ({
         ...prev,
         name: organization.name || prev.name,
@@ -68,6 +72,77 @@ export const OrgSettings = () => {
     });
   };
 
+  const handleLogoFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setErrorMessage('Please select a valid image file (PNG, JPG, SVG, WEBP).');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMessage('Image file size exceeds the 5MB limit. Please choose a smaller image.');
+      return;
+    }
+
+    setUploadingLogo(true);
+    setErrorMessage('');
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const base64Data = event.target.result;
+          setLogoUrl(base64Data);
+
+          // Upload to backend
+          await api.post('/organizations/my-org/logo', {
+            logo_url: base64Data
+          });
+
+          // Sync with AuthContext across the whole app
+          if (updateOrganization) {
+            updateOrganization({ logo_url: base64Data });
+          }
+
+          setSavedSuccess(true);
+          setTimeout(() => setSavedSuccess(false), 4000);
+        } catch (uploadErr) {
+          setErrorMessage(uploadErr.response?.data?.detail || 'Failed to upload logo.');
+        } finally {
+          setUploadingLogo(false);
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      setErrorMessage('Failed to read image file.');
+      setUploadingLogo(false);
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    if (!window.confirm('Are you sure you want to remove your company logo?')) return;
+    setUploadingLogo(true);
+    setErrorMessage('');
+    try {
+      await api.delete('/organizations/my-org/logo');
+      setLogoUrl('');
+      if (updateOrganization) {
+        updateOrganization({ logo_url: null });
+      }
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 4000);
+    } catch (err) {
+      setErrorMessage(err.response?.data?.detail || 'Failed to remove logo.');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -80,6 +155,7 @@ export const OrgSettings = () => {
         phone: formData.phone,
         website: formData.website,
         address: formData.address,
+        logo_url: logoUrl || null,
         work_hours: {
           start_time: formData.shiftStart,
           end_time: formData.shiftEnd,
@@ -87,6 +163,15 @@ export const OrgSettings = () => {
           half_day_hours: parseFloat(formData.halfDayHours) || 4.5
         }
       });
+
+      if (updateOrganization) {
+        updateOrganization({
+          name: formData.name.trim(),
+          industry: formData.industry,
+          gstin: formData.gstin?.trim() ? formData.gstin.trim().toUpperCase() : null,
+          logo_url: logoUrl || null
+        });
+      }
 
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 4000);
@@ -99,6 +184,7 @@ export const OrgSettings = () => {
 
   const handleReset = () => {
     if (organization) {
+      setLogoUrl(organization.logo_url || '');
       setFormData({
         name: organization.name || '',
         industry: organization.industry || 'Technology & Services',
@@ -199,39 +285,80 @@ export const OrgSettings = () => {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
             {/* Left Card: Company Profile */}
             <div className="lg:col-span-8 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
-              <h2 className="text-sm font-bold text-slate-900 mb-4">
-                Company Profile
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-bold text-slate-900">
+                  Company Profile &amp; Branding
+                </h2>
+                {logoUrl && (
+                  <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    Custom Logo Active
+                  </span>
+                )}
+              </div>
 
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                <div className="relative w-24 h-24 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center p-2 shrink-0">
-                  <div className="text-center">
-                    <Building2 className="w-8 h-8 text-blue-600 mx-auto" />
-                    <span className="text-[10px] font-black text-slate-700 tracking-wider">
-                      {(formData.name || 'ORG').slice(0, 5).toUpperCase()}
-                    </span>
-                  </div>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
+                {/* Logo Display Box */}
+                <div className="relative w-24 h-24 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center p-2 shrink-0 overflow-hidden shadow-2xs group">
+                  {logoUrl ? (
+                    <img
+                      src={logoUrl}
+                      alt={`${orgDisplayName} Logo`}
+                      className="w-full h-full object-contain rounded-xl"
+                    />
+                  ) : (
+                    <div className="text-center">
+                      <Building2 className="w-8 h-8 text-blue-600 mx-auto" />
+                      <span className="text-[10px] font-black text-slate-700 tracking-wider block mt-1">
+                        {(formData.name || 'ORG').slice(0, 5).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+
                   <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] shadow-xs">
                     ✓
                   </span>
                 </div>
 
-                <div className="space-y-2">
+                {/* Upload & Management Controls */}
+                <div className="space-y-2 flex-1">
                   <div className="font-extrabold text-base text-slate-900">
                     {orgDisplayName}
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed max-w-md">
-                    Customise your organisation profile and legal credentials saved in your database partition.
+                    Upload your official company logo (PNG, JPG, SVG, or WEBP up to 5MB). The logo will be displayed on your tenant portal, kiosk terminal, and generated reports.
                   </p>
-                  <div className="flex items-center gap-3 pt-1">
+
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {/* Hidden file input */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/png, image/jpeg, image/jpg, image/webp, image/svg+xml"
+                      onChange={handleLogoFileChange}
+                      className="hidden"
+                    />
+
                     <button
                       type="button"
-                      onClick={() => alert('Logo upload simulation')}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                      disabled={uploadingLogo}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
                     >
-                      <Upload className="w-3.5 h-3.5 text-slate-500" />
-                      Change Logo
+                      <Upload className="w-3.5 h-3.5" />
+                      {uploadingLogo ? 'Uploading...' : (logoUrl ? 'Change Logo' : 'Upload Logo')}
                     </button>
+
+                    {logoUrl && (
+                      <button
+                        type="button"
+                        disabled={uploadingLogo}
+                        onClick={handleRemoveLogo}
+                        className="px-3 py-1.5 rounded-xl border border-red-200 hover:bg-red-50 text-red-600 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Remove Logo
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

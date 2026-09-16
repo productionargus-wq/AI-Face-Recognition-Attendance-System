@@ -64,6 +64,10 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
+  const updateOrganization = (newOrgData) => {
+    setOrganization(prev => prev ? ({ ...prev, ...newOrgData }) : newOrgData);
+  };
+
   const logout = () => {
     localStorage.removeItem('argus_token');
     localStorage.removeItem('argus_last_email');
@@ -72,7 +76,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, organization, loading, login, registerOrg, googleLogin, googleRegisterOrg, logout }}>
+    <AuthContext.Provider value={{ user, organization, setOrganization, updateOrganization, loading, login, registerOrg, googleLogin, googleRegisterOrg, logout }}>
       {children}
     </AuthContext.Provider>
   );
