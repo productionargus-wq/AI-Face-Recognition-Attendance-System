@@ -79,29 +79,55 @@ export const PayrollReport = () => {
   const fetchInitialData = async () => {
     setLoading(true);
     try {
-      const [empRes, advRes] = await Promise.all([
-        api.get('/employees/').catch(() => ({ data: [] })),
-        api.get('/advances').catch(() => ({ data: [] }))
-      ]);
+      if (isEmployee) {
+        // Fetch caller's own employee profile directly
+        const [myEmpRes, advRes] = await Promise.all([
+          api.get('/employees/me').catch(async () => {
+            const fallback = await api.get('/employees/').catch(() => ({ data: [] }));
+            return { data: Array.isArray(fallback.data) ? fallback.data[0] : fallback.data };
+          }),
+          api.get('/advances').catch(() => ({ data: [] }))
+        ]);
 
-      const empList = empRes.data || [];
-      setEmployees(empList);
-      setAdvances(advRes.data || []);
-
-      if (empList.length > 0) {
-        let initialEmp = empList[0];
-        if (isEmployee) {
-          const matched = empList.find(e => 
-            (user?.employee_id && e.id === user.employee_id) ||
-            (user?.employee_code && e.employee_code === user.employee_code) ||
-            (user?.email && e.email === user.email) ||
-            (user?.name && `${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase() === user.name.trim().toLowerCase())
-          );
-          if (matched) initialEmp = matched;
+        let myEmp = myEmpRes.data;
+        if (!myEmp && user) {
+          const nameParts = (user.name || 'Employee').split(' ');
+          myEmp = {
+            id: user.employee_id || user.id || 'EMP-ME',
+            first_name: nameParts[0] || 'Employee',
+            last_name: nameParts.slice(1).join(' ') || '',
+            employee_code: user.employee_code || 'EMP',
+            email: user.email,
+            department: user.department || 'Operations',
+            base_salary: 40000,
+            hourly_rate: 250,
+            statutory_deductions: 3000
+          };
         }
-        setSelectedEmployeeId(initialEmp.id);
-        fetchEmployeeAttendance(initialEmp.id);
-        fetchPayoutHistory(initialEmp.id);
+
+        if (myEmp) {
+          setEmployees([myEmp]);
+          setSelectedEmployeeId(myEmp.id);
+          fetchEmployeeAttendance(myEmp.id);
+          fetchPayoutHistory(myEmp.id);
+        }
+        setAdvances(advRes.data || []);
+      } else {
+        const [empRes, advRes] = await Promise.all([
+          api.get('/employees/').catch(() => ({ data: [] })),
+          api.get('/advances').catch(() => ({ data: [] }))
+        ]);
+
+        const empList = empRes.data || [];
+        setEmployees(empList);
+        setAdvances(advRes.data || []);
+
+        if (empList.length > 0) {
+          const initialEmp = empList[0];
+          setSelectedEmployeeId(initialEmp.id);
+          fetchEmployeeAttendance(initialEmp.id);
+          fetchPayoutHistory(initialEmp.id);
+        }
       }
     } catch (err) {
       console.error('Failed to load payroll report data', err);
@@ -130,7 +156,17 @@ export const PayrollReport = () => {
     fetchPayoutHistory(empId);
   };
 
-  const selectedEmployee = employees.find(e => e.id === selectedEmployeeId) || employees[0];
+  const selectedEmployee = employees.find(e => e.id === selectedEmployeeId) || employees[0] || (isEmployee && user ? {
+    id: user.employee_id || user.id,
+    first_name: (user.name || 'Employee').split(' ')[0],
+    last_name: (user.name || '').split(' ').slice(1).join(' '),
+    employee_code: user.employee_code || 'EMP',
+    email: user.email,
+    department: user.department || 'Operations',
+    base_salary: 40000,
+    hourly_rate: 250,
+    statutory_deductions: 3000
+  } : null);
 
   // Synchronize compensation fields whenever the selected employee or attendance data changes
   useEffect(() => {
@@ -328,8 +364,16 @@ export const PayrollReport = () => {
         </div>
       )}
 
-      {/* No Employees State */}
-      {!loading && employees.length === 0 && (
+      {/* Loading Indicator */}
+      {loading && (
+        <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-2xs">
+          <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <div className="text-xs font-bold text-slate-700">Loading payroll &amp; compensation records...</div>
+        </div>
+      )}
+
+      {/* No Employees State (Admin Only) */}
+      {!loading && !isEmployee && employees.length === 0 && (
         <div className="p-6 bg-white border border-slate-200 rounded-2xl text-center space-y-3">
           <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
             <UserPlus className="w-6 h-6" />
@@ -530,7 +574,7 @@ export const PayrollReport = () => {
               </div>
               <div className="text-[10px] text-slate-500 font-mono border-t border-slate-100 pt-1 flex justify-between">
                 <span>Scheduled Cycle</span>
-                <span className="text-slate-600 font-bold">Editable</span>
+                <span className="text-slate-600 font-bold">{isEmployee ? 'Amortized' : 'Editable'}</span>
               </div>
             </div>
 

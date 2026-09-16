@@ -32,14 +32,65 @@ class EmployeeUpdate(BaseModel):
     statutory_deductions: Optional[float] = None
     permissions: Optional[List[str]] = None
 
+@router.get("/me")
+async def get_my_employee_profile(
+    auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
+):
+    """Returns the authenticated user's own employee record (including compensation structure)."""
+    org_id = auth_ctx["org_id"]
+    email = auth_ctx.get("email")
+    emp_id = auth_ctx.get("emp_id")
+
+    emp = None
+    if emp_id:
+        emp = await store.find_one("employees", {"id": emp_id, "organization_id": org_id, "is_active": True})
+    if not emp and email:
+        emp = await store.find_one("employees", {"email": email, "organization_id": org_id, "is_active": True})
+    if not emp:
+        user = await store.find_one("users", {"email": email, "organization_id": org_id})
+        if user and user.get("employee_id"):
+            emp = await store.find_one("employees", {"id": user["employee_id"], "organization_id": org_id})
+
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee profile not found.")
+
+    c = dict(emp)
+    c["has_biometric"] = len(c.get("face_embeddings", [])) > 0
+    c["samples_count"] = len(c.get("face_embeddings", []))
+    c["face_embeddings"] = None
+    return c
+
 @router.get("/")
 async def list_employees(
     department: Optional[str] = None,
     search: Optional[str] = None,
-    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+    auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
 ):
-    """List all employees belonging strictly to the caller's organization."""
+    """List all employees belonging to the caller's organization (or caller's own record if staff)."""
     org_id = auth_ctx["org_id"]
+    is_admin = auth_ctx.get("role") in ("org_admin", "super_admin")
+
+    if not is_admin:
+        # Non-admin employee: return strictly their own employee profile
+        email = auth_ctx.get("email")
+        emp_id = auth_ctx.get("emp_id")
+        emp = None
+        if emp_id:
+            emp = await store.find_one("employees", {"id": emp_id, "organization_id": org_id, "is_active": True})
+        if not emp and email:
+            emp = await store.find_one("employees", {"email": email, "organization_id": org_id, "is_active": True})
+        if not emp:
+            user = await store.find_one("users", {"email": email, "organization_id": org_id})
+            if user and user.get("employee_id"):
+                emp = await store.find_one("employees", {"id": user["employee_id"], "organization_id": org_id})
+        if emp:
+            c = dict(emp)
+            c["has_biometric"] = len(c.get("face_embeddings", [])) > 0
+            c["samples_count"] = len(c.get("face_embeddings", []))
+            c["face_embeddings"] = None
+            return [c]
+        return []
+
     query = {"organization_id": org_id, "is_active": True}
     if department:
         query["department"] = department
