@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import api from '../utils/api';
 import { 
   LayoutDashboard, 
   ScanFace, 
@@ -14,7 +15,8 @@ import {
   LogOut, 
   Menu, 
   X,
-  ChevronRight
+  ChevronRight,
+  Bell
 } from 'lucide-react';
 
 export const AppLayout = ({ children }) => {
@@ -24,6 +26,62 @@ export const AppLayout = ({ children }) => {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const isEmployee = user?.role === 'employee';
   const userPermissions = user?.permissions || (isEmployee ? ['/admin', '/kiosk', '/leave-apply', '/advance-money'] : null);
+
+  // Notification state
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifTray, setShowNotifTray] = useState(false);
+  const notifRef = useRef(null);
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await api.get('/notifications');
+      setNotifications(res.data || []);
+    } catch (e) {
+      // silent
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 8000);
+    const onFocus = () => fetchNotifications();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
+  // Close tray when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) {
+        setShowNotifTray(false);
+      }
+    };
+    if (showNotifTray) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNotifTray]);
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  const handleMarkAllRead = async () => {
+    try {
+      await api.patch('/notifications/mark-all-read');
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch (e) {}
+  };
+
+  const handleMarkSingleRead = async (id) => {
+    try {
+      await api.patch(`/notifications/${id}/read`);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+    } catch (e) {}
+  };
 
   const rawNavItems = [
     {
@@ -199,7 +257,110 @@ export const AppLayout = ({ children }) => {
           </div>
 
           {/* Right User & Role Info Header */}
-          <div className="flex items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-2.5 sm:gap-3.5">
+            {/* Notification Bell with Tray */}
+            <div className="relative" ref={notifRef}>
+              <button
+                type="button"
+                onClick={() => setShowNotifTray(!showNotifTray)}
+                className={`relative p-2 rounded-xl transition-all cursor-pointer ${
+                  showNotifTray ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                }`}
+                title="Notifications"
+              >
+                <Bell className="w-4 h-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-emerald-500 text-white font-mono text-[9px] font-bold shadow-xs animate-pulse">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notification Dropdown Tray */}
+              {showNotifTray && (
+                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-xl border border-slate-200 z-50 overflow-hidden animate-in fade-in zoom-in-95">
+                  <div className="p-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+                    <div className="flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-blue-600" />
+                      <span className="text-xs font-bold text-slate-800">Notifications</span>
+                      {unreadCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-mono text-[10px] font-bold">
+                          {unreadCount} new
+                        </span>
+                      )}
+                    </div>
+                    {unreadCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleMarkAllRead}
+                        className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                    {notifications.length > 0 ? (
+                      notifications.map((n) => (
+                        <div
+                          key={n.id}
+                          onClick={() => handleMarkSingleRead(n.id)}
+                          className={`p-3.5 text-xs transition-colors cursor-pointer flex items-start gap-3 ${
+                            !n.is_read ? 'bg-blue-50/40 hover:bg-blue-50/70' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center mt-0.5 ${
+                            n.type === 'SALARY_CREDITED' 
+                              ? 'bg-emerald-100 text-emerald-700' 
+                              : n.type === 'ADVANCE_STATUS' 
+                              ? 'bg-amber-100 text-amber-700' 
+                              : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {n.type === 'SALARY_CREDITED' ? (
+                              <CreditCard className="w-4 h-4 text-emerald-600" />
+                            ) : n.type === 'ADVANCE_STATUS' ? (
+                              <Banknote className="w-4 h-4 text-amber-600" />
+                            ) : (
+                              <Bell className="w-4 h-4 text-blue-600" />
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-bold text-slate-900 truncate">{n.title}</span>
+                              {!n.is_read && (
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                              {n.message}
+                            </p>
+                            {n.amount && (
+                              <div className="mt-1 font-mono font-bold text-emerald-700 text-xs">
+                                ₹{Number(n.amount).toLocaleString('en-IN')}.00
+                              </div>
+                            )}
+                            <div className="text-[9px] font-mono text-slate-400 mt-1">
+                              {n.created_at ? new Date(n.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-8 px-4 text-center text-slate-400">
+                        <Bell className="w-8 h-8 mx-auto mb-2 opacity-30 text-slate-400" />
+                        <div className="text-xs font-semibold text-slate-600">No notifications yet</div>
+                        <p className="text-[11px] text-slate-400 mt-0.5 max-w-xs mx-auto">
+                          You'll receive alerts here when your salary is credited or advance requests are updated.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Admin Role Badge */}
             <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded-md text-[11px] font-bold text-slate-700 uppercase tracking-wider">
               <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />

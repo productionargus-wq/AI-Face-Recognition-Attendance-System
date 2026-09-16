@@ -19,7 +19,8 @@ import {
   Search,
   Save,
   RotateCcw,
-  Edit3
+  Edit3,
+  Send
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -38,18 +39,19 @@ export const PayrollReport = () => {
   // Employee search query
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Editable compensation fields for selected employee
+  // Compensation structure state
   const [baseSalary, setBaseSalary] = useState(40000);
   const [hourlyRate, setHourlyRate] = useState(250);
-  const [statutoryDeductions, setStatutoryDeductions] = useState(3000);
   const [overtimeHours, setOvertimeHours] = useState(0);
   const [performanceBonus, setPerformanceBonus] = useState(0);
   const [advanceDeduction, setAdvanceDeduction] = useState(0);
+  const [statutoryDeductions, setStatutoryDeductions] = useState(3000);
 
-  // Status indicators for save action
   const [savingPayroll, setSavingPayroll] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState('');
   const [saveError, setSaveError] = useState('');
+  const [disbursing, setDisbursing] = useState(false);
+  const [payoutSuccess, setPayoutSuccess] = useState(false);
 
   useEffect(() => {
     fetchInitialData();
@@ -184,6 +186,37 @@ export const PayrollReport = () => {
       setSaveError(err.response?.data?.detail || 'Failed to persist payroll settings to database.');
     } finally {
       setSavingPayroll(false);
+    }
+  };
+
+  const handleDisburseSalary = async () => {
+    if (!selectedEmployee) return;
+    setDisbursing(true);
+    setSaveSuccess('');
+    setSaveError('');
+    try {
+      const currentCycle = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      const payload = {
+        employee_id: selectedEmployee.id,
+        cycle: currentCycle,
+        amount: netTakeHome,
+        base_salary: numBaseSalary,
+        overtime_pay: overtimePay,
+        performance_bonus: numPerformanceBonus,
+        advance_deduction: numAdvanceDeduction,
+        statutory_deductions: numStatutoryDeductions,
+        net_salary: netTakeHome
+      };
+      await api.post('/notifications/disburse-salary', payload);
+      setPayoutSuccess(true);
+      setSaveSuccess(`Salary of ₹${netTakeHome.toLocaleString('en-IN')}.00 successfully credited to ${selectedEmployee.first_name} ${selectedEmployee.last_name}. Credit notification dispatched.`);
+      setTimeout(() => {
+        setPayoutSuccess(false);
+      }, 5000);
+    } catch (err) {
+      setSaveError(err.response?.data?.detail || 'Failed to disburse salary.');
+    } finally {
+      setDisbursing(false);
     }
   };
 
@@ -728,16 +761,46 @@ export const PayrollReport = () => {
                 </div>
 
                 {/* Net Take-Home Highlight Card */}
-                <div className="p-4 bg-white border-2 border-blue-500/80 rounded-xl shadow-xs text-center">
-                  <div className="text-[10px] font-mono uppercase font-bold text-slate-400">
-                    Net Take-Home
+                <div className="p-4 bg-white border-2 border-blue-500/80 rounded-xl shadow-xs text-center space-y-3">
+                  <div>
+                    <div className="text-[10px] font-mono uppercase font-bold text-slate-400">
+                      Net Take-Home
+                    </div>
+                    <div className="text-2xl font-black text-slate-900 mt-1 font-mono">
+                      ₹{netTakeHome.toLocaleString('en-IN')}.00
+                    </div>
+                    <div className="text-[10px] text-emerald-600 font-bold mt-0.5 flex items-center justify-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Ready for Disbursement
+                    </div>
                   </div>
-                  <div className="text-2xl font-black text-slate-900 mt-1 font-mono">
-                    ₹{netTakeHome.toLocaleString('en-IN')}.00
-                  </div>
-                  <div className="text-[10px] text-emerald-600 font-bold mt-1 flex items-center justify-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" />
-                    Ready for Disbursement
+
+                  <button
+                    type="button"
+                    onClick={handleDisburseSalary}
+                    disabled={disbursing || payoutSuccess}
+                    className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      payoutSuccess
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white active:scale-95 disabled:opacity-75'
+                    }`}
+                  >
+                    {payoutSuccess ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        Salary Credited &amp; Notified
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        {disbursing ? 'Processing Credit...' : 'Disburse & Credit Salary'}
+                      </>
+                    )}
+                  </button>
+
+                  <div className="text-[10px] text-slate-400 font-medium flex items-center justify-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                    Sends instant credit notification to employee
                   </div>
                 </div>
               </div>

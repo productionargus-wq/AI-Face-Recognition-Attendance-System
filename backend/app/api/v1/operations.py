@@ -157,6 +157,7 @@ class AdvanceRequestPayload(BaseModel):
     total_advance: float
     installments: int = 2
     reason: Optional[str] = None
+    cycle: Optional[str] = None
 
 class StatusUpdatePayload(BaseModel):
     status: str  # 'APPROVED', 'REJECTED'
@@ -168,13 +169,13 @@ async def list_advances(
     auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
 ):
     org_id = auth_ctx["org_id"]
-    all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
+    is_admin = auth_ctx.get("role") in ("org_admin", "super_admin")
+    all_emps = await store.find_many("employees", {"organization_id": org_id})
     emp_map = {e["id"]: e for e in all_emps}
+    
     query = {"organization_id": org_id}
-    if cycle:
-        query["cycle"] = cycle
-    if auth_ctx.get("role") == "employee":
-        emp = await store.find_one("employees", {"email": auth_ctx["email"], "organization_id": org_id})
+    if not is_admin:
+        emp = await store.find_one("employees", {"email": auth_ctx.get("email"), "organization_id": org_id})
         if emp:
             query["employee_id"] = emp["id"]
 
@@ -183,16 +184,42 @@ async def list_advances(
         query, 
         sort_key="created_at", 
         sort_desc=True, 
-        limit=100
+        limit=200
     )
+    
     res = []
+    current_month_cycle = datetime.now().strftime("%B %Y")
     for a in advances:
+        # Guarantee cycle is populated
+        if not a.get("cycle"):
+            a["cycle"] = current_month_cycle
+            
+        is_pending = (
+            a.get("approval_type") == "pending" or 
+            "pending" in str(a.get("approval", "")).lower()
+        )
+
+        # For admins, pending approvals should ALWAYS be visible so no requests get lost!
+        # Otherwise filter by cycle if provided
+        if cycle and cycle.lower() not in ("all", ""):
+            if is_admin:
+                if not (a.get("cycle") == cycle or is_pending):
+                    continue
+            else:
+                if not (a.get("cycle") == cycle or is_pending or a.get("approval_type") == "active"):
+                    continue
+
+        # Enrich with latest employee details if available, but preserve existing record fields as fallback
         if a.get("employee_id") in emp_map:
             emp = emp_map[a["employee_id"]]
-            a["name"] = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+            full_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+            if full_name:
+                a["name"] = full_name
             a["emp_code"] = emp.get("employee_code", a.get("emp_code"))
             a["dept"] = emp.get("department", a.get("dept"))
-            res.append(a)
+            a["email"] = emp.get("email", a.get("email"))
+
+        res.append(a)
     return res
 
 @operations_router.post("/advances")
@@ -210,7 +237,10 @@ async def issue_salary_advance(
 
     emp = await store.find_one("employees", {"id": target_emp_id, "organization_id": org_id})
     if not emp:
-        raise HTTPException(status_code=404, detail="Employee not found.")
+        # Fallback: check by email
+        emp = await store.find_one("employees", {"email": auth_ctx.get("email"), "organization_id": org_id})
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee record not found.")
 
     months = max(1, payload.installments)
     monthly_deduction = round(payload.total_advance / months, 2)
@@ -218,6 +248,7 @@ async def issue_salary_advance(
 
     approval_text = "Approved & Active" if is_admin else "Pending Approval"
     approval_type = "active" if is_admin else "pending"
+    current_cycle = payload.cycle or datetime.now().strftime("%B %Y")
 
     record = {
         "id": f"ADV-{uuid.uuid4().hex[:6].upper()}",
@@ -226,6 +257,7 @@ async def issue_salary_advance(
         "name": emp_name,
         "emp_code": emp.get("employee_code", "EMP"),
         "dept": emp.get("department", "General"),
+        "email": emp.get("email", auth_ctx.get("email", "")),
         "total_advance": payload.total_advance,
         "next_deduction": monthly_deduction,
         "instalment_text": f"Instalment 1/{months}",
@@ -234,6 +266,7 @@ async def issue_salary_advance(
         "balance": payload.total_advance,
         "approval": approval_text,
         "approval_type": approval_type,
+        "cycle": current_cycle,
         "cycle_impact": f"Will deduct ₹{monthly_deduction:,.0f} on cycle cut" if is_admin else "Awaiting Supervisor Approval",
         "reason": payload.reason or ("Authorized Salary Advance" if is_admin else "Employee Advance Request"),
         "created_at": datetime.utcnow().isoformat()
@@ -276,6 +309,24 @@ async def update_advance_status(
 
     await store.update_one("advances", {"id": advance_id, "organization_id": org_id}, update)
     adv.update(update)
+
+    # Insert notification for employee
+    status_label = "Approved & Active" if new_status == "APPROVED" else "Rejected"
+    notif = {
+        "id": f"NOTIF-{uuid.uuid4().hex[:8].upper()}",
+        "organization_id": org_id,
+        "employee_id": adv["employee_id"],
+        "employee_email": adv.get("email"),
+        "type": "ADVANCE_STATUS",
+        "title": f"Advance Request {status_label}",
+        "message": f"Your salary advance request of ₹{adv.get('total_advance', 0):,.2f} has been {status_label.lower()} by {admin_name}.",
+        "amount": adv.get("total_advance", 0),
+        "status": new_status,
+        "is_read": False,
+        "created_at": datetime.utcnow().isoformat()
+    }
+    await store.insert_one("notifications", notif)
+
     return adv
 
 
@@ -398,3 +449,156 @@ async def update_leave_status(
     await store.update_one("leaves", {"id": leave_id, "organization_id": org_id}, update)
     leave.update(update)
     return leave
+
+
+# ----------------- 4. NOTIFICATIONS & SALARY DISBURSEMENT -----------------
+
+class SalaryDisbursementPayload(BaseModel):
+    employee_id: str
+    cycle: str
+    amount: float
+    base_salary: Optional[float] = None
+    overtime_pay: Optional[float] = None
+    performance_bonus: Optional[float] = None
+    advance_deduction: Optional[float] = None
+    statutory_deductions: Optional[float] = None
+    net_salary: Optional[float] = None
+    note: Optional[str] = "Monthly Salary Credited"
+
+@operations_router.get("/notifications")
+async def list_notifications(
+    auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
+):
+    org_id = auth_ctx["org_id"]
+    is_admin = auth_ctx.get("role") in ("org_admin", "super_admin")
+    
+    # Retrieve all notifications for this tenant
+    all_notifs = await store.find_many(
+        "notifications", 
+        {"organization_id": org_id}, 
+        sort_key="created_at", 
+        sort_desc=True, 
+        limit=100
+    )
+    
+    if is_admin:
+        return all_notifs
+
+    # For employee, filter notifications meant for them
+    email = auth_ctx.get("email")
+    emp = await store.find_one("employees", {"email": email, "organization_id": org_id})
+    emp_id = emp["id"] if emp else None
+
+    filtered = []
+    for n in all_notifs:
+        if (emp_id and n.get("employee_id") == emp_id) or (email and n.get("employee_email") == email):
+            filtered.append(n)
+        elif not n.get("employee_id") and not n.get("employee_email"):
+            # Broadcast notification
+            filtered.append(n)
+            
+    return filtered
+
+@operations_router.post("/notifications/disburse-salary")
+async def disburse_salary(
+    payload: SalaryDisbursementPayload,
+    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+):
+    org_id = auth_ctx["org_id"]
+    admin_name = auth_ctx.get("name", "Payroll Administrator")
+    emp = await store.find_one("employees", {"id": payload.employee_id, "organization_id": org_id})
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    emp_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+    net_amount = payload.net_salary if payload.net_salary is not None else payload.amount
+
+    # 1. Create a persistent salary disbursement transaction record
+    disb_record = {
+        "id": f"PAY-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{emp.get('employee_code', 'EMP')}",
+        "organization_id": org_id,
+        "employee_id": emp["id"],
+        "employee_name": emp_name,
+        "employee_code": emp.get("employee_code"),
+        "cycle": payload.cycle,
+        "base_salary": payload.base_salary or emp.get("base_salary", 40000.0),
+        "overtime_pay": payload.overtime_pay or 0.0,
+        "bonus": payload.performance_bonus or 0.0,
+        "advance_deduction": payload.advance_deduction or 0.0,
+        "statutory_deductions": payload.statutory_deductions or emp.get("statutory_deductions", 3000.0),
+        "net_salary": net_amount,
+        "status": "PAID",
+        "disbursed_by": admin_name,
+        "disbursed_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.utcnow().isoformat()
+    }
+    await store.insert_one("salary_payouts", disb_record)
+
+    # 2. If advance deduction was applied, update active advance amortization progress
+    if payload.advance_deduction and payload.advance_deduction > 0:
+        active_adv = await store.find_one("advances", {
+            "employee_id": emp["id"], 
+            "organization_id": org_id,
+            "approval_type": "active"
+        })
+        if active_adv:
+            new_bal = max(0.0, float(active_adv.get("balance", 0.0)) - float(payload.advance_deduction))
+            adv_update = {"balance": new_bal}
+            if new_bal <= 0:
+                adv_update["approval"] = "Completed & Paid Off"
+                adv_update["approval_type"] = "completed"
+            await store.update_one("advances", {"id": active_adv["id"]}, adv_update)
+
+    # 3. Create high-priority notification for employee
+    notif = {
+        "id": f"NOTIF-{uuid.uuid4().hex[:8].upper()}",
+        "organization_id": org_id,
+        "employee_id": emp["id"],
+        "employee_email": emp.get("email"),
+        "type": "SALARY_CREDITED",
+        "title": f"Salary Credited for {payload.cycle}",
+        "message": f"Dear {emp.get('first_name', 'Employee')}, your net salary of ₹{net_amount:,.2f} for {payload.cycle} has been processed and credited to your account.",
+        "amount": net_amount,
+        "cycle": payload.cycle,
+        "payout_id": disb_record["id"],
+        "is_read": False,
+        "created_at": datetime.utcnow().isoformat()
+    }
+    await store.insert_one("notifications", notif)
+
+    return {
+        "status": "success",
+        "message": f"Salary for {emp_name} credited successfully.",
+        "payout": disb_record,
+        "notification": notif
+    }
+
+@operations_router.patch("/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: str,
+    auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
+):
+    org_id = auth_ctx["org_id"]
+    await store.update_one(
+        "notifications", 
+        {"id": notification_id, "organization_id": org_id},
+        {"is_read": True, "read_at": datetime.utcnow().isoformat()}
+    )
+    return {"status": "ok"}
+
+@operations_router.patch("/notifications/mark-all-read")
+async def mark_all_notifications_read(
+    auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
+):
+    org_id = auth_ctx["org_id"]
+    email = auth_ctx.get("email")
+    emp = await store.find_one("employees", {"email": email, "organization_id": org_id})
+    emp_id = emp["id"] if emp else None
+    
+    all_notifs = await store.find_many("notifications", {"organization_id": org_id, "is_read": False})
+    for n in all_notifs:
+        if n.get("employee_email") == email or (emp_id and n.get("employee_id") == emp_id):
+            await store.update_one("notifications", {"id": n["id"]}, {"is_read": True})
+            
+    return {"status": "ok"}
+

@@ -155,6 +155,9 @@ export const EnrollmentPage = () => {
       assigned_shift: emp.assigned_shift || 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
       shift_start: emp.shift_start || '09:00',
       shift_end: emp.shift_end || '17:30',
+      base_salary: emp.base_salary != null ? emp.base_salary : 40000,
+      hourly_rate: emp.hourly_rate != null ? emp.hourly_rate : 250,
+      statutory_deductions: emp.statutory_deductions != null ? emp.statutory_deductions : 3000,
       permissions: emp.permissions || DEFAULT_PERMISSIONS
     });
     setEditError('');
@@ -669,6 +672,63 @@ export const EnrollmentPage = () => {
                       value={editFormData.shift_end}
                       onChange={(e) => handleCustomEditTimingChange(undefined, e.target.value)}
                       className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Compensation & Salary Structure */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-800">
+                    Compensation & Salary Structure
+                  </label>
+                  <p className="text-[11px] text-slate-500">
+                    Update base monthly pay, hourly overtime rates, and statutory tax deductions for payroll.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-slate-600 mb-1">
+                      Base Salary (₹/mo)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="500"
+                      value={editFormData.base_salary || 0}
+                      onChange={(e) => setEditFormData({ ...editFormData, base_salary: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="40000"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-slate-600 mb-1">
+                      OT Rate (₹/hr)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="25"
+                      value={editFormData.hourly_rate || 0}
+                      onChange={(e) => setEditFormData({ ...editFormData, hourly_rate: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="250"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-slate-600 mb-1">
+                      PF / Tax Ded. (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="100"
+                      value={editFormData.statutory_deductions || 0}
+                      onChange={(e) => setEditFormData({ ...editFormData, statutory_deductions: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="3000"
                     />
                   </div>
                 </div>

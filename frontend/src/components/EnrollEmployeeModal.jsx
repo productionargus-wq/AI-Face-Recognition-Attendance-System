@@ -29,6 +29,9 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
     assigned_shift: 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
     shift_start: '09:00',
     shift_end: '17:30',
+    base_salary: 40000,
+    hourly_rate: 250,
+    statutory_deductions: 3000,
     permissions: DEFAULT_PERMISSIONS
   });
 
@@ -398,6 +401,63 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
                     value={formData.shift_end}
                     onChange={(e) => handleCustomTimingChange(undefined, e.target.value)}
                     className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Compensation & Salary Structure */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-800">
+                  Compensation & Salary Structure
+                </label>
+                <p className="text-[11px] text-slate-500">
+                  Assign base compensation, overtime rates, and statutory tax deductions for payroll.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-slate-600 mb-1">
+                    Base Salary (₹/mo)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="500"
+                    value={formData.base_salary}
+                    onChange={(e) => setFormData({ ...formData, base_salary: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="40000"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-slate-600 mb-1">
+                    OT Rate (₹/hr)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="25"
+                    value={formData.hourly_rate}
+                    onChange={(e) => setFormData({ ...formData, hourly_rate: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="250"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-slate-600 mb-1">
+                    PF / Tax Ded. (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={formData.statutory_deductions}
+                    onChange={(e) => setFormData({ ...formData, statutory_deductions: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="3000"
                   />
                 </div>
               </div>

@@ -69,10 +69,23 @@ export const AdvanceMoney = () => {
 
   useEffect(() => {
     fetchInitialData();
+    const interval = setInterval(() => {
+      fetchInitialData(true);
+    }, 6000);
+
+    const onFocus = () => {
+      fetchInitialData(true);
+    };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [cycle]);
 
-  const fetchInitialData = async () => {
-    setLoading(true);
+  const fetchInitialData = async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
     try {
       const [empRes, advRes] = await Promise.all([
         api.get('/employees/').catch(() => ({ data: [] })),
@@ -81,7 +94,7 @@ export const AdvanceMoney = () => {
 
       const empList = empRes.data || [];
       setEmployees(empList);
-      if (empList.length > 0) {
+      if (empList.length > 0 && !isSilent) {
         const defaultEmp = isEmployee
           ? empList.find(e => e.email === user?.email || e.id === user?.employee_id) || empList[0]
           : empList[0];
@@ -91,7 +104,7 @@ export const AdvanceMoney = () => {
     } catch (err) {
       console.error('Failed to load advance money data', err);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
@@ -113,7 +126,8 @@ export const AdvanceMoney = () => {
         employee_id: targetEmpId,
         total_advance: parseFloat(newAdvance.amount),
         installments: parseInt(newAdvance.installments) || 2,
-        reason: newAdvance.reason || (isAdmin ? 'Authorized Salary Advance' : 'Salary Advance Request')
+        reason: newAdvance.reason || (isAdmin ? 'Authorized Salary Advance' : 'Salary Advance Request'),
+        cycle: cycle
       });
 
       setAdvances(prev => [res.data, ...prev]);
@@ -362,6 +376,25 @@ export const AdvanceMoney = () => {
           </div>
         </div>
       </div>
+
+      {/* Admin Notice for Pending Advance Approvals */}
+      {isAdmin && pendingCount > 0 && (
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+            </span>
+            <div>
+              <span className="font-bold">{pendingCount} Pending Advance Approval {pendingCount === 1 ? 'Request' : 'Requests'}</span>
+              <span className="text-amber-700 ml-1.5 hidden sm:inline">— Action required to disburse or reject employee salary advances below.</span>
+            </div>
+          </div>
+          <span className="px-2.5 py-0.5 rounded-full bg-amber-200/80 text-amber-900 font-mono font-bold text-[10px]">
+            ACTION REQUIRED
+          </span>
+        </div>
+      )}
 
       {/* Table Card: Active Advance Register & Amortization */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
