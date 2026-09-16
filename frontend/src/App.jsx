@@ -13,6 +13,7 @@ import { AdvanceMoney } from './pages/AdvanceMoney';
 import { LeaveApply } from './pages/LeaveApply';
 import { PayrollReport } from './pages/PayrollReport';
 import { OrgSettings } from './pages/OrgSettings';
+import { PublicTerminal } from './pages/PublicTerminal';
 
 const ProtectedRoute = ({ children, requiredPath = null }) => {
   const { user, loading } = useAuth();
@@ -51,9 +52,10 @@ function App() {
           {/* Root page loads the newly redesigned Login interface directly */}
           <Route path="/" element={<Login />} />
 
-          {/* Standalone Auth Screens (Screen 1 & Screen 2) */}
+          {/* Standalone Auth & Terminal Screens */}
           <Route path="/login" element={<Login />} />
           <Route path="/register-org" element={<RegisterOrg />} />
+          <Route path="/terminal" element={<PublicTerminal />} />
 
           {/* Enterprise Suite Screens with AppLayout Shell */}
           <Route

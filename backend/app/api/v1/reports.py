@@ -21,7 +21,7 @@ attendance_router = APIRouter(prefix="/attendance", tags=["Attendance Capture & 
 # ----------------- ATTENDANCE ENDPOINTS -----------------
 
 class KioskPunchPayload(BaseModel):
-    organization_slug_or_id: str
+    organization_slug_or_id: Optional[str] = None
     image_sample: str
     punch_type: str = "AUTO"
     liveness_challenge_response: Optional[str] = "VERIFIED"
@@ -33,16 +33,17 @@ def get_liveness_challenge():
 
 @attendance_router.post("/kiosk-punch")
 async def kiosk_punch(payload: KioskPunchPayload):
-    org = await store.find_one("organizations", {"id": payload.organization_slug_or_id})
-    if not org:
-        org = await store.find_one("organizations", {"slug": payload.organization_slug_or_id})
-    if not org:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Organization '{payload.organization_slug_or_id}' not found."
-        )
-
-    org_id = org["id"]
+    target_org = (payload.organization_slug_or_id or "").strip()
+    org = None
+    if target_org and target_org.upper() not in ("AUTO", "ALL"):
+        org = await store.find_one("organizations", {"id": target_org})
+        if not org:
+            org = await store.find_one("organizations", {"slug": target_org})
+        if not org:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Organization '{target_org}' not found."
+            )
 
     try:
         image = decode_base64_image(payload.image_sample)
@@ -60,15 +61,24 @@ async def kiosk_punch(payload: KioskPunchPayload):
     if live_vector is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No face clearly detected. Please center your face inside the circle."
+            detail="No face clearly detected. Please center your face inside the reticle."
         )
 
-    employees = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
-    if not employees:
-        raise HTTPException(
-            status_code=404, 
-            detail="No registered employees found in this organization."
-        )
+    if org:
+        employees = await store.find_many("employees", {"organization_id": org["id"], "is_active": True})
+        if not employees:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No registered employees found in {org.get('name', 'this organization')}."
+            )
+    else:
+        # Cross-organization auto-detection across all active enrolled employees
+        employees = await store.find_many("employees", {"is_active": True})
+        if not employees:
+            raise HTTPException(
+                status_code=404, 
+                detail="No registered employees found in system."
+            )
 
     matched_emp, confidence = find_best_match(
         live_vector=live_vector,
@@ -77,10 +87,17 @@ async def kiosk_punch(payload: KioskPunchPayload):
     )
 
     if not matched_emp:
+        org_name = org.get("name") if org else "the system"
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Face not recognized in {org.get('name')}. Please make sure you are enrolled."
+            detail=f"Face not recognized in {org_name}. Please ensure you are enrolled."
         )
+
+    org_id = matched_emp["organization_id"]
+    if not org or org.get("id") != org_id:
+        org = await store.find_one("organizations", {"id": org_id})
+        if not org:
+            raise HTTPException(status_code=404, detail="Employee organization record not found.")
 
     # Calculate exact local time in organization's timezone
     now_utc = datetime.now(timezone.utc)
@@ -94,7 +111,14 @@ async def kiosk_punch(payload: KioskPunchPayload):
         "date": today_str
     })
 
-    punch_action = "CHECK_IN"
+    req_type = (payload.punch_type or "AUTO").upper()
+    if req_type == "CHECK_IN":
+        punch_action = "CHECK_IN"
+    elif req_type == "CHECK_OUT":
+        punch_action = "CHECK_OUT"
+    else:
+        punch_action = "CHECK_IN" if not existing_record else "CHECK_OUT"
+
     record_status = AttendanceStatus.PRESENT
 
     work_start = matched_emp.get("shift_start") or org.get("work_hours", {}).get("start_time", "09:00")
@@ -110,56 +134,82 @@ async def kiosk_punch(payload: KioskPunchPayload):
 
     shift_status = "LATE" if record_status == AttendanceStatus.LATE else "ON-TIME"
 
-    if not existing_record:
-        punch_action = "CHECK_IN"
-        new_att = {
-            "id": f"ATT-{now_utc.strftime('%Y%m%d%H%M%S')}-{matched_emp['employee_code']}",
-            "organization_id": org_id,
-            "employee_id": matched_emp["id"],
-            "employee_code": matched_emp["employee_code"],
-            "employee_name": f"{matched_emp['first_name']} {matched_emp['last_name']}",
-            "department": matched_emp.get("department", "General"),
-            "date": today_str,
-            "check_in": now_utc.isoformat(),
-            "check_in_time": time_str,
-            "check_out": None,
-            "check_out_time": None,
-            "total_hours": 0.0,
-            "status": record_status,
-            "shift_status": shift_status,
-            "verification_mode": "FACE_KIOSK",
-            "confidence_score": confidence,
-            "liveness_verified": True,
-            "kiosk_id": payload.kiosk_id
-        }
-        await store.insert_one("attendance", new_att)
-        res_record = new_att
+    if punch_action == "CHECK_IN":
+        if not existing_record:
+            new_att = {
+                "id": f"ATT-{now_utc.strftime('%Y%m%d%H%M%S')}-{matched_emp['employee_code']}",
+                "organization_id": org_id,
+                "employee_id": matched_emp["id"],
+                "employee_code": matched_emp["employee_code"],
+                "employee_name": f"{matched_emp['first_name']} {matched_emp['last_name']}",
+                "department": matched_emp.get("department", "General"),
+                "date": today_str,
+                "check_in": now_utc.isoformat(),
+                "check_in_time": time_str,
+                "check_out": None,
+                "check_out_time": None,
+                "total_hours": 0.0,
+                "status": record_status,
+                "shift_status": shift_status,
+                "verification_mode": "FACE_KIOSK",
+                "confidence_score": confidence,
+                "liveness_verified": True,
+                "kiosk_id": payload.kiosk_id
+            }
+            await store.insert_one("attendance", new_att)
+            res_record = new_att
+        else:
+            res_record = existing_record
     else:
-        punch_action = "CHECK_OUT"
-        check_in_time = existing_record.get("check_in")
-        if isinstance(check_in_time, str):
-            try:
-                check_in_time = datetime.fromisoformat(check_in_time.replace("Z", "+00:00"))
-            except Exception:
+        # CHECK_OUT
+        if not existing_record:
+            new_att = {
+                "id": f"ATT-{now_utc.strftime('%Y%m%d%H%M%S')}-{matched_emp['employee_code']}",
+                "organization_id": org_id,
+                "employee_id": matched_emp["id"],
+                "employee_code": matched_emp["employee_code"],
+                "employee_name": f"{matched_emp['first_name']} {matched_emp['last_name']}",
+                "department": matched_emp.get("department", "General"),
+                "date": today_str,
+                "check_in": now_utc.isoformat(),
+                "check_in_time": time_str,
+                "check_out": now_utc.isoformat(),
+                "check_out_time": time_str,
+                "total_hours": 0.1,
+                "status": record_status,
+                "shift_status": shift_status,
+                "verification_mode": "FACE_KIOSK",
+                "confidence_score": confidence,
+                "liveness_verified": True,
+                "kiosk_id": payload.kiosk_id
+            }
+            await store.insert_one("attendance", new_att)
+            res_record = new_att
+        else:
+            check_in_time = existing_record.get("check_in")
+            if isinstance(check_in_time, str):
+                try:
+                    check_in_time = datetime.fromisoformat(check_in_time.replace("Z", "+00:00"))
+                except Exception:
+                    check_in_time = now_utc
+            elif not isinstance(check_in_time, datetime):
                 check_in_time = now_utc
-        elif not isinstance(check_in_time, datetime):
-            check_in_time = now_utc
 
-        duration_sec = (now_utc - check_in_time).total_seconds()
-        total_hours = round(max(0.1, duration_sec / 3600.0), 2)
-        
-        await store.update_one("attendance", {"id": existing_record["id"]}, {
-            "check_out": now_utc.isoformat(),
-            "check_out_time": time_str,
-            "total_hours": total_hours,
-            "confidence_score": max(confidence, existing_record.get("confidence_score", 0))
-        })
-        existing_record["check_out"] = now_utc.isoformat()
-        existing_record["check_out_time"] = time_str
-        existing_record["total_hours"] = total_hours
-        res_record = existing_record
+            duration_sec = (now_utc - check_in_time).total_seconds()
+            total_hours = round(max(0.1, duration_sec / 3600.0), 2)
+            
+            await store.update_one("attendance", {"id": existing_record["id"]}, {
+                "check_out": now_utc.isoformat(),
+                "check_out_time": time_str,
+                "total_hours": total_hours,
+                "confidence_score": max(confidence, existing_record.get("confidence_score", 0))
+            })
+            existing_record["check_out"] = now_utc.isoformat()
+            existing_record["check_out_time"] = time_str
+            existing_record["total_hours"] = total_hours
+            res_record = existing_record
 
-    # 1. Record persistent punch stream event for LIVE PUNCH EVENT STREAM
+    # Record persistent punch stream event for LIVE PUNCH EVENT STREAM
     fn = matched_emp.get("first_name", "")
     ln = matched_emp.get("last_name", "")
     initials = ((fn[:1] if fn else "") + (ln[:1] if ln else "")).upper() or "EM"
@@ -184,6 +234,8 @@ async def kiosk_punch(payload: KioskPunchPayload):
         "employee_name": f"{matched_emp['first_name']} {matched_emp['last_name']}",
         "employee_code": matched_emp["employee_code"],
         "department": matched_emp.get("department", "General"),
+        "organization_id": org_id,
+        "organization_name": org.get("name", "Argus Enterprise"),
         "timestamp": time_str,
         "date": today_str,
         "attendance_status": res_record.get("status", "PRESENT"),
@@ -196,15 +248,18 @@ async def kiosk_punch(payload: KioskPunchPayload):
 async def get_kiosk_stream(organization_slug_or_id: Optional[str] = None, organization_id: Optional[str] = None):
     """Retrieve persisted live punch event stream records for kiosk display."""
     target = organization_slug_or_id or organization_id
-    if not target:
-        return []
+    today_str = datetime.now(IST_TZ).strftime("%Y-%m-%d")
+
+    if not target or target.upper() in ("AUTO", "ALL"):
+        events = await store.find_many("attendance_events", {"date": today_str}, sort_key="timestamp", sort_desc=True, limit=20)
+        if not events:
+            events = await store.find_many("attendance_events", {}, sort_key="timestamp", sort_desc=True, limit=20)
+        return events
         
     org = await store.find_one("organizations", {"slug": target})
     if not org:
         org = await store.find_one("organizations", {"id": target})
     org_id = org["id"] if org else target
-
-    today_str = datetime.now(IST_TZ).strftime("%Y-%m-%d")
 
     active_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
     active_emp_ids = {e["id"] for e in active_emps}

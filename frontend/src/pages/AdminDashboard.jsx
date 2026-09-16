@@ -63,10 +63,23 @@ export const AdminDashboard = () => {
 
   useEffect(() => {
     fetchDashboardData();
+    const interval = setInterval(() => {
+      fetchDashboardData(true);
+    }, 6000);
+
+    const onFocus = () => {
+      fetchDashboardData(true);
+    };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
-  const fetchDashboardData = async () => {
-    setLoading(true);
+  const fetchDashboardData = async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
     try {
       const [attRes, empRes] = await Promise.all([
         api.get('/attendance/today'),
@@ -77,7 +90,7 @@ export const AdminDashboard = () => {
     } catch (err) {
       console.error('Failed to load dashboard data', err);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 

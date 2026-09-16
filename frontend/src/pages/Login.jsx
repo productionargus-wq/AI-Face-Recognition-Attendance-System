@@ -12,6 +12,7 @@ import {
   RefreshCw, 
   Sparkles
 } from 'lucide-react';
+import { AttendanceTerminalModal } from '../components/AttendanceTerminalModal';
 
 const GOOGLE_CLIENT_ID = '640635826843-g3jv0g9jfk79hohe6b1t1vbr60fegkut.apps.googleusercontent.com';
 
@@ -20,6 +21,7 @@ export const Login = () => {
   const [loading, setLoading] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [faceScanStatus, setFaceScanStatus] = useState('IDLE');
+  const [showTerminal, setShowTerminal] = useState(false);
   
   const videoRef = useRef(null);
   const { user, googleLogin } = useAuth();
@@ -149,26 +151,57 @@ export const Login = () => {
   return (
     <div className="min-h-screen bg-[#f8fbff] bg-blueprint flex flex-col justify-between text-slate-800">
       {/* Top Brand Header */}
-      <header className="h-16 border-b border-slate-200/80 bg-white/70 backdrop-blur-xs px-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#0080ff] flex items-center justify-center text-white shadow-xs font-bold">
-            <ScanFace className="w-5 h-5" />
+      <header className="h-16 border-b border-slate-200/80 bg-white/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 relative z-20">
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center shadow-xs border border-slate-200/80 bg-white p-0.5">
+            <img 
+              src="/company-logo.jpg" 
+              alt="Argus Logo" 
+              className="w-full h-full object-contain"
+              onError={(e) => {
+                e.target.onerror = null;
+                e.target.style.display = 'none';
+                if (e.target.parentElement) {
+                  e.target.parentElement.innerHTML = '<span class="text-blue-600 font-bold text-xs">AI</span>';
+                }
+              }} 
+            />
           </div>
           <div className="flex items-center gap-2">
             <span className="font-extrabold tracking-wider text-slate-900 text-sm">
               ARGUS
             </span>
-            <span className="text-[11px] font-mono font-semibold px-2 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200">
+            <span className="hidden sm:inline text-[11px] font-mono font-semibold px-2 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200">
               AI ATTENDANCE
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-          <span className="hidden sm:inline">New organisation?</span>
+        {/* Top Center: Attendance Capture Terminal Button */}
+        <div className="flex items-center justify-center">
+          <button
+            type="button"
+            onClick={() => setShowTerminal(true)}
+            className="group relative inline-flex items-center gap-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 hover:shadow-lg transition-all cursor-pointer border border-blue-400/30 active:scale-95"
+            title="Open Live Kiosk Attendance Punch Terminal"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+            </span>
+            <ScanFace className="w-4 h-4 text-blue-200 group-hover:scale-110 transition-transform" />
+            <span className="tracking-wide font-semibold text-xs sm:text-sm">Attendance Capture Terminal</span>
+            <span className="hidden md:inline text-[9px] font-mono uppercase bg-white/20 text-white px-1.5 py-0.5 rounded ml-0.5 font-bold">
+              LIVE
+            </span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-500 shrink-0">
+          <span className="hidden lg:inline">New organisation?</span>
           <Link
             to="/register-org"
-            className="px-3 py-1.5 rounded-lg border border-slate-300 hover:border-blue-500 hover:text-blue-600 bg-white font-semibold transition-colors shadow-2xs"
+            className="px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 hover:border-blue-500 hover:text-blue-600 bg-white font-semibold transition-colors shadow-2xs text-[11px] sm:text-xs"
           >
             Register Organisation
           </Link>
@@ -328,6 +361,12 @@ export const Login = () => {
           <span>ISO/IEC 30107-3 Biometric Compliance</span>
         </div>
       </footer>
+
+      {/* Attendance Capture Terminal Modal */}
+      <AttendanceTerminalModal 
+        isOpen={showTerminal} 
+        onClose={() => setShowTerminal(false)} 
+      />
     </div>
   );
 };
