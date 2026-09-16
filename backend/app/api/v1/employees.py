@@ -22,6 +22,9 @@ class EmployeeUpdate(BaseModel):
     department: Optional[str] = None
     designation: Optional[str] = None
     phone: Optional[str] = None
+    assigned_shift: Optional[str] = None
+    shift_start: Optional[str] = None
+    shift_end: Optional[str] = None
 
 @router.get("/")
 async def list_employees(
@@ -44,7 +47,7 @@ async def list_employees(
             e for e in employees 
             if s in e.get("first_name", "").lower() 
             or s in e.get("last_name", "").lower() 
-            or s in e.get("employee_code", "").lower()
+            or s in e.get("employee_code", "").lower() 
             or s in e.get("department", "").lower()
         ]
 
@@ -85,7 +88,10 @@ async def create_employee(
         email=payload.email,
         department=payload.department,
         designation=payload.designation,
-        phone=payload.phone
+        phone=payload.phone,
+        assigned_shift=payload.assigned_shift or "General Shift (09:00 AM – 05:30 PM • 8.5h)",
+        shift_start=payload.shift_start or "09:00",
+        shift_end=payload.shift_end or "17:30"
     ).dict()
     await store.insert_one("employees", emp_dict)
 
@@ -276,6 +282,12 @@ async def update_employee(
         update_fields["designation"] = payload.designation.strip()
     if payload.phone is not None:
         update_fields["phone"] = payload.phone.strip()
+    if payload.assigned_shift is not None:
+        update_fields["assigned_shift"] = payload.assigned_shift.strip()
+    if payload.shift_start is not None:
+        update_fields["shift_start"] = payload.shift_start.strip()
+    if payload.shift_end is not None:
+        update_fields["shift_end"] = payload.shift_end.strip()
 
     if not update_fields:
         return emp

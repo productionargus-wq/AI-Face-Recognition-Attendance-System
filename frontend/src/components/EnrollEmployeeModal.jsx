@@ -12,8 +12,35 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
     email: '',
     department: 'Engineering',
     designation: '',
-    phone: ''
+    phone: '',
+    assigned_shift: 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
+    shift_start: '09:00',
+    shift_end: '17:30'
   });
+
+  const handleShiftChange = (shiftName) => {
+    let start = '09:00';
+    let end = '17:30';
+    if (shiftName.includes('Morning')) {
+      start = '06:00';
+      end = '14:30';
+    } else if (shiftName.includes('Evening')) {
+      start = '14:00';
+      end = '22:30';
+    } else if (shiftName.includes('Night')) {
+      start = '21:00';
+      end = '05:30';
+    } else if (shiftName.includes('10:00 AM')) {
+      start = '10:00';
+      end = '19:00';
+    }
+    setFormData(prev => ({
+      ...prev,
+      assigned_shift: shiftName,
+      shift_start: start,
+      shift_end: end
+    }));
+  };
 
   const [consentAgreed, setConsentAgreed] = useState(false);
 
@@ -262,9 +289,27 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
               </div>
             </div>
 
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Assigned Shift / Working Schedule
+              </label>
+              <select
+                value={formData.assigned_shift}
+                onChange={(e) => handleShiftChange(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer font-medium"
+              >
+                <option value="General Shift (09:00 AM – 05:30 PM • 8.5h)">General Shift (09:00 AM – 05:30 PM • 8.5h)</option>
+                <option value="Morning Shift (06:00 AM – 02:30 PM • 8.5h)">Morning Shift (06:00 AM – 02:30 PM • 8.5h)</option>
+                <option value="Evening Shift (02:00 PM – 10:30 PM • 8.5h)">Evening Shift (02:00 PM – 10:30 PM • 8.5h)</option>
+                <option value="Night Shift (09:00 PM – 05:30 AM • 8.5h)">Night Shift (09:00 PM – 05:30 AM • 8.5h)</option>
+                <option value="Standard Shift (10:00 AM – 07:00 PM • 9.0h)">Standard Shift (10:00 AM – 07:00 PM • 9.0h)</option>
+                <option value="Flexible Schedule (8.0h)">Flexible Schedule (8.0h)</option>
+              </select>
+            </div>
+
             <button
               type="submit"
-              className="w-full py-2.5 mt-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl transition-colors"
+              className="w-full py-2.5 mt-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl transition-colors cursor-pointer"
             >
               Continue to Biometric Consent
             </button>

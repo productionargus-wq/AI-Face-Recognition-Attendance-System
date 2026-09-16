@@ -97,7 +97,7 @@ async def kiosk_punch(payload: KioskPunchPayload):
     punch_action = "CHECK_IN"
     record_status = AttendanceStatus.PRESENT
 
-    work_start = org.get("work_hours", {}).get("start_time", "09:00")
+    work_start = matched_emp.get("shift_start") or org.get("work_hours", {}).get("start_time", "09:00")
     grace = org.get("work_hours", {}).get("late_grace_minutes", 15)
     
     start_h, start_m = map(int, work_start.split(":"))
