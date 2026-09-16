@@ -29,18 +29,18 @@ export const PrecisionIdentityMatrix = () => {
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(width, height);
-    renderer.setClearColor(0x030712, 1); // Deep cosmic obsidian space
+    renderer.setClearColor(0xf8f9ff, 1); // Clean light theme white
     container.appendChild(renderer.domElement);
 
-    // --- 2. Volumetric Ambient & Directional Point Lights ---
-    const ambientLight = new THREE.AmbientLight(0xe0f2fe, 0.8);
+    // --- 2. Ambient & Directional Point Lights for Light Scene ---
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
     scene.add(ambientLight);
 
-    const blueLight = new THREE.PointLight(0x0284c7, 3.5, 300);
+    const blueLight = new THREE.PointLight(0x006194, 2.5, 300);
     blueLight.position.set(-60, 40, 50);
     scene.add(blueLight);
 
-    const cyanLight = new THREE.PointLight(0x06b6d4, 3.0, 300);
+    const cyanLight = new THREE.PointLight(0x0284c7, 2.0, 300);
     cyanLight.position.set(70, -30, 40);
     scene.add(cyanLight);
 
@@ -56,7 +56,7 @@ export const PrecisionIdentityMatrix = () => {
       color: 0x0284c7,
       wireframe: true,
       transparent: true,
-      opacity: 0.22
+      opacity: 0.38
     });
     const faceMesh = new THREE.Mesh(faceGeo, faceWireMat);
     faceMesh.position.copy(planetPos);
@@ -65,34 +65,34 @@ export const PrecisionIdentityMatrix = () => {
     // Inner glowing biometric core
     const innerCoreGeo = new THREE.OctahedronGeometry(12, 2);
     const innerCoreMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
+      color: 0x007bb9,
       wireframe: true,
       transparent: true,
-      opacity: 0.38
+      opacity: 0.48
     });
     const innerCore = new THREE.Mesh(innerCoreGeo, innerCoreMat);
     innerCore.position.copy(planetPos);
     worldGroup.add(innerCore);
 
-    // --- 4. Concentric Biometric Scanning Reticle Rings ---
+    // --- 4. Concentric Biometric Scanning Reticle Rings in Blue ---
     const ringsGroup = new THREE.Group();
     ringsGroup.position.copy(planetPos);
 
     const ringMat1 = new THREE.MeshBasicMaterial({
-      color: 0x0284c7,
+      color: 0x006194,
       wireframe: true,
       transparent: true,
-      opacity: 0.45
+      opacity: 0.65
     });
     const ring1Geo = new THREE.TorusGeometry(36, 0.4, 16, 80);
     const ring1 = new THREE.Mesh(ring1Geo, ringMat1);
     ringsGroup.add(ring1);
 
     const ringMat2 = new THREE.MeshBasicMaterial({
-      color: 0x0ea5e9,
+      color: 0x0284c7,
       wireframe: true,
       transparent: true,
-      opacity: 0.35
+      opacity: 0.55
     });
     const ring2Geo = new THREE.TorusGeometry(42, 0.3, 16, 90);
     const ring2 = new THREE.Mesh(ring2Geo, ringMat2);
@@ -100,10 +100,10 @@ export const PrecisionIdentityMatrix = () => {
     ringsGroup.add(ring2);
 
     const ringMat3 = new THREE.MeshBasicMaterial({
-      color: 0x06b6d4,
+      color: 0x0ea5e9,
       wireframe: true,
       transparent: true,
-      opacity: 0.3
+      opacity: 0.50
     });
     const ring3Geo = new THREE.TorusGeometry(48, 0.25, 16, 100);
     const ring3 = new THREE.Mesh(ring3Geo, ringMat3);
@@ -117,11 +117,11 @@ export const PrecisionIdentityMatrix = () => {
     leftSensorGroup.position.set(-58, -12, -20);
 
     const leftTorusGeo = new THREE.TorusGeometry(18, 0.35, 16, 60);
-    const leftTorusMat = new THREE.MeshBasicMaterial({ color: 0x0284c7, wireframe: true, transparent: true, opacity: 0.28 });
+    const leftTorusMat = new THREE.MeshBasicMaterial({ color: 0x0284c7, wireframe: true, transparent: true, opacity: 0.45 });
     const leftTorus = new THREE.Mesh(leftTorusGeo, leftTorusMat);
 
     const leftIcosaGeo = new THREE.IcosahedronGeometry(9, 1);
-    const leftIcosaMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true, transparent: true, opacity: 0.32 });
+    const leftIcosaMat = new THREE.MeshBasicMaterial({ color: 0x007bb9, wireframe: true, transparent: true, opacity: 0.40 });
     const leftIcosa = new THREE.Mesh(leftIcosaGeo, leftIcosaMat);
 
     leftSensorGroup.add(leftTorus);
@@ -160,16 +160,16 @@ export const PrecisionIdentityMatrix = () => {
     const particlesGeometry = new THREE.BufferGeometry();
     particlesGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
 
-    // Luminous soft circular sprite for points
+    // Luminous soft circular blue sprite for points on white background
     const canvas = document.createElement('canvas');
     canvas.width = 32;
     canvas.height = 32;
     const ctx = canvas.getContext('2d');
     const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
-    grad.addColorStop(0, 'rgba(2, 132, 199, 1)');
-    grad.addColorStop(0.3, 'rgba(14, 165, 233, 0.85)');
-    grad.addColorStop(0.7, 'rgba(56, 189, 248, 0.35)');
-    grad.addColorStop(1, 'rgba(2, 132, 199, 0)');
+    grad.addColorStop(0, 'rgba(0, 97, 148, 0.95)');
+    grad.addColorStop(0.35, 'rgba(2, 132, 199, 0.8)');
+    grad.addColorStop(0.7, 'rgba(56, 189, 248, 0.3)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(16, 16, 16, 0, Math.PI * 2);
@@ -177,11 +177,11 @@ export const PrecisionIdentityMatrix = () => {
 
     const particleTexture = new THREE.CanvasTexture(canvas);
     const particleMaterial = new THREE.PointsMaterial({
-      size: 5.0,
+      size: 5.5,
       map: particleTexture,
       transparent: true,
-      opacity: 0.9,
-      blending: THREE.AdditiveBlending,
+      opacity: 0.85,
+      blending: THREE.NormalBlending,
       depthWrite: false
     });
 
@@ -191,16 +191,14 @@ export const PrecisionIdentityMatrix = () => {
     // Connection lines
     const maxLines = particleCount * 5;
     const linePositions = new Float32Array(maxLines * 6);
-    const lineColors = new Float32Array(maxLines * 6);
     const linesGeometry = new THREE.BufferGeometry();
     linesGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3).setUsage(THREE.DynamicDrawUsage));
-    linesGeometry.setAttribute('color', new THREE.BufferAttribute(lineColors, 3).setUsage(THREE.DynamicDrawUsage));
 
     const linesMaterial = new THREE.LineBasicMaterial({
-      vertexColors: true,
+      color: 0x0284c7,
       transparent: true,
-      opacity: 0.45,
-      blending: THREE.AdditiveBlending,
+      opacity: 0.35,
+      blending: THREE.NormalBlending,
       depthWrite: false
     });
 
@@ -238,32 +236,35 @@ export const PrecisionIdentityMatrix = () => {
       frameId = requestAnimationFrame(animate);
       const time = clock.getElapsedTime();
 
-      // Smooth mouse tilt parallax
-      targetX += (mouseX - targetX) * 0.035;
-      targetY += (mouseY - targetY) * 0.035;
-      camera.position.x = targetX;
-      camera.position.y = -targetY;
-      camera.lookAt(scene.position);
+      // Rotate primary planetary mesh and inner core
+      faceMesh.rotation.y = time * 0.08;
+      faceMesh.rotation.x = time * 0.04;
 
-      // Rotate biometric planetary reticle & scanner meshes
+      innerCore.rotation.y = -time * 0.12;
+      innerCore.rotation.z = time * 0.06;
+
+      // Rotate concentric scanning rings on independent axes
       ring1.rotation.z = time * 0.15;
       ring2.rotation.y = time * 0.12;
       ring3.rotation.x = time * 0.18;
-      faceMesh.rotation.y = time * 0.08;
-      faceMesh.rotation.x = Math.sin(time * 0.1) * 0.12;
-      innerCore.rotation.y = -time * 0.22;
-      innerCore.rotation.z = time * 0.14;
 
-      leftTorus.rotation.x += 0.008;
-      leftTorus.rotation.y += 0.012;
-      leftIcosa.rotation.y -= 0.01;
+      // Orbit and rotate secondary left sensor group
+      leftSensorGroup.rotation.y = time * 0.1;
+      leftSensorGroup.rotation.x = time * 0.05;
+      leftSensorGroup.position.y = -12 + Math.sin(time * 0.8) * 3;
 
-      // Gentle wave pulse on particle coordinates
+      // Interpolate smooth cursor parallax
+      targetX += (mouseX - targetX) * 0.05;
+      targetY += (mouseY - targetY) * 0.05;
+      worldGroup.rotation.y = targetX * 0.008;
+      worldGroup.rotation.x = targetY * 0.008;
+
+      // Update particle positions with bounce boundaries
       const posArray = particlesGeometry.attributes.position.array;
       for (let i = 0; i < particleCount; i++) {
         const i3 = i * 3;
         posArray[i3] += particleVelocities[i3];
-        posArray[i3 + 1] += particleVelocities[i3 + 1] + Math.sin(time * 0.8 + originalPositions[i3] * 0.03) * 0.03;
+        posArray[i3 + 1] += particleVelocities[i3 + 1];
         posArray[i3 + 2] += particleVelocities[i3 + 2];
 
         if (Math.abs(posArray[i3]) > spreadX / 2) particleVelocities[i3] *= -1;
@@ -275,7 +276,6 @@ export const PrecisionIdentityMatrix = () => {
       // Recalculate dynamic connecting lines
       let connected = 0;
       const lPos = linesGeometry.attributes.position.array;
-      const lCol = linesGeometry.attributes.color.array;
       const maxDist = 26;
 
       for (let i = 0; i < particleCount && connected < maxLines; i++) {
@@ -292,7 +292,6 @@ export const PrecisionIdentityMatrix = () => {
           const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
           if (dist < maxDist) {
-            const factor = (1.0 - dist / maxDist) * 0.55;
             const idx = connected * 6;
 
             lPos[idx] = px;
@@ -302,14 +301,6 @@ export const PrecisionIdentityMatrix = () => {
             lPos[idx + 4] = posArray[j3 + 1];
             lPos[idx + 5] = posArray[j3 + 2];
 
-            // Gradient line color: Cobalt blue to Cyan
-            lCol[idx] = 0.01;
-            lCol[idx + 1] = 0.52 * factor;
-            lCol[idx + 2] = 0.78 * factor;
-            lCol[idx + 3] = 0.02;
-            lCol[idx + 4] = 0.71 * factor;
-            lCol[idx + 5] = 0.83 * factor;
-
             connected++;
           }
         }
@@ -317,14 +308,13 @@ export const PrecisionIdentityMatrix = () => {
 
       linesGeometry.setDrawRange(0, connected * 2);
       linesGeometry.attributes.position.needsUpdate = true;
-      linesGeometry.attributes.color.needsUpdate = true;
 
       renderer.render(scene, camera);
     };
 
     animate();
 
-    // --- 9. Comprehensive Disposal on Unmount ---
+    // --- 9. Clean Lifecycle Disposal ---
     return () => {
       cancelAnimationFrame(frameId);
       window.removeEventListener('mousemove', onMouseMove);
@@ -358,23 +348,23 @@ export const PrecisionIdentityMatrix = () => {
   }, []);
 
   return (
-    <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden select-none bg-[#030712]">
+    <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden select-none bg-[#f8f9ff]">
       {/* 3D WebGL Canvas Viewport */}
       <div ref={mountRef} className="w-full h-full" />
 
-      {/* Atmospheric Vignette & Depth Glow */}
-      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_center,rgba(2,132,199,0.05)_0%,rgba(3,7,18,0.7)_70%,rgba(3,7,18,0.95)_100%)]" />
+      {/* Atmospheric Soft Light Vignette & Depth Glow */}
+      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0)_0%,rgba(240,245,255,0.4)_70%,rgba(230,240,255,0.85)_100%)]" />
 
       {/* Subtle Corner Optical Reticles */}
-      <div className="absolute top-4 left-4 w-6 h-6 border-t-2 border-l-2 border-cyan-500/30" />
-      <div className="absolute top-4 right-4 w-6 h-6 border-t-2 border-r-2 border-cyan-500/30" />
-      <div className="absolute bottom-4 left-4 w-6 h-6 border-b-2 border-l-2 border-cyan-500/30" />
-      <div className="absolute bottom-4 right-4 w-6 h-6 border-b-2 border-r-2 border-cyan-500/30" />
+      <div className="absolute top-4 left-4 w-6 h-6 border-t-2 border-l-2 border-blue-400/40" />
+      <div className="absolute top-4 right-4 w-6 h-6 border-t-2 border-r-2 border-blue-400/40" />
+      <div className="absolute bottom-4 left-4 w-6 h-6 border-b-2 border-l-2 border-blue-400/40" />
+      <div className="absolute bottom-4 right-4 w-6 h-6 border-b-2 border-r-2 border-blue-400/40" />
 
       {/* Micro-telemetry Status Watermark */}
-      <div className="absolute bottom-3 left-12 text-[9px] font-mono tracking-widest text-cyan-500/50 uppercase hidden md:flex items-center gap-2">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-        ARGUS // ORBITAL BIOMETRIC MATRIX // SEC-SYS-R125 // PLANETARY RINGS ACTIVE
+      <div className="absolute bottom-3 left-12 text-[9px] font-mono tracking-widest text-blue-900/40 uppercase hidden md:flex items-center gap-2">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
+        ARGUS // PRECISION IDENTITY MATRIX // SEC-SYS-R125 // PLANETARY RINGS ACTIVE
       </div>
     </div>
   );

@@ -120,14 +120,14 @@ export const RegisterOrg = () => {
   };
 
   return (
-    <div className="min-h-screen relative flex flex-col justify-between text-slate-100 overflow-x-hidden bg-[#030712]/40">
+    <div className="min-h-screen relative flex flex-col justify-between text-slate-800 overflow-x-hidden bg-[#f8f9ff]/40">
       {/* 3D Precision Identity Matrix Background */}
       <PrecisionIdentityMatrix />
 
       {/* Top Header */}
-      <header className="h-16 border-b border-slate-800/80 bg-slate-950/75 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between relative z-20 shadow-2xl shadow-black/60">
+      <header className="h-16 border-b border-slate-200/80 bg-white/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between relative z-20 shadow-2xs">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center shadow-lg border border-slate-700/80 bg-slate-900 p-0.5">
+          <div className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center shadow-xs border border-slate-200/80 bg-white p-0.5">
             <img 
               src="/company-logo.jpg" 
               alt="Argus Logo" 
@@ -136,26 +136,26 @@ export const RegisterOrg = () => {
                 e.target.onerror = null;
                 e.target.style.display = 'none';
                 if (e.target.parentElement) {
-                  e.target.parentElement.innerHTML = '<span class="text-cyan-400 font-bold text-xs">AI</span>';
+                  e.target.parentElement.innerHTML = '<span class="text-blue-600 font-bold text-xs">AI</span>';
                 }
               }} 
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="font-extrabold tracking-wider text-white text-sm drop-shadow-sm">
+            <span className="font-extrabold tracking-wider text-slate-900 text-sm">
               ARGUS
             </span>
-            <span className="text-[11px] font-mono font-semibold px-2 py-0.5 bg-cyan-950/60 text-cyan-300 rounded border border-cyan-800/50 shadow-inner">
+            <span className="text-[11px] font-mono font-semibold px-2 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200">
               AI ATTENDANCE
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
           <span className="hidden sm:inline">Already registered?</span>
           <Link
             to="/login"
-            className="px-3 py-1.5 rounded-lg border border-slate-700 hover:border-cyan-500/70 hover:text-cyan-300 bg-slate-900/80 text-slate-200 font-semibold transition-all shadow-md text-[11px] sm:text-xs"
+            className="px-3 py-1.5 rounded-lg border border-slate-300 hover:border-blue-500 hover:text-blue-600 bg-white font-semibold transition-colors shadow-2xs"
           >
             Sign In with Google
           </Link>
@@ -166,14 +166,14 @@ export const RegisterOrg = () => {
       <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8 relative z-10">
         {/* Page Top Heading */}
         <div className="max-w-4xl w-full mx-auto mb-6">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/70 border border-cyan-700/50 text-cyan-300 text-[10px] font-mono font-bold mb-2 backdrop-blur-md shadow-xs">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50/90 border border-blue-200 text-blue-700 text-[10px] font-mono font-bold mb-2 backdrop-blur-xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
             ORGANISATION ONBOARDING
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight drop-shadow-md">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
             Register Organisation
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-slate-500 mt-1">
             Set up facial attendance and workforce verification for your team.
           </p>
         </div>
@@ -181,19 +181,19 @@ export const RegisterOrg = () => {
         <div className="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
           
           {/* Left Column: Biometric Kiosk Terminal Preview */}
-          <div className="lg:col-span-5 bg-slate-950/80 backdrop-blur-2xl p-5 sm:p-6 rounded-2xl border border-slate-800/80 shadow-2xl shadow-cyan-950/30 flex flex-col justify-between">
+          <div className="lg:col-span-5 bg-white/85 backdrop-blur-xl p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xl shadow-blue-900/5 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
                   KIOSK PREVIEW
                 </span>
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-cyan-950/60 text-cyan-300 border border-cyan-800/50">
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
                   TERMINAL_A1 // ONLINE
                 </span>
               </div>
 
               {/* Viewport Frame with Cybernetic HUD Brackets */}
-              <div className="relative w-full aspect-square bg-black/90 rounded-xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
+              <div className="relative w-full aspect-square bg-slate-950 rounded-xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
                 {/* HUD Corner Brackets */}
                 <div className="hud-corner-tl" />
                 <div className="hud-corner-tr" />
@@ -215,7 +215,7 @@ export const RegisterOrg = () => {
                 </div>
 
                 {/* Status Pill Inside Viewport */}
-                <div className="absolute bottom-2.5 left-3 right-3 px-3 py-1.5 bg-slate-900/90 backdrop-blur-md border border-slate-700/60 rounded-lg flex items-center justify-between text-[10px] text-slate-200 font-mono">
+                <div className="absolute bottom-2.5 left-3 right-3 px-3 py-1.5 bg-slate-900/80 backdrop-blur-xs border border-slate-700/60 rounded-lg flex items-center justify-between text-[10px] text-slate-200 font-mono">
                   <div className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                     <span>Liveness Detection Active</span>
@@ -224,29 +224,29 @@ export const RegisterOrg = () => {
                 </div>
               </div>
 
-              <div className="mt-4 flex items-center gap-2 text-[11px] text-slate-400 font-medium">
-                <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <div className="mt-4 flex items-center gap-2 text-[11px] text-slate-500 font-medium">
+                <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                 <span>Zero hardware installation: Works with any webcam or tablet.</span>
               </div>
             </div>
 
-            <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl text-[11px] text-slate-400 font-mono mt-4">
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-600 font-mono mt-4">
               TENANCY: ISOLATED CLOUD PARTITION
             </div>
           </div>
 
           {/* Right Column: Organization Registration Form */}
-          <div className="lg:col-span-7 bg-slate-950/80 backdrop-blur-2xl p-6 sm:p-8 rounded-2xl border border-slate-800/80 shadow-2xl shadow-cyan-950/30 flex flex-col justify-center">
+          <div className="lg:col-span-7 bg-white/85 backdrop-blur-xl p-6 sm:p-8 rounded-2xl border border-slate-200/80 shadow-xl shadow-blue-900/5 flex flex-col justify-center">
             {error && (
-              <div className="mb-4 p-3 rounded-xl bg-red-950/60 border border-red-800/60 text-red-300 text-xs flex items-center gap-2 animate-in fade-in duration-150 backdrop-blur-sm">
-                <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+              <div className="mb-4 p-3 rounded-xl bg-red-50/90 border border-red-200 text-red-700 text-xs flex items-center gap-2 animate-in fade-in duration-150 backdrop-blur-xs">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
                 <span>{error}</span>
               </div>
             )}
 
             <form onSubmit={handleRegister} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   ORGANISATION NAME *
                 </label>
                 <div className="relative">
@@ -257,13 +257,13 @@ export const RegisterOrg = () => {
                     value={formData.name}
                     onChange={handleChange}
                     placeholder="e.g. Argus Technologies Ltd."
-                    className="w-full px-3.5 py-2.5 bg-slate-900/90 border border-slate-700 rounded-xl text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 font-medium transition-all"
+                    className="w-full px-3.5 py-2.5 bg-white/90 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   COMPANY GSTIN NUMBER (OPTIONAL)
                 </label>
                 <div className="relative">
@@ -273,10 +273,10 @@ export const RegisterOrg = () => {
                     value={formData.gstin}
                     onChange={handleChange}
                     placeholder="33AAAAANM1RZN (Optional)"
-                    className="w-full px-3.5 py-2.5 bg-slate-900/90 border border-slate-700 rounded-xl text-xs sm:text-sm font-mono text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 uppercase font-bold tracking-wide transition-all"
+                    className="w-full px-3.5 py-2.5 bg-white/90 border border-slate-300 rounded-xl text-xs sm:text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase font-bold tracking-wide"
                   />
                 </div>
-                <p className="text-[10px] text-slate-500 mt-1 font-mono">
+                <p className="text-[10px] text-slate-400 mt-1 font-mono">
                   Optional 15-character Goods and Services Tax Identification Number.
                 </p>
               </div>
@@ -286,7 +286,7 @@ export const RegisterOrg = () => {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3 px-4 bg-white hover:bg-slate-100 active:scale-[0.99] text-slate-900 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-3 shadow-xl transition-all cursor-pointer disabled:opacity-60"
+                  className="w-full py-3 px-4 bg-white hover:bg-slate-50 active:scale-[0.99] text-slate-800 border-2 border-slate-200 hover:border-slate-300 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all cursor-pointer disabled:opacity-60"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -302,9 +302,9 @@ export const RegisterOrg = () => {
               </div>
             </form>
 
-            <div className="mt-5 pt-4 border-t border-slate-800/80 text-center text-xs text-slate-400">
+            <div className="mt-5 pt-4 border-t border-slate-100 text-center text-xs text-slate-500">
               Already have an organisation registered?{' '}
-              <Link to="/login" className="font-bold text-cyan-400 hover:text-cyan-300 transition-colors">
+              <Link to="/login" className="font-bold text-blue-600 hover:text-blue-700">
                 Sign In with Google &gt;
               </Link>
             </div>
@@ -313,12 +313,12 @@ export const RegisterOrg = () => {
       </main>
 
       {/* Bottom Privacy Footer */}
-      <footer className="border-t border-slate-800/80 bg-slate-950/75 backdrop-blur-xl px-6 py-3 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-400 gap-2 relative z-20">
-        <div className="flex items-center gap-2 text-emerald-400 font-medium">
-          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+      <footer className="border-t border-slate-200/80 bg-white/80 backdrop-blur-md px-6 py-3 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2 relative z-20">
+        <div className="flex items-center gap-2 text-emerald-700 font-medium">
+          <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>Your biometric data is encrypted and secure. Photos are never stored directly.</span>
         </div>
-        <div className="text-[10px] text-slate-500">
+        <div className="text-[10px] text-slate-400">
           Powered by arguscnc.com • © 2026 ARGUS TECHNOLOGIES. All rights reserved.
         </div>
       </footer>
