@@ -428,13 +428,12 @@ export const AdminDashboard = () => {
                 <th className="p-3.5">DEPT</th>
                 <th className="p-3.5">SHIFT STATUS</th>
                 <th className="p-3.5">STATUS</th>
-                <th className="p-3.5 text-right">ACTION</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-10 text-center text-slate-400">
+                  <td colSpan={6} className="p-10 text-center text-slate-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Clock className="w-8 h-8 text-slate-300 stroke-1" />
                       <p className="text-xs font-bold text-slate-600">
@@ -484,69 +483,30 @@ export const AdminDashboard = () => {
                     {rec.department}
                   </td>
 
-                  {/* Shift Status */}
+                  {/* Shift Status: strictly 'LATE' or 'ON-TIME' */}
                   <td className="p-3.5">
-                    {rec.shift_status === 'ON-TIME' || (!rec.shift_status && rec.status === 'PRESENT') ? (
+                    {(rec.shift_status?.includes('LATE') || rec.status === 'LATE') ? (
+                      <span className="px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-mono font-bold">
+                        LATE
+                      </span>
+                    ) : (
                       <span className="px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-mono font-bold">
                         ON-TIME
                       </span>
-                    ) : (rec.shift_status?.includes('LATE') || rec.status === 'LATE') ? (
-                      <span className="px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-mono font-bold">
-                        {rec.shift_status || 'LATE'}
-                      </span>
-                    ) : (
-                      <span className="text-slate-400 text-xs">—</span>
                     )}
                   </td>
 
-                  {/* Status */}
+                  {/* Status: strictly 'PRESENT' or 'ABSENT' */}
                   <td className="p-3.5">
-                    <span className={`px-2 py-0.5 rounded border text-[10px] font-mono font-bold ${
-                      rec.status === 'PRESENT' 
-                        ? 'bg-emerald-50/60 border-emerald-300 text-emerald-800' 
-                        : 'bg-red-50 border-red-200 text-red-700'
-                    }`}>
-                      {rec.status}
-                    </span>
-                  </td>
-
-                  {/* Action Icons */}
-                  <td className="p-3.5 text-right">
-                    <div className="flex items-center justify-end gap-2 text-slate-400">
-                      <button 
-                        type="button"
-                        onClick={() => {
-                          const emp = employees.find(e => e.id === rec.employee_id) || {
-                            id: rec.employee_id,
-                            first_name: rec.employee_name?.split(' ')[0] || '',
-                            last_name: rec.employee_name?.split(' ').slice(1).join(' ') || '',
-                            employee_code: rec.employee_code,
-                            department: rec.department
-                          };
-                          handleOpenEdit(emp);
-                        }}
-                        className="hover:text-blue-600 p-1 cursor-pointer"
-                        title="Edit Employee Details & Permissions"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={() => {
-                          const emp = employees.find(e => e.id === rec.employee_id) || {
-                            id: rec.employee_id || rec.id,
-                            first_name: rec.employee_name,
-                            employee_code: rec.employee_code,
-                            department: rec.department
-                          };
-                          setEmployeeToDelete(emp);
-                        }} 
-                        className="hover:text-red-600 p-1 cursor-pointer"
-                        title="Revoke Biometric Access & Remove Employee"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    {(rec.status === 'PRESENT' || (rec.check_in && rec.check_in !== '—')) ? (
+                      <span className="px-2 py-0.5 rounded border border-emerald-300 bg-emerald-50/60 text-emerald-800 text-[10px] font-mono font-bold">
+                        PRESENT
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded border border-red-200 bg-red-50 text-red-700 text-[10px] font-mono font-bold">
+                        ABSENT
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}

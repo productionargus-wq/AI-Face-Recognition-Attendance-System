@@ -25,7 +25,6 @@ import api from '../utils/api';
 
 export const LeaveApply = () => {
   const { user, organization } = useAuth();
-  const [activeTab, setActiveTab] = useState('my-leaves'); // 'my-leaves' or 'team-approvals'
   const [selectedCategory, setSelectedCategory] = useState('PL'); // 'PL', 'CL', 'SL', 'LOP'
   const [durationMode, setDurationMode] = useState('FULL'); // 'FULL' or 'HALF'
   const [fromDate, setFromDate] = useState(new Date().toISOString().split('T')[0]);
@@ -150,44 +149,6 @@ export const LeaveApply = () => {
           <p className="text-xs text-slate-500 mt-1 max-w-2xl">
             Apply for leaves, view remaining leave balances, and manage supervisor approvals for {organization?.name || 'your organisation'}.
           </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
-          {/* Dual Tab Toggle */}
-          <div className="inline-flex rounded-xl p-1 bg-slate-100 border border-slate-200 text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => setActiveTab('my-leaves')}
-              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                activeTab === 'my-leaves' ? 'bg-white text-blue-700 shadow-2xs font-extrabold' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              My Leave Requests
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('team-approvals')}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'team-approvals' ? 'bg-white text-blue-700 shadow-2xs font-extrabold' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <span>Team Approvals</span>
-              <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center font-bold">
-                {leaveHistory.filter(l => (l.status_type || l.statusType) === 'pending').length}
-              </span>
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              window.scrollTo({ top: 300, behavior: 'smooth' });
-            }}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Apply for Leave
-          </button>
         </div>
       </div>
 

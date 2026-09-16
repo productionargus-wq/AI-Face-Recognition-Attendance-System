@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   FileEdit, 
   Download, 
@@ -16,7 +16,9 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   UserPlus,
-  Inbox
+  Inbox,
+  ChevronDown,
+  Check
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -33,6 +35,10 @@ export const ManualEntry = () => {
   const [submittedMessage, setSubmittedMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
+  const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
+  const [empSearchQuery, setEmpSearchQuery] = useState('');
+  const dropdownRef = useRef(null);
+
   const [formData, setFormData] = useState({
     employeeId: '',
     logDate: new Date().toISOString().split('T')[0],
@@ -41,9 +47,19 @@ export const ManualEntry = () => {
     shiftEnd: '17:30',
     punchIn: '09:00',
     punchOut: '17:30',
-    reason: 'Hardware Incident: Biometric Terminal 04 Unresponsive',
+    reason: '',
     confirmed: true
   });
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setEmployeeDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const formatTime12h = (time24) => {
     if (!time24) return '';
@@ -73,48 +89,7 @@ export const ManualEntry = () => {
   const computedHours = calculateHours(formData.punchIn, formData.punchOut);
   const scheduledHours = calculateHours(formData.shiftStart, formData.shiftEnd);
 
-  const handleShiftPresetChange = (preset) => {
-    let start = '09:00';
-    let end = '17:30';
-    if (preset.includes('Morning')) {
-      start = '06:00';
-      end = '14:30';
-    } else if (preset.includes('Evening')) {
-      start = '14:00';
-      end = '22:30';
-    } else if (preset.includes('Night')) {
-      start = '21:00';
-      end = '05:30';
-    } else if (preset.includes('General')) {
-      start = '09:00';
-      end = '17:30';
-    } else if (preset.includes('Entered')) {
-      start = formData.punchIn;
-      end = formData.punchOut;
-    }
-    const hrs = calculateHours(start, end);
-    const label = preset.includes('Entered') 
-      ? `Custom Shift (${formatTime12h(start)} – ${formatTime12h(end)} • ${hrs}h)`
-      : `${preset.split('(')[0].trim()} (${formatTime12h(start)} – ${formatTime12h(end)} • ${hrs}h)`;
-    setFormData(prev => ({
-      ...prev,
-      shift: label,
-      shiftStart: start,
-      shiftEnd: end
-    }));
-  };
 
-  const handleCustomShiftTimeChange = (type, val) => {
-    const start = type === 'start' ? val : formData.shiftStart;
-    const end = type === 'end' ? val : formData.shiftEnd;
-    const hrs = calculateHours(start, end);
-    const formatted = `Custom Shift (${formatTime12h(start)} – ${formatTime12h(end)} • ${hrs}h)`;
-    setFormData(prev => ({
-      ...prev,
-      [type === 'start' ? 'shiftStart' : 'shiftEnd']: val,
-      shift: formatted
-    }));
-  };
 
   useEffect(() => {
     fetchInitialData();
@@ -162,10 +137,11 @@ export const ManualEntry = () => {
     setErrorMessage('');
     try {
       const hoursToSave = calculateHours(formData.punchIn, formData.punchOut);
+      const shiftText = `Shift (${formatTime12h(formData.shiftStart)} – ${formatTime12h(formData.shiftEnd)} • ${scheduledHours}h)`;
       const res = await api.post('/attendance/manual', {
         employee_id: formData.employeeId,
         log_date: formData.logDate,
-        shift: formData.shift || dynamicEnteredShift,
+        shift: shiftText,
         punch_in: formData.punchIn,
         punch_out: formData.punchOut,
         reason: formData.reason,
@@ -183,17 +159,20 @@ export const ManualEntry = () => {
   };
 
   const handleClear = () => {
+    const firstEmp = employees.length > 0 ? employees[0] : null;
     setFormData({
-      employeeId: employees.length > 0 ? employees[0].id : '',
+      employeeId: firstEmp ? firstEmp.id : '',
       logDate: new Date().toISOString().split('T')[0],
-      shift: 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
-      shiftStart: '09:00',
-      shiftEnd: '17:30',
+      shift: firstEmp?.assigned_shift || 'Shift (09:00 AM – 05:30 PM • 8.5h)',
+      shiftStart: firstEmp?.shift_start || '09:00',
+      shiftEnd: firstEmp?.shift_end || '17:30',
       punchIn: '09:00',
       punchOut: '17:30',
-      reason: 'Hardware Incident: Biometric Terminal 04 Unresponsive',
-      confirmed: false
+      reason: '',
+      confirmed: true
     });
+    setEmployeeDropdownOpen(false);
+    setEmpSearchQuery('');
   };
 
   const empMap = React.useMemo(() => {
@@ -303,34 +282,121 @@ export const ManualEntry = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Employee dropdown */}
-          <div>
+          {/* Employee Identification & Selection (Searchable Dropdown) */}
+          <div className="relative" ref={dropdownRef}>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
               Employee Identification &amp; Selection *
             </label>
             {employees.length > 0 ? (
-              <select
-                required
-                value={formData.employeeId}
-                onChange={(e) => {
-                  const empId = e.target.value;
-                  const selectedEmp = employees.find(emp => emp.id === empId);
-                  setFormData(prev => ({
-                    ...prev,
-                    employeeId: empId,
-                    shift: selectedEmp?.assigned_shift || prev.shift,
-                    shiftStart: selectedEmp?.shift_start || prev.shiftStart,
-                    shiftEnd: selectedEmp?.shift_end || prev.shiftEnd
-                  }));
-                }}
-                className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {employees.map(emp => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.first_name} {emp.last_name} ({emp.employee_code || 'EMP'}) — {emp.department || 'General'}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setEmployeeDropdownOpen(!employeeDropdownOpen)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 hover:border-blue-300 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between transition-colors cursor-pointer text-left shadow-2xs"
+                >
+                  {(() => {
+                    const selectedEmp = employees.find(e => e.id === formData.employeeId);
+                    if (selectedEmp) {
+                      return (
+                        <div className="flex items-center gap-2.5 truncate">
+                          <div className="w-6 h-6 rounded-md bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center shrink-0">
+                            {(selectedEmp.first_name?.[0] || 'E') + (selectedEmp.last_name?.[0] || '')}
+                          </div>
+                          <span className="font-semibold text-slate-900 truncate">
+                            {selectedEmp.first_name} {selectedEmp.last_name}
+                          </span>
+                          <span className="font-mono text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded text-xs shrink-0">
+                            {selectedEmp.employee_code || 'EMP'}
+                          </span>
+                          <span className="text-slate-400 text-xs truncate">
+                            • {selectedEmp.department || 'General'}
+                          </span>
+                        </div>
+                      );
+                    }
+                    return <span className="text-slate-400">Click to select or search employee...</span>;
+                  })()}
+                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${employeeDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
+                </button>
+
+                {/* Dropdown Floating Panel */}
+                {employeeDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-40 p-2 space-y-2 animate-in fade-in zoom-in-95 duration-100">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        autoFocus
+                        value={empSearchQuery}
+                        onChange={(e) => setEmpSearchQuery(e.target.value)}
+                        placeholder="Type to search employee name, badge ID, or department..."
+                        className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-400"
+                      />
+                    </div>
+
+                    <div className="max-h-56 overflow-y-auto divide-y divide-slate-50">
+                      {employees.filter(e => {
+                        if (!empSearchQuery.trim()) return true;
+                        const q = empSearchQuery.toLowerCase();
+                        const fullName = `${e.first_name || ''} ${e.last_name || ''}`.toLowerCase();
+                        const code = (e.employee_code || '').toLowerCase();
+                        const dept = (e.department || '').toLowerCase();
+                        return fullName.includes(q) || code.includes(q) || dept.includes(q);
+                      }).length > 0 ? (
+                        employees.filter(e => {
+                          if (!empSearchQuery.trim()) return true;
+                          const q = empSearchQuery.toLowerCase();
+                          const fullName = `${e.first_name || ''} ${e.last_name || ''}`.toLowerCase();
+                          const code = (e.employee_code || '').toLowerCase();
+                          const dept = (e.department || '').toLowerCase();
+                          return fullName.includes(q) || code.includes(q) || dept.includes(q);
+                        }).map(emp => {
+                          const isSelected = emp.id === formData.employeeId;
+                          return (
+                            <button
+                              key={emp.id}
+                              type="button"
+                              onClick={() => {
+                                setFormData(prev => ({
+                                  ...prev,
+                                  employeeId: emp.id,
+                                  shift: emp.assigned_shift || `Shift (${emp.shift_start || '09:00'} – ${emp.shift_end || '17:30'})`,
+                                  shiftStart: emp.shift_start || '09:00',
+                                  shiftEnd: emp.shift_end || '17:30'
+                                }));
+                                setEmployeeDropdownOpen(false);
+                                setEmpSearchQuery('');
+                              }}
+                              className={`w-full p-2 rounded-lg flex items-center justify-between text-left transition-colors cursor-pointer ${
+                                isSelected ? 'bg-blue-50/80 text-blue-900 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-7 h-7 rounded-md bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0">
+                                  {(emp.first_name?.[0] || 'E') + (emp.last_name?.[0] || '')}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="text-xs font-semibold text-slate-900 truncate">
+                                    {emp.first_name} {emp.last_name}
+                                  </div>
+                                  <div className="text-[10px] font-mono text-slate-400 truncate">
+                                    {emp.employee_code || 'EMP'} • {emp.department || 'General'}
+                                  </div>
+                                </div>
+                              </div>
+                              {isSelected && <Check className="w-4 h-4 text-blue-600 shrink-0" />}
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="p-4 text-center text-xs text-slate-400 font-medium">
+                          No matching employees found for "{empSearchQuery}"
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="w-full px-3.5 py-2.5 bg-slate-100 border border-dashed border-slate-300 rounded-xl text-xs text-slate-500 flex items-center justify-between">
                 <span>No enrolled employees found.</span>
@@ -341,11 +407,12 @@ export const ManualEntry = () => {
             )}
           </div>
 
-          {/* Row: Date & Shift */}
+          {/* Row 2: Date & Scheduled Shift Timings */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
-                Log Date
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                Log Date *
               </label>
               <input
                 type="date"
@@ -358,83 +425,56 @@ export const ManualEntry = () => {
 
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600">
-                  Duty Shift Assignment
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                  Scheduled Shift Timings
                 </label>
-                <span className="text-[10px] text-blue-600 font-bold font-mono">
+                <span className="text-[10px] text-blue-600 font-bold font-mono bg-blue-50 px-1.5 py-0.5 rounded">
                   {scheduledHours} hrs scheduled
                 </span>
               </div>
               
-              <div className="space-y-2">
-                <select
-                  value={formData.shift}
-                  onChange={(e) => handleShiftPresetChange(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                >
-                  <option value={`Custom Shift (${formatTime12h(formData.shiftStart)} – ${formatTime12h(formData.shiftEnd)} • ${scheduledHours}h)`}>
-                    ⏱️ Custom Shift ({formatTime12h(formData.shiftStart)} – ${formatTime12h(formData.shiftEnd)} • ${scheduledHours}h)
-                  </option>
-                  <option value={`Custom Shift (${formatTime12h(formData.punchIn)} – ${formatTime12h(formData.punchOut)} • ${computedHours}h)`}>
-                    🔄 Match Punch Timings ({formatTime12h(formData.punchIn)} – {formatTime12h(formData.punchOut)} • ${computedHours}h)
-                  </option>
-                  <option value="General Shift (09:00 AM – 05:30 PM • 8.5h)">General Shift (09:00 AM – 05:30 PM • 8.5h)</option>
-                  <option value="Morning Shift (06:00 AM – 02:30 PM • 8.5h)">Morning Shift (06:00 AM – 02:30 PM • 8.5h)</option>
-                  <option value="Evening Shift (02:00 PM – 10:30 PM • 8.5h)">Evening Shift (02:00 PM – 10:30 PM • 8.5h)</option>
-                  <option value="Night Shift (09:00 PM – 05:30 AM • 8.5h)">Night Shift (09:00 PM – 05:30 AM • 8.5h)</option>
-                  <option value="Flexible Shift (8.0h)">Flexible Shift (8.0h)</option>
-                </select>
-
-                {/* Explicit Shift Timing Pickers */}
-                <div className="grid grid-cols-2 gap-2 p-2.5 bg-blue-50/40 rounded-xl border border-blue-100">
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">
-                      Shift Start Time
-                    </label>
-                    <input
-                      type="time"
-                      value={formData.shiftStart}
-                      onChange={(e) => handleCustomShiftTimeChange('start', e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">
-                      Shift End Time
-                    </label>
-                    <input
-                      type="time"
-                      value={formData.shiftEnd}
-                      onChange={(e) => handleCustomShiftTimeChange('end', e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="relative">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-0.5">
+                    Shift Start Time
+                  </label>
                   <input
-                    type="text"
+                    type="time"
                     required
-                    value={formData.shift}
-                    onChange={(e) => setFormData({ ...formData, shift: e.target.value })}
-                    placeholder="Custom shift description or working hours..."
-                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-400"
+                    value={formData.shiftStart}
+                    onChange={(e) => setFormData(prev => ({ ...prev, shiftStart: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 pointer-events-none">
-                    EDITABLE
-                  </span>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-0.5">
+                    Shift End Time
+                  </label>
+                  <input
+                    type="time"
+                    required
+                    value={formData.shiftEnd}
+                    onChange={(e) => setFormData(prev => ({ ...prev, shiftEnd: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Row: Punch-In & Punch-Out */}
+          {/* Row 3: Actual Punch-In & Punch-Out */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1 flex items-center gap-1.5 text-emerald-700">
-                <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
-                Punch-In
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1.5">
+                  <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
+                  Actual Punch-In Time *
+                </label>
+                <span className="text-[10px] font-mono text-emerald-600 font-bold">
+                  {formatTime12h(formData.punchIn)}
+                </span>
+              </div>
               <input
                 type="time"
                 required
@@ -445,10 +485,15 @@ export const ManualEntry = () => {
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1 flex items-center gap-1.5 text-blue-700">
-                <ArrowUpRight className="w-3.5 h-3.5 text-blue-600" />
-                Punch-Out
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-blue-700 flex items-center gap-1.5">
+                  <ArrowUpRight className="w-3.5 h-3.5 text-blue-600" />
+                  Actual Punch-Out Time *
+                </label>
+                <span className="text-[10px] font-mono text-blue-600 font-bold">
+                  {formatTime12h(formData.punchOut)} ({computedHours} hrs)
+                </span>
+              </div>
               <input
                 type="time"
                 required
@@ -459,49 +504,22 @@ export const ManualEntry = () => {
             </div>
           </div>
 
-          {/* Justification dropdown & custom text */}
+          {/* Row 4: Justification / Exception Reason (Only text input) */}
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600">
-                Justification / Exception Reason
-              </label>
-              <span className="text-[10px] text-slate-400 font-mono">
-                Select preset or type custom reason
-              </span>
-            </div>
-
-            <div className="space-y-2">
-              <select
-                value={formData.reason}
-                onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-              >
-                <option value="Hardware Incident: Biometric Terminal 04 Unresponsive">Hardware Incident: Biometric Terminal 04 Unresponsive</option>
-                <option value="On-site Field Duty: Client Facility Deployment">On-site Field Duty: Client Facility Deployment</option>
-                <option value="Forgot Face Scan: Verified by Floor Supervisor">Forgot Face Scan: Verified by Floor Supervisor</option>
-                <option value="Kiosk Calibration: Scheduled Sensor Maintenance">Kiosk Calibration: Scheduled Sensor Maintenance</option>
-                <option value="Network Disconnection: Offline Terminal Cache Failure">Network Disconnection: Offline Terminal Cache Failure</option>
-                <option value="Official External Client Meeting / Field Visit">Official External Client Meeting / Field Visit</option>
-                <option value="Approved Manager Overtime Permission">Approved Manager Overtime Permission</option>
-              </select>
-
-              <div className="relative">
-                <input
-                  type="text"
-                  required
-                  value={formData.reason}
-                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                  placeholder="Type custom justification or exception reason..."
-                  className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-400"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 pointer-events-none">
-                  EDITABLE
-                </span>
-              </div>
-            </div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+              Justification / Exception Reason *
+            </label>
+            <input
+              type="text"
+              required
+              value={formData.reason}
+              onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+              placeholder="Type justification reason (e.g. Hardware incident, On-site duty, Face scan failure verified by supervisor)..."
+              className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-400"
+            />
           </div>
 
-          {/* Compliance Checkbox */}
+          {/* Row 5: Compliance Protocol Checkbox */}
           <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-xl flex items-start gap-3">
             <input
               type="checkbox"
@@ -515,22 +533,22 @@ export const ManualEntry = () => {
             </label>
           </div>
 
-          {/* Action buttons */}
+          {/* Row 6: Action buttons */}
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               type="button"
               onClick={handleClear}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+              className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
             >
               Clear Form
             </button>
             <button
               type="submit"
               disabled={submitting || employees.length === 0}
-              className="px-5 py-2.5 rounded-xl bg-[#0052cc] hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-60"
+              className="px-5 py-2 bg-[#0080ff] hover:bg-blue-600 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
             >
-              <CheckCircle2 className="w-4 h-4" />
-              {submitting ? 'Verifying & Syncing...' : 'Submit & Verify Punch'}
+              <FileEdit className="w-3.5 h-3.5" />
+              <span>{submitting ? 'Submitting Override...' : 'Submit Attendance Override'}</span>
             </button>
           </div>
         </form>

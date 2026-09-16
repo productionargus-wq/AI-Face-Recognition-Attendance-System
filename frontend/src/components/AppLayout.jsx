@@ -95,8 +95,8 @@ export const AppLayout = ({ children }) => {
       <aside className="hidden md:flex flex-col w-64 bg-white border-r border-slate-200 shrink-0 z-30 h-full overflow-y-auto">
         {/* Brand Header */}
         <div className="h-16 border-b border-slate-100 flex items-center px-5 gap-3 shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-[#0080ff] flex items-center justify-center text-white shadow-sm font-bold">
-            <ScanFace className="w-5 h-5" />
+          <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center p-1 shadow-2xs shrink-0 overflow-hidden">
+            <img src="/company-logo.jpg" alt="Company Logo" className="w-full h-full object-contain" />
           </div>
           <div>
             <div className="text-xs font-black tracking-wider text-slate-900 uppercase">
@@ -177,8 +177,8 @@ export const AppLayout = ({ children }) => {
               {mobileSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded bg-[#0080ff] flex items-center justify-center text-white font-bold">
-                <ScanFace className="w-4 h-4" />
+              <div className="w-7 h-7 rounded bg-white border border-slate-200 flex items-center justify-center p-0.5 shadow-2xs shrink-0 overflow-hidden">
+                <img src="/company-logo.jpg" alt="Company Logo" className="w-full h-full object-contain" />
               </div>
               <span className="text-xs font-black tracking-wide">ARGUS AI</span>
             </div>

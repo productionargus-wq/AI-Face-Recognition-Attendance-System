@@ -21,8 +21,8 @@ export const Navbar = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Brand Logo & Name */}
         <Link to="/" onClick={closeMenu} className="flex items-center space-x-2.5 sm:space-x-3 group">
-          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
-            <ScanFace className="w-5 h-5 sm:w-6 sm:h-6" />
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center p-1 shadow-sm group-hover:scale-105 transition-transform overflow-hidden shrink-0">
+            <img src="/company-logo.jpg" alt="Company Logo" className="w-full h-full object-contain" />
           </div>
           <div>
             <span className="text-base sm:text-lg font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
