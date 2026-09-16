@@ -1,8 +1,10 @@
-﻿from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from app.models.schemas import Employee, EmployeeCreate, User, UserRole, AuditLog
+
+IST_TZ = timezone(timedelta(hours=5, minutes=30))
 from app.core.security import require_org_admin, require_tenant_context, get_password_hash
 from app.db.store import store
 from app.services.face_service import decode_base64_image, extract_face_embedding, compute_average_embedding
@@ -199,9 +201,34 @@ async def delete_employee(
     employee_id: str,
     auth_ctx: Dict[str, Any] = Depends(require_org_admin)
 ):
-    """Soft deletes or deactivates an employee."""
+    """Soft deletes or deactivates an employee, clears biometric embeddings, and purges today's active punches."""
     org_id = auth_ctx["org_id"]
-    res = await store.update_one("employees", {"id": employee_id, "organization_id": org_id}, {"is_active": False})
-    if not res:
+    emp = await store.find_one("employees", {"id": employee_id, "organization_id": org_id})
+    if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
-    return {"status": "success", "message": "Employee removed successfully."}
+
+    await store.update_one("employees", {"id": employee_id, "organization_id": org_id}, {
+        "is_active": False,
+        "face_embeddings": []
+    })
+
+    if emp.get("email"):
+        await store.update_one("users", {
+            "email": emp["email"],
+            "organization_id": org_id
+        }, {"is_active": False})
+
+    now_local = datetime.now(timezone.utc).astimezone(IST_TZ)
+    today_str = now_local.strftime("%Y-%m-%d")
+    await store.delete_many("attendance", {
+        "organization_id": org_id,
+        "employee_id": employee_id,
+        "date": today_str
+    })
+    if emp.get("employee_code"):
+        await store.delete_many("kiosk_stream", {
+            "organization_id": org_id,
+            "employee_code": emp.get("employee_code")
+        })
+
+    return {"status": "success", "message": "Employee removed and access revoked successfully."}

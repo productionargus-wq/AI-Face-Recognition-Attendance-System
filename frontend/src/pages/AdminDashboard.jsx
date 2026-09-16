@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { EnrollEmployeeModal } from '../components/EnrollEmployeeModal';
+import { RevokeAccessModal } from '../components/RevokeAccessModal';
 import { 
   Users, 
   UserCheck, 
@@ -36,6 +37,10 @@ export const AdminDashboard = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Revoke Biometric Access Confirmation Modal State
+  const [employeeToDelete, setEmployeeToDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   useEffect(() => {
     fetchDashboardData();
   }, []);
@@ -48,7 +53,7 @@ export const AdminDashboard = () => {
         api.get('/employees/')
       ]);
       setTodayData(attRes.data);
-      setEmployees(empRes.data);
+      setEmployees(empRes.data || []);
     } catch (err) {
       console.error('Failed to load dashboard data', err);
     } finally {
@@ -64,13 +69,17 @@ export const AdminDashboard = () => {
     window.open(api.defaults.baseURL + '/reports/export-excel', '_blank');
   };
 
-  const handleDeleteEmployee = async (empId) => {
-    if (!window.confirm('Revoke access and remove this employee?')) return;
+  const handleConfirmDelete = async () => {
+    if (!employeeToDelete) return;
+    setDeleteLoading(true);
     try {
-      await api.delete(`/employees/${empId}`);
-      fetchDashboardData();
+      await api.delete(`/employees/${employeeToDelete.id}`);
+      setEmployeeToDelete(null);
+      await fetchDashboardData();
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to remove employee');
+      console.error('Failed to remove employee', err);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -86,8 +95,14 @@ export const AdminDashboard = () => {
   const lateRate = totalRoster > 0 ? ((lateCount / totalRoster) * 100).toFixed(1) : '0.0';
   const absentRate = totalRoster > 0 ? ((absentCount / totalRoster) * 100).toFixed(1) : '0.0';
 
-  // Live records only
-  const records = todayData.records || [];
+  // Active workforce IDs set
+  const activeEmpIds = React.useMemo(() => new Set((employees || []).map(e => e.id)), [employees]);
+
+  // Live records strictly for active enrolled workforce
+  const records = React.useMemo(() => {
+    const raw = todayData.records || [];
+    return raw.filter(r => !r.employee_id || activeEmpIds.has(r.employee_id));
+  }, [todayData.records, activeEmpIds]);
 
   // Filtering records by department & search
   const filteredRecords = records.filter(r => {
@@ -425,8 +440,18 @@ export const AdminDashboard = () => {
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
                       <button 
-                        onClick={() => handleDeleteEmployee(rec.id)} 
+                        type="button"
+                        onClick={() => {
+                          const emp = employees.find(e => e.id === rec.employee_id) || {
+                            id: rec.employee_id || rec.id,
+                            first_name: rec.employee_name,
+                            employee_code: rec.employee_code,
+                            department: rec.department
+                          };
+                          setEmployeeToDelete(emp);
+                        }} 
                         className="hover:text-red-600 p-1 cursor-pointer"
+                        title="Revoke Biometric Access & Remove Employee"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -506,6 +531,15 @@ export const AdminDashboard = () => {
         onEmployeeCreated={() => {
           fetchDashboardData();
         }}
+      />
+
+      {/* Revoke Biometric Access Confirmation Modal */}
+      <RevokeAccessModal
+        isOpen={!!employeeToDelete}
+        employee={employeeToDelete}
+        onClose={() => !deleteLoading && setEmployeeToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        loading={deleteLoading}
       />
     </div>
   );

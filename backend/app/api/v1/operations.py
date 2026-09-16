@@ -130,6 +130,8 @@ async def list_manual_overrides(
     auth_ctx: Dict[str, Any] = Depends(require_org_admin)
 ):
     org_id = auth_ctx["org_id"]
+    all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
+    active_emp_ids = {e["id"] for e in all_emps}
     records = await store.find_many(
         "manual_overrides", 
         {"organization_id": org_id}, 
@@ -137,7 +139,7 @@ async def list_manual_overrides(
         sort_desc=True, 
         limit=100
     )
-    return records
+    return [r for r in records if r.get("employee_id") in active_emp_ids]
 
 
 # ----------------- 2. SALARY ADVANCES -----------------
@@ -154,6 +156,8 @@ async def list_advances(
     auth_ctx: Dict[str, Any] = Depends(require_org_admin)
 ):
     org_id = auth_ctx["org_id"]
+    all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
+    active_emp_ids = {e["id"] for e in all_emps}
     query = {"organization_id": org_id}
     if cycle:
         query["cycle"] = cycle
@@ -164,7 +168,7 @@ async def list_advances(
         sort_desc=True, 
         limit=100
     )
-    return advances
+    return [a for a in advances if a.get("employee_id") in active_emp_ids]
 
 @operations_router.post("/advances")
 async def issue_salary_advance(
@@ -220,6 +224,8 @@ async def list_leaves(
     auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
 ):
     org_id = auth_ctx["org_id"]
+    all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
+    active_emp_ids = {e["id"] for e in all_emps}
     query = {"organization_id": org_id}
     # If standard employee, show their own leaves; if admin, show all
     if auth_ctx.get("role") == "employee":
@@ -234,7 +240,7 @@ async def list_leaves(
         sort_desc=True, 
         limit=100
     )
-    return leaves
+    return [l for l in leaves if l.get("employee_id") in active_emp_ids]
 
 @operations_router.post("/leaves")
 async def submit_leave(

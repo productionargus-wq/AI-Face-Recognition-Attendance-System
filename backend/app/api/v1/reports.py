@@ -206,17 +206,23 @@ async def get_kiosk_stream(organization_slug_or_id: Optional[str] = None, organi
 
     today_str = datetime.now(IST_TZ).strftime("%Y-%m-%d")
 
+    active_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
+    active_emp_ids = {e["id"] for e in active_emps}
+    active_emp_codes = {e.get("employee_code") for e in active_emps if e.get("employee_code")}
+
     events = await store.find_many("attendance_events", {
         "organization_id": org_id,
         "date": today_str
-    }, sort_key="timestamp", sort_desc=True, limit=10)
+    }, sort_key="timestamp", sort_desc=True, limit=20)
+    events = [e for e in events if e.get("employee_id") in active_emp_ids or e.get("employee_code") in active_emp_codes]
 
     if not events:
         # Graceful fallback: construct event list from today's attendance table
-        records = await store.find_many("attendance", {
+        raw_records = await store.find_many("attendance", {
             "organization_id": org_id,
             "date": today_str
-        }, sort_key="check_in", sort_desc=True, limit=10)
+        }, sort_key="check_in", sort_desc=True, limit=20)
+        records = [r for r in raw_records if r.get("employee_id") in active_emp_ids]
 
         fallback_events = []
         for r in records:
@@ -253,17 +259,24 @@ async def get_kiosk_stream(organization_slug_or_id: Optional[str] = None, organi
         fallback_events.sort(key=lambda x: str(x.get("timestamp") or ""), reverse=True)
         return fallback_events[:10]
 
-    return events
+    return events[:10]
 
 @attendance_router.get("/today")
 async def get_today_attendance(auth_ctx: Dict[str, Any] = Depends(require_org_admin)):
     org_id = auth_ctx["org_id"]
     today_str = datetime.now(IST_TZ).strftime("%Y-%m-%d")
     
-    records = await store.find_many("attendance", {
+    all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
+    active_emp_ids = {e["id"] for e in all_emps}
+    total_emps_count = len(all_emps)
+
+    raw_records = await store.find_many("attendance", {
         "organization_id": org_id,
         "date": today_str
     }, sort_key="check_in", sort_desc=True)
+
+    # Strictly filter records to active employees only
+    records = [r for r in raw_records if r.get("employee_id") in active_emp_ids]
 
     # Normalize shift_status on all records
     for r in records:
@@ -275,9 +288,6 @@ async def get_today_attendance(auth_ctx: Dict[str, Any] = Depends(require_org_ad
             else:
                 r["shift_status"] = "—"
 
-    all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
-    total_emps_count = len(all_emps)
-    
     present_count = len([r for r in records if r.get("status") in [AttendanceStatus.PRESENT, AttendanceStatus.LATE]])
     late_count = len([r for r in records if r.get("status") == AttendanceStatus.LATE])
     absent_count = max(0, total_emps_count - present_count)
@@ -316,7 +326,11 @@ async def get_attendance_history(
     if department:
         query["department"] = department
 
-    records = await store.find_many("attendance", query, sort_key="date", sort_desc=True, limit=500)
+    raw_records = await store.find_many("attendance", query, sort_key="date", sort_desc=True, limit=500)
+    all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
+    active_emp_ids = {e["id"] for e in all_emps}
+    records = [r for r in raw_records if r.get("employee_id") in active_emp_ids]
+
     for r in records:
         if not r.get("shift_status"):
             if r.get("status") == AttendanceStatus.LATE:
@@ -350,7 +364,7 @@ async def get_my_attendance(auth_ctx: Dict[str, Any] = Depends(require_tenant_co
     }, sort_key="date", sort_desc=True, limit=60)
     return records
 
-# ----------------- REPORTS ENDPOINTS -----------------
+# ----------------- REPORTS ROUTER (CSV/EXCEL) -----------------
 
 @reports_router.get("/export-csv")
 async def export_csv(
@@ -368,7 +382,10 @@ async def export_csv(
     if department:
         query["department"] = department
 
-    records = await store.find_many("attendance", query, sort_key="date", sort_desc=True)
+    raw_records = await store.find_many("attendance", query, sort_key="date", sort_desc=True)
+    all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
+    active_emp_ids = {e["id"] for e in all_emps}
+    records = [r for r in raw_records if r.get("employee_id") in active_emp_ids]
     
     rows = []
     for r in records:
@@ -408,7 +425,10 @@ async def export_excel(
     if department:
         query["department"] = department
 
-    records = await store.find_many("attendance", query, sort_key="date", sort_desc=True)
+    raw_records = await store.find_many("attendance", query, sort_key="date", sort_desc=True)
+    all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
+    active_emp_ids = {e["id"] for e in all_emps}
+    records = [r for r in raw_records if r.get("employee_id") in active_emp_ids]
     
     rows = []
     for r in records:

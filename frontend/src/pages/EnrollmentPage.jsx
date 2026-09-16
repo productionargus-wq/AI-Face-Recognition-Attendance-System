@@ -24,6 +24,7 @@ import {
   Check
 } from 'lucide-react';
 import { EnrollEmployeeModal } from '../components/EnrollEmployeeModal';
+import { RevokeAccessModal } from '../components/RevokeAccessModal';
 
 export const EnrollmentPage = () => {
   const { organization } = useAuth();
@@ -49,6 +50,10 @@ export const EnrollmentPage = () => {
   });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
+
+  // Revoke Biometric Access Confirmation Modal State
+  const [employeeToDelete, setEmployeeToDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Status Notification
   const [actionMessage, setActionMessage] = useState({ type: '', text: '' });
@@ -172,18 +177,25 @@ export const EnrollmentPage = () => {
     }
   };
 
-  const handleDeleteEmployee = async (emp) => {
+  const handleDeleteEmployee = (emp) => {
+    setEmployeeToDelete(emp);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!employeeToDelete) return;
+    const emp = employeeToDelete;
     const fullName = `${emp.first_name} ${emp.last_name}`.trim();
-    if (!window.confirm(`Revoke biometric access and remove "${fullName}" (${emp.employee_code})?`)) {
-      return;
-    }
+    setDeleteLoading(true);
 
     try {
       await api.delete(`/employees/${emp.id}`);
       setEmployees(prev => prev.filter(e => e.id !== emp.id));
       showNotice('success', `Employee "${fullName}" removed and credentials revoked.`);
+      setEmployeeToDelete(null);
     } catch (err) {
       showNotice('error', err.response?.data?.detail || 'Failed to remove employee.');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -691,6 +703,15 @@ export const EnrollmentPage = () => {
           </div>
         </div>
       )}
+
+      {/* Revoke Biometric Access Confirmation Modal */}
+      <RevokeAccessModal
+        isOpen={!!employeeToDelete}
+        employee={employeeToDelete}
+        onClose={() => !deleteLoading && setEmployeeToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        loading={deleteLoading}
+      />
     </div>
   );
 };

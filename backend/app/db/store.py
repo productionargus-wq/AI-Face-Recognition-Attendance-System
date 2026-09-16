@@ -185,5 +185,29 @@ class UnifiedDataStore:
                     return True
         return False
 
+    async def delete_many(self, collection: str, query: Dict[str, Any]) -> int:
+        target_col = self._resolve_collection(collection)
+        db = await self.get_active_db()
+        count = 0
+        if db is not None:
+            try:
+                res = await db[target_col].delete_many(query)
+                count = res.deleted_count
+            except Exception as e:
+                logger.warning(f"Error in MongoDB delete_many {target_col}: {e}")
+
+        async with self.lock:
+            items = self._cache.get(target_col, []) or self._cache.get(collection, [])
+            new_items = []
+            for item in items:
+                match = all(item.get(k) == v for k, v in query.items())
+                if not match:
+                    new_items.append(item)
+                else:
+                    count += 1
+            self._cache[target_col] = new_items
+            self._save_local_storage(target_col)
+        return count
+
 
 store = UnifiedDataStore()
