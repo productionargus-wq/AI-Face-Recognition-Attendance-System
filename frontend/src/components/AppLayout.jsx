@@ -21,6 +21,7 @@ export const AppLayout = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, organization, logout } = useAuth();
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const isEmployee = user?.role === 'employee';
   const userPermissions = user?.permissions || (isEmployee ? ['/admin', '/kiosk', '/leave-apply', '/advance-money'] : null);
 
