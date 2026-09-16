@@ -42,6 +42,15 @@ async def update_org_settings(
 
     return {"status": "success", "message": "Organization settings updated successfully."}
 
+@router.get("/my-org/logo")
+async def get_org_logo(auth_ctx: Dict[str, Any] = Depends(require_org_admin)):
+    """Retrieve company branding logo for the authenticated organization."""
+    org_id = auth_ctx["org_id"]
+    org = await store.find_one("organizations", {"id": org_id})
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return {"status": "success", "logo_url": org.get("logo_url")}
+
 @router.post("/my-org/logo")
 async def upload_org_logo(
     payload: Dict[str, Any],

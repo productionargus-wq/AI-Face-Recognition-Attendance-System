@@ -96,10 +96,22 @@ export const OrgSettings = () => {
           const base64Data = event.target.result;
           setLogoUrl(base64Data);
 
-          // Upload to backend
-          await api.post('/organizations/my-org/logo', {
-            logo_url: base64Data
-          });
+          // Upload to backend with resilient fallback
+          let saved = false;
+          try {
+            await api.post('/organizations/my-org/logo', {
+              logo_url: base64Data
+            });
+            saved = true;
+          } catch (postErr) {
+            console.warn('POST /my-org/logo failed, falling back to update settings:', postErr);
+          }
+
+          if (!saved) {
+            await api.put('/organizations/my-org/settings', {
+              logo_url: base64Data
+            });
+          }
 
           // Sync with AuthContext across the whole app
           if (updateOrganization) {
@@ -129,7 +141,20 @@ export const OrgSettings = () => {
     setUploadingLogo(true);
     setErrorMessage('');
     try {
-      await api.delete('/organizations/my-org/logo');
+      let removed = false;
+      try {
+        await api.delete('/organizations/my-org/logo');
+        removed = true;
+      } catch (delErr) {
+        console.warn('DELETE /my-org/logo failed, falling back to update settings:', delErr);
+      }
+
+      if (!removed) {
+        await api.put('/organizations/my-org/settings', {
+          logo_url: null
+        });
+      }
+
       setLogoUrl('');
       if (updateOrganization) {
         updateOrganization({ logo_url: null });
@@ -304,6 +329,7 @@ export const OrgSettings = () => {
                       src={logoUrl}
                       alt={`${orgDisplayName} Logo`}
                       className="w-full h-full object-contain rounded-xl"
+                      onError={() => setLogoUrl('')}
                     />
                   ) : (
                     <div className="text-center">

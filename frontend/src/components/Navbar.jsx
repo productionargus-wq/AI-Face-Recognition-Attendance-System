@@ -68,7 +68,12 @@ export const Navbar = () => {
           {organization && (
             <div className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-full">
               {organization.logo_url ? (
-                <img src={organization.logo_url} alt="Logo" className="w-4 h-4 rounded-full object-cover shrink-0" />
+                <img
+                  src={organization.logo_url}
+                  alt="Logo"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  className="w-4 h-4 rounded-full object-cover shrink-0"
+                />
               ) : (
                 <Building2 className="w-3.5 h-3.5 text-slate-500" />
               )}

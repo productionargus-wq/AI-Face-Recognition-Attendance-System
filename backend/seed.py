@@ -46,7 +46,7 @@ async def seed_demo_data():
             email="alex.vance@argustech.ai",
             department="AI Research",
             designation="Senior Computer Vision Engineer",
-            phone="+1-555-0199",
+            phone="+91-98765-01999",
             consent_given=True,
             consent_timestamp=datetime.utcnow()
         ).dict()
@@ -73,7 +73,7 @@ async def seed_demo_data():
             email="sarah.connor@argustech.ai",
             department="Operations",
             designation="HR Manager",
-            phone="+1-555-0188",
+            phone="+91-98765-01888",
             consent_given=True,
             consent_timestamp=datetime.utcnow()
         ).dict()

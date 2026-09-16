@@ -319,7 +319,7 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Phone (Optional)</label>
                 <input
                   type="text"
-                  placeholder="+1 555-0122"
+                  placeholder="+91 98765 43210"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

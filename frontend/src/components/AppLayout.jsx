@@ -138,6 +138,7 @@ export const AppLayout = ({ children }) => {
               <img
                 src={organization.logo_url}
                 alt="Logo"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
                 className="w-8 h-8 rounded-lg object-contain bg-white border border-slate-200 p-0.5 shrink-0 shadow-2xs"
               />
             ) : null}
@@ -178,6 +179,7 @@ export const AppLayout = ({ children }) => {
               <img
                 src={organization.logo_url}
                 alt="Logo"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
                 className="w-6 h-6 rounded-md object-contain bg-white border border-slate-200 p-0.5"
               />
             ) : null}
