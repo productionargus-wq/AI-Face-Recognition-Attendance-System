@@ -113,7 +113,7 @@ async def create_employee(
                     detail=f"An employee with email '{payload.email}' already exists in your organization."
                 )
 
-    default_perms = payload.permissions if payload.permissions is not None else ["/admin", "/kiosk", "/leave-apply", "/advance-money"]
+    default_perms = payload.permissions if payload.permissions is not None else ["/admin", "/kiosk", "/leave-apply", "/advance-money", "/payroll"]
 
     emp_dict = Employee(
         organization_id=org_id,

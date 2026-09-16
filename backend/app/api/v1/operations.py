@@ -602,3 +602,31 @@ async def mark_all_notifications_read(
             
     return {"status": "ok"}
 
+@operations_router.get("/salary-payouts/history")
+async def get_payout_history(
+    employee_id: Optional[str] = None,
+    auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
+):
+    org_id = auth_ctx["org_id"]
+    is_admin = auth_ctx.get("role") in ("org_admin", "super_admin")
+    query = {"organization_id": org_id}
+
+    if not is_admin:
+        email = auth_ctx.get("email")
+        emp = await store.find_one("employees", {"email": email, "organization_id": org_id})
+        if emp:
+            query["employee_id"] = emp["id"]
+        else:
+            return []
+    elif employee_id:
+        query["employee_id"] = employee_id
+
+    payouts = await store.find_many(
+        "salary_payouts", 
+        query, 
+        sort_key="created_at", 
+        sort_desc=True, 
+        limit=100
+    )
+    return payouts
+

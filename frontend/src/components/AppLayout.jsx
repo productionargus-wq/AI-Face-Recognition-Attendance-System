@@ -25,7 +25,7 @@ export const AppLayout = ({ children }) => {
   const { user, organization, logout } = useAuth();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const isEmployee = user?.role === 'employee';
-  const userPermissions = user?.permissions || (isEmployee ? ['/admin', '/kiosk', '/leave-apply', '/advance-money'] : null);
+  const userPermissions = user?.permissions || (isEmployee ? ['/admin', '/kiosk', '/leave-apply', '/advance-money', '/payroll'] : null);
 
   // Notification state
   const [notifications, setNotifications] = useState([]);
@@ -122,7 +122,7 @@ export const AppLayout = ({ children }) => {
       id: '/leave-apply'
     },
     {
-      name: 'Salary & Payroll',
+      name: isEmployee ? 'My Salary & Payslip' : 'Salary & Payroll',
       path: '/payroll',
       icon: CreditCard,
       id: '/payroll'

@@ -20,7 +20,9 @@ import {
   Save,
   RotateCcw,
   Edit3,
-  Send
+  Send,
+  FileText,
+  X
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -28,6 +30,8 @@ import api from '../utils/api';
 
 export const PayrollReport = () => {
   const { user, organization } = useAuth();
+  const isEmployee = user?.role === 'employee' || user?.role === 'staff';
+
   const [employees, setEmployees] = useState([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [attendanceRecords, setAttendanceRecords] = useState([]);
@@ -35,6 +39,11 @@ export const PayrollReport = () => {
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
   const [payoutApproved, setPayoutApproved] = useState(false);
+
+  // Payout history & slip modal
+  const [payoutHistory, setPayoutHistory] = useState([]);
+  const [selectedSlip, setSelectedSlip] = useState(null);
+  const [slipModalOpen, setSlipModalOpen] = useState(false);
 
   // Employee search query
   const [searchQuery, setSearchQuery] = useState('');
@@ -57,6 +66,16 @@ export const PayrollReport = () => {
     fetchInitialData();
   }, []);
 
+  const fetchPayoutHistory = async (empId) => {
+    try {
+      const url = isEmployee ? '/salary-payouts/history' : `/salary-payouts/history?employee_id=${empId || ''}`;
+      const res = await api.get(url);
+      setPayoutHistory(res.data || []);
+    } catch (e) {
+      setPayoutHistory([]);
+    }
+  };
+
   const fetchInitialData = async () => {
     setLoading(true);
     try {
@@ -70,9 +89,19 @@ export const PayrollReport = () => {
       setAdvances(advRes.data || []);
 
       if (empList.length > 0) {
-        const firstEmp = empList[0];
-        setSelectedEmployeeId(firstEmp.id);
-        fetchEmployeeAttendance(firstEmp.id);
+        let initialEmp = empList[0];
+        if (isEmployee) {
+          const matched = empList.find(e => 
+            (user?.employee_id && e.id === user.employee_id) ||
+            (user?.employee_code && e.employee_code === user.employee_code) ||
+            (user?.email && e.email === user.email) ||
+            (user?.name && `${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase() === user.name.trim().toLowerCase())
+          );
+          if (matched) initialEmp = matched;
+        }
+        setSelectedEmployeeId(initialEmp.id);
+        fetchEmployeeAttendance(initialEmp.id);
+        fetchPayoutHistory(initialEmp.id);
       }
     } catch (err) {
       console.error('Failed to load payroll report data', err);
@@ -98,6 +127,7 @@ export const PayrollReport = () => {
   const handleEmployeeSelect = (empId) => {
     setSelectedEmployeeId(empId);
     fetchEmployeeAttendance(empId);
+    fetchPayoutHistory(empId);
   };
 
   const selectedEmployee = employees.find(e => e.id === selectedEmployeeId) || employees[0];
@@ -210,6 +240,7 @@ export const PayrollReport = () => {
       await api.post('/notifications/disburse-salary', payload);
       setPayoutSuccess(true);
       setSaveSuccess(`Salary of ₹${netTakeHome.toLocaleString('en-IN')}.00 successfully credited to ${selectedEmployee.first_name} ${selectedEmployee.last_name}. Credit notification dispatched.`);
+      fetchPayoutHistory(selectedEmployee.id);
       setTimeout(() => {
         setPayoutSuccess(false);
       }, 5000);
@@ -250,14 +281,17 @@ export const PayrollReport = () => {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              Employee Payroll &amp; Attendance Report
+              {isEmployee ? 'My Salary & Payslip Details' : 'Employee Payroll & Attendance Report'}
             </h1>
             <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-mono font-bold text-[11px] border border-emerald-200">
               Current Billing Cycle
             </span>
           </div>
           <p className="text-xs text-slate-500">
-            Comprehensive audit, overtime calculations, statutory deductions, and payslip generation for {organization?.name || 'your organisation'}.
+            {isEmployee
+              ? 'View personal compensation structure, active cycle earnings breakdown, and authorized payslips.'
+              : `Comprehensive audit, overtime calculations, statutory deductions, and payslip generation for ${organization?.name || 'your organisation'}.`
+            }
           </p>
         </div>
 
@@ -272,8 +306,8 @@ export const PayrollReport = () => {
               {(user?.name || user?.email || 'AD').slice(0, 2).toUpperCase()}
             </div>
             <div className="text-left">
-              <div className="text-xs font-bold text-slate-800">{user?.name || user?.email?.split('@')[0] || 'Administrator'}</div>
-              <div className="text-[10px] text-slate-400 font-mono">Organisation Administrator</div>
+              <div className="text-xs font-bold text-slate-800">{user?.name || user?.email?.split('@')[0] || (isEmployee ? 'Employee' : 'Administrator')}</div>
+              <div className="text-[10px] text-slate-400 font-mono">{isEmployee ? 'Verified Staff Member' : 'Organisation Administrator'}</div>
             </div>
           </div>
         </div>
@@ -350,14 +384,16 @@ export const PayrollReport = () => {
 
               {/* Action Buttons: Export & Print */}
               <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
-                <button
-                  type="button"
-                  onClick={() => window.open(api.defaults.baseURL + '/reports/export-csv', '_blank')}
-                  className="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
-                  Export CSV
-                </button>
+                {!isEmployee && (
+                  <button
+                    type="button"
+                    onClick={() => window.open(api.defaults.baseURL + '/reports/export-csv', '_blank')}
+                    className="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
+                    Export CSV
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -365,57 +401,59 @@ export const PayrollReport = () => {
                   className="px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  Download Report
+                  {isEmployee ? 'Print Statement' : 'Download Report'}
                 </button>
               </div>
             </div>
 
-            {/* Employee Search & Select Control Bar */}
-            <div className="pt-3 border-t border-slate-100 flex flex-col md:flex-row items-stretch md:items-center gap-3">
-              {/* Search input */}
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search employee by name, code, or department..."
-                  className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder:text-slate-400"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-
-              {/* Filtered Dropdown */}
-              <div className="w-full md:w-80">
-                <select
-                  value={selectedEmployeeId}
-                  onChange={(e) => handleEmployeeSelect(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
-                >
-                  {filteredEmployees.length > 0 ? (
-                    filteredEmployees.map(emp => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.first_name} {emp.last_name} ({emp.employee_code || 'EMP'}) — {emp.department || 'General'}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="" disabled>No matching employees found</option>
+            {/* Employee Search & Select Control Bar - Admin Only */}
+            {!isEmployee && (
+              <div className="pt-3 border-t border-slate-100 flex flex-col md:flex-row items-stretch md:items-center gap-3">
+                {/* Search input */}
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search employee by name, code, or department..."
+                    className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder:text-slate-400"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
+                    >
+                      ×
+                    </button>
                   )}
-                </select>
-              </div>
+                </div>
 
-              <div className="text-[11px] text-slate-400 font-mono shrink-0">
-                {filteredEmployees.length} of {employees.length} employees
+                {/* Filtered Dropdown */}
+                <div className="w-full md:w-80">
+                  <select
+                    value={selectedEmployeeId}
+                    onChange={(e) => handleEmployeeSelect(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
+                  >
+                    {filteredEmployees.length > 0 ? (
+                      filteredEmployees.map(emp => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.first_name} {emp.last_name} ({emp.employee_code || 'EMP'}) — {emp.department || 'General'}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="" disabled>No matching employees found</option>
+                    )}
+                  </select>
+                </div>
+
+                <div className="text-[11px] text-slate-400 font-mono shrink-0">
+                  {filteredEmployees.length} of {employees.length} employees
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* 5 KPI Metric Cards */}
@@ -527,46 +565,69 @@ export const PayrollReport = () => {
                   <h2 className="text-base font-bold text-slate-900">
                     Monthly Salary Calculation Breakdown
                   </h2>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-mono font-bold">
-                    <Edit3 className="w-3 h-3" />
-                    DYNAMIC &amp; EDITABLE
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                    isEmployee ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-blue-50 text-blue-700 border-blue-100'
+                  }`}>
+                    {isEmployee ? (
+                      <>
+                        <ShieldCheck className="w-3 h-3 text-blue-600" />
+                        PERSONAL COMPENSATION
+                      </>
+                    ) : (
+                      <>
+                        <Edit3 className="w-3 h-3" />
+                        DYNAMIC &amp; EDITABLE
+                      </>
+                    )}
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Adjust base pay, hourly rates, overtime, bonus, or statutory deductions in real time. Click "Save Settings" to persist changes for this employee.
+                  {isEmployee 
+                    ? 'Breakdown of your base compensation, overtime hours, incentives, and active cycle deductions.'
+                    : 'Adjust base pay, hourly rates, overtime, bonus, or statutory deductions in real time. Click "Save Settings" to persist changes for this employee.'
+                  }
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleResetDefaults}
-                  title="Reset to calculated defaults"
-                  className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 cursor-pointer transition-colors"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-                  Reset
-                </button>
+              {!isEmployee ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleResetDefaults}
+                    title="Reset to calculated defaults"
+                    className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                    Reset
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={handleSavePayrollStructure}
-                  disabled={savingPayroll}
-                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  {savingPayroll ? 'Saving...' : 'Save Settings'}
-                </button>
+                  <button
+                    type="button"
+                    onClick={handleSavePayrollStructure}
+                    disabled={savingPayroll}
+                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    {savingPayroll ? 'Saving...' : 'Save Settings'}
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setPayoutApproved(true)}
-                  className="px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  {payoutApproved ? 'Payout Authorized' : 'Approve Payout'}
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => setPayoutApproved(true)}
+                    className="px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {payoutApproved ? 'Payout Authorized' : 'Approve Payout'}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-slate-200">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    Verified Structure
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-5 items-start">
@@ -576,9 +637,11 @@ export const PayrollReport = () => {
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
-                      EARNINGS &amp; ENTITLEMENTS (EDITABLE)
+                      {isEmployee ? 'EARNINGS & ENTITLEMENTS (READ-ONLY)' : 'EARNINGS & ENTITLEMENTS (EDITABLE)'}
                     </h3>
-                    <span className="text-[10px] text-slate-400 font-mono">Live calculation enabled</span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {isEmployee ? 'Current active cycle calculation' : 'Live calculation enabled'}
+                    </span>
                   </div>
                   
                   <div className="space-y-3">
@@ -594,9 +657,12 @@ export const PayrollReport = () => {
                           type="number"
                           min="0"
                           step="500"
+                          disabled={isEmployee}
                           value={baseSalary}
                           onChange={(e) => setBaseSalary(e.target.value)}
-                          className="w-32 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                          className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-slate-900 text-right ${
+                            isEmployee ? 'bg-slate-100 border-slate-200 cursor-not-allowed' : 'bg-white border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                          }`}
                         />
                       </div>
                     </div>
@@ -613,9 +679,12 @@ export const PayrollReport = () => {
                           type="number"
                           min="0"
                           step="10"
+                          disabled={isEmployee}
                           value={hourlyRate}
                           onChange={(e) => setHourlyRate(e.target.value)}
-                          className="w-32 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                          className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-slate-900 text-right ${
+                            isEmployee ? 'bg-slate-100 border-slate-200 cursor-not-allowed' : 'bg-white border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                          }`}
                         />
                         <span className="text-[10px] font-mono text-slate-500">/hr</span>
                       </div>
@@ -634,9 +703,12 @@ export const PayrollReport = () => {
                           type="number"
                           min="0"
                           step="0.5"
+                          disabled={isEmployee}
                           value={overtimeHours}
                           onChange={(e) => setOvertimeHours(e.target.value)}
-                          className="w-24 px-2.5 py-1.5 bg-white border border-emerald-300 rounded-lg text-xs font-mono font-bold text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-right"
+                          className={`w-24 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-emerald-900 text-right ${
+                            isEmployee ? 'bg-white/80 border-emerald-200 cursor-not-allowed' : 'bg-white border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500'
+                          }`}
                         />
                         <span className="text-[10px] font-mono text-emerald-700">hrs</span>
                         <span className="text-xs font-mono font-bold text-emerald-800 ml-2">
@@ -657,9 +729,12 @@ export const PayrollReport = () => {
                           type="number"
                           min="0"
                           step="100"
+                          disabled={isEmployee}
                           value={performanceBonus}
                           onChange={(e) => setPerformanceBonus(e.target.value)}
-                          className="w-32 px-2.5 py-1.5 bg-white border border-blue-300 rounded-lg text-xs font-mono font-bold text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                          className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-blue-900 text-right ${
+                            isEmployee ? 'bg-white/80 border-blue-200 cursor-not-allowed' : 'bg-white border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                          }`}
                         />
                       </div>
                     </div>
@@ -670,7 +745,7 @@ export const PayrollReport = () => {
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
-                      DEDUCTIONS &amp; RECOVERIES (EDITABLE)
+                      {isEmployee ? 'DEDUCTIONS & RECOVERIES (READ-ONLY)' : 'DEDUCTIONS & RECOVERIES (EDITABLE)'}
                     </h3>
                     <span className="text-[10px] text-slate-400 font-mono">Deducted from gross pay</span>
                   </div>
@@ -688,9 +763,12 @@ export const PayrollReport = () => {
                           type="number"
                           min="0"
                           step="500"
+                          disabled={isEmployee}
                           value={advanceDeduction}
                           onChange={(e) => setAdvanceDeduction(e.target.value)}
-                          className="w-32 px-2.5 py-1.5 bg-white border border-red-300 rounded-lg text-xs font-mono font-bold text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500 text-right"
+                          className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-red-900 text-right ${
+                            isEmployee ? 'bg-white/80 border-red-200 cursor-not-allowed' : 'bg-white border-red-300 focus:outline-none focus:ring-2 focus:ring-red-500'
+                          }`}
                         />
                       </div>
                     </div>
@@ -707,9 +785,12 @@ export const PayrollReport = () => {
                           type="number"
                           min="0"
                           step="100"
+                          disabled={isEmployee}
                           value={statutoryDeductions}
                           onChange={(e) => setStatutoryDeductions(e.target.value)}
-                          className="w-32 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                          className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-slate-900 text-right ${
+                            isEmployee ? 'bg-slate-100 border-slate-200 cursor-not-allowed' : 'bg-white border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                          }`}
                         />
                       </div>
                     </div>
@@ -771,37 +852,53 @@ export const PayrollReport = () => {
                     </div>
                     <div className="text-[10px] text-emerald-600 font-bold mt-0.5 flex items-center justify-center gap-1">
                       <CheckCircle2 className="w-3 h-3" />
-                      Ready for Disbursement
+                      {isEmployee ? 'Calculated for Active Period' : 'Ready for Disbursement'}
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleDisburseSalary}
-                    disabled={disbursing || payoutSuccess}
-                    className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                      payoutSuccess
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white active:scale-95 disabled:opacity-75'
-                    }`}
-                  >
-                    {payoutSuccess ? (
-                      <>
-                        <CheckCircle2 className="w-4 h-4" />
-                        Salary Credited &amp; Notified
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-4 h-4" />
-                        {disbursing ? 'Processing Credit...' : 'Disburse & Credit Salary'}
-                      </>
-                    )}
-                  </button>
+                  {!isEmployee ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleDisburseSalary}
+                        disabled={disbursing || payoutSuccess}
+                        className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          payoutSuccess
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white active:scale-95 disabled:opacity-75'
+                        }`}
+                      >
+                        {payoutSuccess ? (
+                          <>
+                            <CheckCircle2 className="w-4 h-4" />
+                            Salary Credited &amp; Notified
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-4 h-4" />
+                            {disbursing ? 'Processing Credit...' : 'Disburse & Credit Salary'}
+                          </>
+                        )}
+                      </button>
 
-                  <div className="text-[10px] text-slate-400 font-medium flex items-center justify-center gap-1">
-                    <ShieldCheck className="w-3 h-3 text-emerald-500" />
-                    Sends instant credit notification to employee
-                  </div>
+                      <div className="text-[10px] text-slate-400 font-medium flex items-center justify-center gap-1">
+                        <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                        Sends instant credit notification to employee
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center justify-center gap-2">
+                        <Banknote className="w-4 h-4 text-emerald-600" />
+                        <span>Estimated Current Payout</span>
+                      </div>
+
+                      <div className="text-[10px] text-slate-400 font-medium flex items-center justify-center gap-1">
+                        <Clock className="w-3 h-3 text-blue-500" />
+                        Direct deposit upon monthly payroll settlement
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -891,6 +988,327 @@ export const PayrollReport = () => {
               )}
             </div>
           </div>
+
+          {/* Salary Payout History & Historical Payslips */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="p-5 sm:p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold text-slate-900">
+                    {isEmployee ? 'My Salary Payout History & Official Payslips' : `Disbursed Salary History — ${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-mono font-bold text-[10px] border border-blue-200">
+                    {payoutHistory.length} records
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Audit trail of credited salaries, deductions breakdown, and official downloadable payslips
+                </p>
+              </div>
+
+              {selectedEmployee && (
+                <div className="text-xs text-slate-500 font-mono">
+                  Employee Ref: <span className="font-bold text-slate-800">{selectedEmployee.employee_code || 'EMP'}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="overflow-x-auto">
+              {payoutHistory.length > 0 ? (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/75 text-[11px] font-mono uppercase text-slate-500 font-bold">
+                      <th className="py-3 px-4">Payout ID / Date</th>
+                      <th className="py-3 px-4">Billing Cycle</th>
+                      <th className="py-3 px-4">Gross Earnings</th>
+                      <th className="py-3 px-4">Deductions</th>
+                      <th className="py-3 px-4">Net Credited Pay</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4 text-right">Official Payslip</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {payoutHistory.map((payout) => {
+                      const gross = Number(payout.base_salary || 0) + Number(payout.overtime_pay || 0) + Number(payout.bonus || 0);
+                      const deds = Number(payout.advance_deduction || 0) + Number(payout.statutory_deductions || 0);
+                      const net = Number(payout.net_salary != null ? payout.net_salary : (payout.amount || 0));
+                      const payDate = payout.disbursed_at || payout.created_at;
+
+                      return (
+                        <tr key={payout.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <div className="font-mono font-bold text-slate-900">{payout.id}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              {payDate ? new Date(payDate).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 font-bold text-slate-800 whitespace-nowrap">
+                            {payout.cycle || 'Monthly Settlement'}
+                          </td>
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span className="font-mono font-bold text-slate-800">₹{gross.toLocaleString('en-IN')}.00</span>
+                            <div className="text-[10px] text-emerald-600 font-mono">Base: ₹{(payout.base_salary || 0).toLocaleString('en-IN')}</div>
+                          </td>
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span className="font-mono font-bold text-red-600">-₹{deds.toLocaleString('en-IN')}.00</span>
+                            {Number(payout.advance_deduction || 0) > 0 && (
+                              <div className="text-[10px] text-red-500 font-mono">Adv: -₹{(payout.advance_deduction || 0).toLocaleString('en-IN')}</div>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 whitespace-nowrap font-mono font-bold text-emerald-700 text-sm">
+                            ₹{net.toLocaleString('en-IN')}.00
+                          </td>
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-mono font-bold text-[10px] border border-emerald-200">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              {payout.status || 'PAID'}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedSlip(payout);
+                                setSlipModalOpen(true);
+                              }}
+                              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              View Payslip
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="py-12 px-4 text-center">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-800 mb-1">
+                    No historical salary disbursements on record
+                  </h3>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    {isEmployee 
+                      ? 'When monthly payroll is disbursed and credited to your account, official signed payslips and credit receipts will appear here.'
+                      : 'Click "Disburse & Credit Salary" above to authorize payment and generate an official verifiable payslip for this employee.'
+                    }
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Official Printable Payslip Modal */}
+          {slipModalOpen && selectedSlip && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in">
+              <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-8">
+                {/* Modal Header Bar */}
+                <div className="p-4 bg-slate-900 text-white flex items-center justify-between print:hidden">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-blue-400" />
+                    <span className="text-xs font-bold font-mono tracking-wider uppercase">Official Salary Statement &amp; Payslip</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      Print / PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSlipModalOpen(false);
+                        setSelectedSlip(null);
+                      }}
+                      className="p-1 text-slate-400 hover:text-white rounded-lg cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Printable Payslip Body */}
+                <div className="p-6 sm:p-8 space-y-6 text-slate-800 bg-white">
+                  {/* Header: Company & Title */}
+                  <div className="flex items-start justify-between border-b-2 border-slate-900 pb-5">
+                    <div>
+                      <h2 className="text-xl font-black text-slate-900 tracking-tight uppercase">
+                        {organization?.name || 'Argus Technologies'}
+                      </h2>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5">
+                        Automated Biometric Attendance &amp; Workforce Payroll Division
+                      </p>
+                      <p className="text-[11px] text-slate-400 font-mono mt-1">
+                        Registration / Org ID: {organization?.id || 'ARGUS-SYS-01'}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-900 font-mono font-bold text-xs uppercase border border-slate-200">
+                        CONFIDENTIAL PAYSLIP
+                      </span>
+                      <div className="text-[11px] font-mono text-slate-500 mt-2">
+                        Slip Ref: <span className="font-bold text-slate-800">{selectedSlip.id}</span>
+                      </div>
+                      <div className="text-[11px] font-mono text-slate-500">
+                        Cycle: <span className="font-bold text-slate-800">{selectedSlip.cycle || 'Monthly'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Employee & Payout Metadata Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                    <div>
+                      <div className="text-[10px] uppercase font-mono font-bold text-slate-400">Employee Name</div>
+                      <div className="font-bold text-slate-900 mt-0.5">
+                        {selectedSlip.employee_name || `${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase font-mono font-bold text-slate-400">Employee Code</div>
+                      <div className="font-mono font-bold text-slate-900 mt-0.5">
+                        {selectedSlip.employee_code || selectedEmployee.employee_code || 'EMP'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase font-mono font-bold text-slate-400">Department</div>
+                      <div className="font-bold text-slate-900 mt-0.5">
+                        {selectedEmployee?.department || 'Operations'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase font-mono font-bold text-slate-400">Disbursed On</div>
+                      <div className="font-mono font-bold text-slate-900 mt-0.5">
+                        {selectedSlip.disbursed_at 
+                          ? new Date(selectedSlip.disbursed_at).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' })
+                          : 'Authorized'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Two Column Table: Earnings vs Deductions */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+                    {/* Earnings Section */}
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="bg-slate-100 p-2.5 font-bold font-mono text-slate-700 uppercase tracking-wider text-[11px] border-b border-slate-200 flex justify-between">
+                        <span>EARNINGS &amp; INCENTIVES</span>
+                        <span>AMOUNT (₹)</span>
+                      </div>
+                      <div className="divide-y divide-slate-100 p-1">
+                        <div className="flex justify-between py-2 px-3">
+                          <span className="text-slate-600">Basic Monthly Pay:</span>
+                          <span className="font-mono font-bold text-slate-800">
+                            ₹{(Number(selectedSlip.base_salary) || 0).toLocaleString('en-IN')}.00
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-2 px-3 text-emerald-700">
+                          <span>Overtime Compensation:</span>
+                          <span className="font-mono font-bold">
+                            +₹{(Number(selectedSlip.overtime_pay) || 0).toLocaleString('en-IN')}.00
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-2 px-3 text-blue-700">
+                          <span>Performance &amp; Bonus:</span>
+                          <span className="font-mono font-bold">
+                            +₹{(Number(selectedSlip.bonus) || 0).toLocaleString('en-IN')}.00
+                          </span>
+                        </div>
+                      </div>
+                      <div className="bg-slate-50 p-2.5 border-t border-slate-200 font-bold flex justify-between text-slate-900">
+                        <span>Total Gross Earnings:</span>
+                        <span className="font-mono">
+                          ₹{((Number(selectedSlip.base_salary) || 0) + (Number(selectedSlip.overtime_pay) || 0) + (Number(selectedSlip.bonus) || 0)).toLocaleString('en-IN')}.00
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Deductions Section */}
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="bg-slate-100 p-2.5 font-bold font-mono text-slate-700 uppercase tracking-wider text-[11px] border-b border-slate-200 flex justify-between">
+                        <span>DEDUCTIONS &amp; RECOVERIES</span>
+                        <span>AMOUNT (₹)</span>
+                      </div>
+                      <div className="divide-y divide-slate-100 p-1">
+                        <div className="flex justify-between py-2 px-3 text-red-600">
+                          <span>Advance Salary Recovery:</span>
+                          <span className="font-mono font-bold">
+                            -₹{(Number(selectedSlip.advance_deduction) || 0).toLocaleString('en-IN')}.00
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-2 px-3 text-red-600">
+                          <span>Provident Fund &amp; Taxes:</span>
+                          <span className="font-mono font-bold">
+                            -₹{(Number(selectedSlip.statutory_deductions) || 0).toLocaleString('en-IN')}.00
+                          </span>
+                        </div>
+                      </div>
+                      <div className="bg-slate-50 p-2.5 border-t border-slate-200 font-bold flex justify-between text-slate-900">
+                        <span>Total Deductions:</span>
+                        <span className="font-mono text-red-600">
+                          -₹{((Number(selectedSlip.advance_deduction) || 0) + (Number(selectedSlip.statutory_deductions) || 0)).toLocaleString('en-IN')}.00
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Net Payable Highlight Banner */}
+                  <div className="p-4 bg-emerald-50 border-2 border-emerald-500 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-emerald-900">
+                    <div>
+                      <div className="text-[11px] uppercase font-mono font-bold text-emerald-700">NET SALARY DISBURSED TO BANK</div>
+                      <div className="text-xs text-emerald-800 font-medium">Direct credit to verified employee salary account</div>
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-black font-mono text-emerald-700">
+                      ₹{(Number(selectedSlip.net_salary != null ? selectedSlip.net_salary : selectedSlip.amount) || 0).toLocaleString('en-IN')}.00
+                    </div>
+                  </div>
+
+                  {/* Bottom Verification & Sign-off Footer */}
+                  <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-[11px] text-slate-500">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1 font-semibold text-slate-700">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        Digitally Verified by {selectedSlip.disbursed_by || 'Payroll Administrator'}
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono">
+                        This document is a system generated payslip powered by Argus Biometrics and does not require a physical seal.
+                      </div>
+                    </div>
+                    <div className="text-right sm:text-right w-full sm:w-auto">
+                      <span className="inline-block border-b border-dashed border-slate-400 w-36 mb-1"></span>
+                      <div className="text-[10px] uppercase font-mono font-bold text-slate-500">Authorized Signature</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Bottom Actions (Print and Close) */}
+                <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 print:hidden">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSlipModalOpen(false);
+                      setSelectedSlip(null);
+                    }}
+                    className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4" />
+                    Print Official Statement
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

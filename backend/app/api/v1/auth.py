@@ -234,7 +234,7 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user_payload
         if user_out.get("role") in ("org_admin", "super_admin"):
             user_out["permissions"] = ["/admin", "/kiosk", "/enrollment", "/manual-entry", "/advance-money", "/leave-apply", "/payroll", "/settings"]
         else:
-            user_out["permissions"] = ["/admin", "/kiosk", "/leave-apply", "/advance-money"]
+            user_out["permissions"] = ["/admin", "/kiosk", "/leave-apply", "/advance-money", "/payroll"]
 
     return {"user": user_out, "organization": org}
 

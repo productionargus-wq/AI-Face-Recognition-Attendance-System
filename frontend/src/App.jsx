@@ -26,7 +26,7 @@ const ProtectedRoute = ({ children, requiredPath = null }) => {
   }
   // Employee permissions check
   if (requiredPath) {
-    const perms = user.permissions || ['/admin', '/kiosk', '/leave-apply', '/advance-money'];
+    const perms = user.permissions || ['/admin', '/kiosk', '/leave-apply', '/advance-money', '/payroll'];
     const hasPerm = perms.includes(requiredPath) || (requiredPath === '/admin' && (perms.includes('/admin') || perms.includes('/portal')));
     if (!hasPerm) {
       const fallback = perms.find(p => p !== requiredPath) || '/portal';
