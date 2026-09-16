@@ -21,14 +21,17 @@ export const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
-  const [faceScanStatus, setFaceScanStatus] = useState('IDLE');
+  const [faceScanning, setFaceScanning] = useState(false);
+  const [faceError, setFaceError] = useState('');
+  const [faceSuccess, setFaceSuccess] = useState('');
   const [showTerminal, setShowTerminal] = useState(false);
   
   const videoRef = useRef(null);
-  const { user, googleLogin } = useAuth();
+  const canvasRef = useRef(null);
+  const { user, googleLogin, faceLogin } = useAuth();
   const navigate = useNavigate();
 
-  // If already logged in, redirect immediately
+  // If already logged in, redirect immediately to respective UI
   useEffect(() => {
     if (user) {
       if (user.role === 'org_admin' || user.role === 'super_admin') {
@@ -38,6 +41,42 @@ export const Login = () => {
       }
     }
   }, [user, navigate]);
+
+  // Handle instant Face Biometric Sign-in
+  const handleFaceSignIn = async () => {
+    if (!videoRef.current) return;
+    setError('');
+    setFaceError('');
+    setFaceSuccess('');
+    setFaceScanning(true);
+
+    try {
+      const canvas = canvasRef.current || document.createElement('canvas');
+      const video = videoRef.current;
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageSample = canvas.toDataURL('image/jpeg', 0.85);
+
+      const res = await faceLogin(imageSample);
+      const roleLabel = res.user.role === 'org_admin' || res.user.role === 'super_admin' ? 'Admin' : 'Staff';
+      setFaceSuccess(`Verified: ${res.user.name || 'User'} (${roleLabel}) — Access Granted!`);
+
+      setTimeout(() => {
+        if (res.user.role === 'org_admin' || res.user.role === 'super_admin') {
+          navigate('/admin');
+        } else {
+          navigate('/portal');
+        }
+      }, 700);
+    } catch (err) {
+      const detail = err.response?.data?.detail || 'Face not recognized. Please position your face clearly in the reticle or sign in with Google.';
+      setFaceError(detail);
+    } finally {
+      setFaceScanning(false);
+    }
+  };
 
   // Face webcam stream handler
   const startCamera = async () => {
@@ -237,9 +276,9 @@ export const Login = () => {
                 <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
                   FACE RECOGNITION
                 </span>
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                  COMING SOON
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5 shadow-2xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                  ACTIVE // READY
                 </span>
               </div>
 
@@ -261,12 +300,17 @@ export const Login = () => {
                   style={{ transform: 'scaleX(-1)' }}
                 />
 
+                {/* Hidden canvas for instantaneous frame extraction */}
+                <canvas ref={canvasRef} className="hidden" />
+
                 {/* Laser scanline animation */}
                 <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-[#00e5ff] to-transparent shadow-[0_0_12px_#00e5ff] animate-scanline" />
 
                 {/* Center Face Reticle Overlay */}
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                  <div className="w-36 h-48 sm:w-44 sm:h-56 border border-dashed border-cyan-400/50 rounded-full flex items-center justify-center">
+                  <div className={`w-36 h-48 sm:w-44 sm:h-56 border border-dashed rounded-full flex items-center justify-center transition-colors ${
+                    faceScanning ? 'border-emerald-400/90 shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'border-cyan-400/50'
+                  }`}>
                     <div className="w-4 h-4 border-t-2 border-l-2 border-cyan-400 absolute top-2 left-6" />
                     <div className="w-4 h-4 border-t-2 border-r-2 border-cyan-400 absolute top-2 right-6" />
                     <div className="w-4 h-4 border-b-2 border-l-2 border-cyan-400 absolute bottom-2 left-6" />
@@ -281,26 +325,51 @@ export const Login = () => {
                 </div>
 
                 <div className="absolute bottom-3 left-3 z-10 text-[9px] font-mono text-cyan-400/80">
-                  ISO/IEC 30107-3 ACTIVE
+                  {faceScanning ? 'ANALYZING NEURAL VECTORS...' : 'ISO/IEC 30107-3 ACTIVE'}
                 </div>
               </div>
             </div>
 
-            {/* Face Login Button — Disabled until implemented */}
+            {/* Face Recognition Feedback Banner */}
+            {faceSuccess && (
+              <div className="mt-3 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2 animate-in fade-in duration-200 shadow-2xs">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="font-semibold text-[11px] leading-tight">{faceSuccess}</span>
+              </div>
+            )}
+
+            {faceError && (
+              <div className="mt-3 p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2 animate-in fade-in duration-200 shadow-2xs">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <span className="text-[11px] leading-tight">{faceError}</span>
+              </div>
+            )}
+
+            {/* Face Login Button */}
             <div>
               <button
                 type="button"
-                disabled={true}
-                className="mt-4 w-full py-2.5 px-4 rounded-xl bg-slate-100 border border-slate-200 text-slate-400 font-bold text-xs flex items-center justify-center gap-2 shadow-xs cursor-not-allowed"
-                title="Face recognition login will be available soon"
+                onClick={handleFaceSignIn}
+                disabled={faceScanning || loading}
+                className="mt-4 w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 active:scale-[0.99] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-blue-500/20 hover:shadow-lg transition-all cursor-pointer border border-blue-400/30 disabled:opacity-60"
+                title="Scan and verify face to sign in"
               >
-                <ScanFace className="w-4 h-4" />
-                Sign In with Face (Coming Soon)
+                {faceScanning ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                    <span>Verifying Face Biometrics...</span>
+                  </>
+                ) : (
+                  <>
+                    <ScanFace className="w-4 h-4 text-blue-200" />
+                    <span>Scan & Sign In with Face</span>
+                  </>
+                )}
               </button>
 
-              <div className="mt-2 text-center text-[10px] text-slate-400 font-medium flex items-center justify-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
-                Face recognition login is under development
+              <div className="mt-2 text-center text-[10px] text-slate-500 font-medium flex items-center justify-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Instant 1:N neural vector match • Direct dashboard routing</span>
               </div>
             </div>
           </div>

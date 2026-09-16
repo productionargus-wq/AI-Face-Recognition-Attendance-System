@@ -7,6 +7,8 @@ from app.models.schemas import (
 )
 from app.core.security import get_password_hash, verify_password, create_access_token, get_current_user_payload
 from app.db.store import store
+from app.services.face_service import decode_base64_image, extract_face_embedding, find_best_match
+from app.core.config import settings
 import re
 import asyncio
 from datetime import datetime
@@ -19,6 +21,10 @@ router = APIRouter(prefix="/auth", tags=["Authentication & Onboarding"])
 class LoginRequest(BaseModel):
     email: EmailStr
     password: Optional[str] = None
+
+class FaceLoginRequest(BaseModel):
+    image_sample: str
+    organization_slug_or_id: Optional[str] = None
 
 class LoginResponse(BaseModel):
     access_token: str
@@ -439,3 +445,130 @@ async def google_login(payload: GoogleLoginRequest):
         status_code=status.HTTP_403_FORBIDDEN,
         detail=f"Access Denied: Your Google account ({email}) is not registered with any organisation. Please ask your administrator to enroll your email, or register a new organisation."
     )
+
+@router.post("/face-login", response_model=LoginResponse)
+async def face_login(payload: FaceLoginRequest):
+    """
+    Biometric Facial Recognition Authentication (1:N Vector Match).
+    1. Ingests base64 camera snapshot in-memory only (raw frame never written to disk).
+    2. Extracts 128-d unit normalized face embedding vector.
+    3. Searches enrolled employees across organizations (or scoped to target org).
+    4. Finds best cosine-similarity match against enrolled biometric vectors.
+    5. Resolves user account and issues JWT with appropriate role and permissions.
+    """
+    if not payload.image_sample or not payload.image_sample.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No camera image provided. Please allow camera access and position your face inside the reticle."
+        )
+
+    try:
+        image = decode_base64_image(payload.image_sample)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not process image from camera. Please ensure camera permissions are granted and try again."
+        )
+
+    live_vector = extract_face_embedding(image)
+    if live_vector is None or len(live_vector) != 128:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No face clearly detected. Please look directly into the camera with good lighting."
+        )
+
+    # 1. Fetch eligible employees with enrolled biometrics
+    query: Dict[str, Any] = {"is_active": True}
+    target_org = (payload.organization_slug_or_id or "").strip()
+    if target_org and target_org.upper() not in ("AUTO", "ALL"):
+        org_doc = await store.find_one("organizations", {"id": target_org})
+        if not org_doc:
+            org_doc = await store.find_one("organizations", {"slug": target_org})
+        if org_doc:
+            query["organization_id"] = org_doc["id"]
+
+    employees = await store.find_many("employees", query)
+    # Filter only those who actually have face embeddings
+    enrolled_employees = [e for e in employees if e.get("face_embeddings") and len(e.get("face_embeddings", [])) > 0]
+
+    if not enrolled_employees:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No registered biometric facial profiles found in the system. Please enroll your face first or sign in with Google."
+        )
+
+    # 2. Run 1:N Biometric Matching
+    matched_emp, confidence = find_best_match(
+        live_vector=live_vector,
+        tenant_employees=enrolled_employees,
+        threshold=settings.SIMILARITY_THRESHOLD
+    )
+
+    if not matched_emp:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Face not recognized. Please ensure you are enrolled by your organisation administrator, or sign in with Google."
+        )
+
+    org_id = matched_emp["organization_id"]
+    org = await store.find_one("organizations", {"id": org_id})
+
+    # 3. Locate or Provision User Record
+    # Check if a user account already exists by employee_id or email
+    user = await store.find_one("users", {"employee_id": matched_emp["id"], "is_active": True})
+    if not user:
+        user = await store.find_one("users", {"email": matched_emp["email"].strip().lower(), "is_active": True})
+
+    if not user:
+        # Create user account for enrolled employee
+        default_perms = matched_emp.get("permissions") or ["/admin", "/kiosk", "/leave-apply", "/advance-money", "/payroll"]
+        user = User(
+            organization_id=org_id,
+            name=f"{matched_emp.get('first_name', '')} {matched_emp.get('last_name', '')}".strip(),
+            email=matched_emp["email"].strip().lower(),
+            hashed_password=GOOGLE_AUTH_DUMMY_HASH,
+            role=UserRole.EMPLOYEE,
+            employee_id=matched_emp["id"],
+            permissions=default_perms,
+            is_active=True
+        ).dict()
+        await store.insert_one("users", user)
+    else:
+        # Ensure user has employee_id linked
+        if not user.get("employee_id"):
+            await store.update_one("users", {"id": user["id"]}, {"employee_id": matched_emp["id"]})
+            user["employee_id"] = matched_emp["id"]
+
+    # 4. Create Audit Log in background
+    audit = AuditLog(
+        organization_id=org_id,
+        actor_id=user["id"],
+        actor_name=user["name"],
+        actor_role=user.get("role", UserRole.EMPLOYEE),
+        action="FACE_BIOMETRIC_LOGIN",
+        target_resource="Authentication",
+        target_id=user["id"],
+        details={"confidence": confidence, "employee_code": matched_emp.get("employee_code")}
+    ).dict()
+    asyncio.create_task(store.insert_one("audit_logs", audit))
+
+    # 5. Issue JWT
+    token_data = {
+        "sub": user["id"],
+        "email": user["email"],
+        "name": user["name"],
+        "role": user.get("role", UserRole.EMPLOYEE),
+        "org_id": org_id,
+        "emp_id": matched_emp["id"]
+    }
+    token = create_access_token(token_data)
+    user_out = {k: v for k, v in user.items() if k != "hashed_password"}
+    if matched_emp.get("employee_code"):
+        user_out["employee_code"] = matched_emp["employee_code"]
+    if matched_emp.get("department"):
+        user_out["department"] = matched_emp["department"]
+    if matched_emp.get("permissions"):
+        user_out["permissions"] = matched_emp["permissions"]
+
+    return LoginResponse(access_token=token, user=user_out, organization=org)
+

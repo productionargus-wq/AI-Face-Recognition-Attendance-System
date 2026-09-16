@@ -2,14 +2,8 @@ import React, { useState, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
-  Building2, 
   ShieldCheck, 
-  AlertCircle, 
-  ArrowRight, 
-  CheckCircle2, 
-  FileText,
-  ScanFace,
-  Sparkles
+  AlertCircle
 } from 'lucide-react';
 import { PrecisionIdentityMatrix } from '../components/PrecisionIdentityMatrix';
 
@@ -162,10 +156,10 @@ export const RegisterOrg = () => {
         </div>
       </header>
 
-      {/* Main Dual-Column Setup Viewport */}
+      {/* Main Registration Viewport */}
       <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8 relative z-10">
         {/* Page Top Heading */}
-        <div className="max-w-4xl w-full mx-auto mb-6">
+        <div className="max-w-xl w-full mx-auto mb-6 text-center">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50/90 border border-blue-200 text-blue-700 text-[10px] font-mono font-bold mb-2 backdrop-blur-xs">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
             ORGANISATION ONBOARDING
@@ -178,65 +172,9 @@ export const RegisterOrg = () => {
           </p>
         </div>
 
-        <div className="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-          
-          {/* Left Column: Biometric Kiosk Terminal Preview */}
-          <div className="lg:col-span-5 bg-white/85 backdrop-blur-xl p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xl shadow-blue-900/5 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
-                  KIOSK PREVIEW
-                </span>
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                  TERMINAL_A1 // ONLINE
-                </span>
-              </div>
-
-              {/* Viewport Frame with Cybernetic HUD Brackets */}
-              <div className="relative w-full aspect-square bg-slate-950 rounded-xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
-                {/* HUD Corner Brackets */}
-                <div className="hud-corner-tl" />
-                <div className="hud-corner-tr" />
-                <div className="hud-corner-bl" />
-                <div className="hud-corner-br" />
-
-                {/* Laser scanline animation */}
-                <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-[#00e5ff] to-transparent shadow-[0_0_12px_#00e5ff] animate-scanline" />
-
-                {/* Face Scanning Simulation Graphic */}
-                <div className="relative w-36 h-48 sm:w-44 sm:h-56 border border-dashed border-cyan-400/50 rounded-full flex flex-col items-center justify-center">
-                  <div className="w-4 h-4 border-t-2 border-l-2 border-cyan-400 absolute top-2 left-6" />
-                  <div className="w-4 h-4 border-t-2 border-r-2 border-cyan-400 absolute top-2 right-6" />
-                  <div className="w-4 h-4 border-b-2 border-l-2 border-cyan-400 absolute bottom-2 left-6" />
-                  <div className="w-4 h-4 border-b-2 border-r-2 border-cyan-400 absolute bottom-2 right-6" />
-                  
-                  <ScanFace className="w-16 h-16 text-cyan-400/70 mb-2 animate-pulse" />
-                  <span className="text-[10px] font-mono text-cyan-300 font-bold">READY FOR SCAN</span>
-                </div>
-
-                {/* Status Pill Inside Viewport */}
-                <div className="absolute bottom-2.5 left-3 right-3 px-3 py-1.5 bg-slate-900/80 backdrop-blur-xs border border-slate-700/60 rounded-lg flex items-center justify-between text-[10px] text-slate-200 font-mono">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                    <span>Liveness Detection Active</span>
-                  </div>
-                  <span className="text-cyan-400 font-bold">99.8%</span>
-                </div>
-              </div>
-
-              <div className="mt-4 flex items-center gap-2 text-[11px] text-slate-500 font-medium">
-                <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                <span>Zero hardware installation: Works with any webcam or tablet.</span>
-              </div>
-            </div>
-
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-600 font-mono mt-4">
-              TENANCY: ISOLATED CLOUD PARTITION
-            </div>
-          </div>
-
-          {/* Right Column: Organization Registration Form */}
-          <div className="lg:col-span-7 bg-white/85 backdrop-blur-xl p-6 sm:p-8 rounded-2xl border border-slate-200/80 shadow-xl shadow-blue-900/5 flex flex-col justify-center">
+        <div className="max-w-xl w-full mx-auto">
+          {/* Organization Registration Form Card */}
+          <div className="bg-white/85 backdrop-blur-xl p-6 sm:p-8 rounded-2xl border border-slate-200/80 shadow-xl shadow-blue-900/5 flex flex-col justify-center">
             {error && (
               <div className="mb-4 p-3 rounded-xl bg-red-50/90 border border-red-200 text-red-700 text-xs flex items-center gap-2 animate-in fade-in duration-150 backdrop-blur-xs">
                 <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
