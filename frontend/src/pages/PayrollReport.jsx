@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   CreditCard, 
   Download, 
@@ -9,14 +9,17 @@ import {
   Banknote, 
   ShieldCheck, 
   Printer, 
-  Send, 
   FileSpreadsheet, 
   ArrowUpRight, 
   TrendingUp, 
   AlertCircle,
   UserCheck,
   UserPlus,
-  Inbox
+  Inbox,
+  Search,
+  Save,
+  RotateCcw,
+  Edit3
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -31,6 +34,22 @@ export const PayrollReport = () => {
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
   const [payoutApproved, setPayoutApproved] = useState(false);
+
+  // Employee search query
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Editable compensation fields for selected employee
+  const [baseSalary, setBaseSalary] = useState(40000);
+  const [hourlyRate, setHourlyRate] = useState(250);
+  const [statutoryDeductions, setStatutoryDeductions] = useState(3000);
+  const [overtimeHours, setOvertimeHours] = useState(0);
+  const [performanceBonus, setPerformanceBonus] = useState(0);
+  const [advanceDeduction, setAdvanceDeduction] = useState(0);
+
+  // Status indicators for save action
+  const [savingPayroll, setSavingPayroll] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState('');
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
     fetchInitialData();
@@ -74,38 +93,115 @@ export const PayrollReport = () => {
     }
   };
 
-  const handleEmployeeChange = (e) => {
-    const id = e.target.value;
-    setSelectedEmployeeId(id);
-    fetchEmployeeAttendance(id);
+  const handleEmployeeSelect = (empId) => {
+    setSelectedEmployeeId(empId);
+    fetchEmployeeAttendance(empId);
   };
 
   const selectedEmployee = employees.find(e => e.id === selectedEmployeeId) || employees[0];
 
-  // Dynamic Payroll Calculations
+  // Synchronize compensation fields whenever the selected employee or attendance data changes
+  useEffect(() => {
+    if (!selectedEmployee) return;
+
+    const bSalary = selectedEmployee.base_salary != null ? Number(selectedEmployee.base_salary) : 40000;
+    const hRate = selectedEmployee.hourly_rate != null ? Number(selectedEmployee.hourly_rate) : 250;
+    const statDed = selectedEmployee.statutory_deductions != null ? Number(selectedEmployee.statutory_deductions) : 3000;
+
+    const presentDaysCount = attendanceRecords.filter(r => r.status === 'PRESENT').length;
+    const totalHours = attendanceRecords.reduce((acc, curr) => acc + (Number(curr.total_hours) || 0), 0);
+    const autoOT = Math.max(0, totalHours > 0 ? Math.round((totalHours - (presentDaysCount * 8)) * 10) / 10 : 0);
+    const autoBonus = presentDaysCount >= 20 ? 2500 : 0;
+
+    const empAdvances = advances.filter(a => a.employee_id === selectedEmployee.id);
+    const autoAdvance = empAdvances.reduce((acc, curr) => acc + (Number(curr.next_deduction || curr.nextDeduction) || 0), 0);
+
+    setBaseSalary(bSalary);
+    setHourlyRate(hRate);
+    setStatutoryDeductions(statDed);
+    setOvertimeHours(autoOT);
+    setPerformanceBonus(autoBonus);
+    setAdvanceDeduction(autoAdvance);
+    setPayoutApproved(false);
+    setSaveSuccess('');
+    setSaveError('');
+  }, [selectedEmployeeId, attendanceRecords, advances]);
+
+  // Filtered employees based on search input
+  const filteredEmployees = useMemo(() => {
+    if (!searchQuery.trim()) return employees;
+    const term = searchQuery.toLowerCase();
+    return employees.filter(e => 
+      `${e.first_name || ''} ${e.last_name || ''}`.toLowerCase().includes(term) ||
+      (e.employee_code || '').toLowerCase().includes(term) ||
+      (e.department || '').toLowerCase().includes(term) ||
+      (e.email || '').toLowerCase().includes(term)
+    );
+  }, [employees, searchQuery]);
+
+  // Reset editable inputs back to computed defaults
+  const handleResetDefaults = () => {
+    if (!selectedEmployee) return;
+    const bSalary = selectedEmployee.base_salary != null ? Number(selectedEmployee.base_salary) : 40000;
+    const hRate = selectedEmployee.hourly_rate != null ? Number(selectedEmployee.hourly_rate) : 250;
+    const statDed = selectedEmployee.statutory_deductions != null ? Number(selectedEmployee.statutory_deductions) : 3000;
+
+    const presentDaysCount = attendanceRecords.filter(r => r.status === 'PRESENT').length;
+    const totalHours = attendanceRecords.reduce((acc, curr) => acc + (Number(curr.total_hours) || 0), 0);
+    const autoOT = Math.max(0, totalHours > 0 ? Math.round((totalHours - (presentDaysCount * 8)) * 10) / 10 : 0);
+    const autoBonus = presentDaysCount >= 20 ? 2500 : 0;
+
+    const empAdvances = advances.filter(a => a.employee_id === selectedEmployee.id);
+    const autoAdvance = empAdvances.reduce((acc, curr) => acc + (Number(curr.next_deduction || curr.nextDeduction) || 0), 0);
+
+    setBaseSalary(bSalary);
+    setHourlyRate(hRate);
+    setStatutoryDeductions(statDed);
+    setOvertimeHours(autoOT);
+    setPerformanceBonus(autoBonus);
+    setAdvanceDeduction(autoAdvance);
+  };
+
+  // Save current salary structure into database for selected employee
+  const handleSavePayrollStructure = async () => {
+    if (!selectedEmployee) return;
+    setSavingPayroll(true);
+    setSaveSuccess('');
+    setSaveError('');
+    try {
+      const payload = {
+        base_salary: Number(baseSalary) || 0,
+        hourly_rate: Number(hourlyRate) || 0,
+        statutory_deductions: Number(statutoryDeductions) || 0
+      };
+      await api.put(`/employees/${selectedEmployee.id}`, payload);
+
+      // Update in-memory employees array
+      setEmployees(prev => prev.map(e => e.id === selectedEmployee.id ? { ...e, ...payload } : e));
+      setSaveSuccess(`Payroll compensation settings for ${selectedEmployee.first_name} ${selectedEmployee.last_name} saved to database.`);
+      setTimeout(() => setSaveSuccess(''), 4000);
+    } catch (err) {
+      setSaveError(err.response?.data?.detail || 'Failed to persist payroll settings to database.');
+    } finally {
+      setSavingPayroll(false);
+    }
+  };
+
+  // Attendance stats
   const presentDays = attendanceRecords.filter(r => r.status === 'PRESENT').length;
   const totalLoggedHours = attendanceRecords.reduce((acc, curr) => acc + (Number(curr.total_hours) || 0), 0);
-  const hourlyRate = 250; // ₹250 / hr standard base
-  const standardHours = 160;
-  const baseSalary = 40000;
-  
-  // Overtime computation
-  const overtimeHours = Math.max(0, totalLoggedHours > 0 ? Math.round((totalLoggedHours - (presentDays * 8)) * 10) / 10 : 0);
-  const overtimePay = Math.round(overtimeHours * hourlyRate * 1.5);
-  
-  // Performance Bonus
-  const performanceBonus = presentDays >= 20 ? 2500 : 0;
-  
-  // Advance Deduction for this employee
-  const employeeAdvances = advances.filter(a => a.employee_id === selectedEmployeeId);
-  const advanceDeduction = employeeAdvances.reduce((acc, curr) => acc + (Number(curr.next_deduction || curr.nextDeduction) || 0), 0);
 
-  // Statutory Deductions (PF & Tax)
-  const statutoryDeductions = 3000;
+  // Dynamic calculations based on state variables
+  const numBaseSalary = Number(baseSalary) || 0;
+  const numHourlyRate = Number(hourlyRate) || 0;
+  const numOvertimeHours = Number(overtimeHours) || 0;
+  const numPerformanceBonus = Number(performanceBonus) || 0;
+  const numAdvanceDeduction = Number(advanceDeduction) || 0;
+  const numStatutoryDeductions = Number(statutoryDeductions) || 0;
 
-  // Gross & Net Pay
-  const grossPay = baseSalary + overtimePay + performanceBonus;
-  const totalDeductions = advanceDeduction + statutoryDeductions;
+  const overtimePay = Math.round(numOvertimeHours * numHourlyRate * 1.5);
+  const grossPay = Math.round(numBaseSalary + overtimePay + numPerformanceBonus);
+  const totalDeductions = Math.round(numAdvanceDeduction + numStatutoryDeductions);
   const netTakeHome = Math.max(0, grossPay - totalDeductions);
 
   const filteredLogs = attendanceRecords.filter(log => {
@@ -150,6 +246,21 @@ export const PayrollReport = () => {
         </div>
       </div>
 
+      {/* Save Success / Error Alerts */}
+      {saveSuccess && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{saveSuccess}</span>
+        </div>
+      )}
+
+      {saveError && (
+        <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+          <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+          <span>{saveError}</span>
+        </div>
+      )}
+
       {/* No Employees State */}
       {!loading && employees.length === 0 && (
         <div className="p-6 bg-white border border-slate-200 rounded-2xl text-center space-y-3">
@@ -174,64 +285,103 @@ export const PayrollReport = () => {
 
       {selectedEmployee && (
         <>
-          {/* Employee Selector & Profile Card */}
-          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-700 font-extrabold flex items-center justify-center text-lg border border-blue-200 shadow-2xs">
-                {selectedEmployee.first_name?.[0]}{selectedEmployee.last_name?.[0]}
+          {/* Employee Search & Selector Card */}
+          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              {/* Employee Info Header */}
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-700 font-extrabold flex items-center justify-center text-lg border border-blue-200 shadow-2xs shrink-0">
+                  {selectedEmployee.first_name?.[0]}{selectedEmployee.last_name?.[0]}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <h2 className="text-lg font-extrabold text-slate-900">
+                      {selectedEmployee.first_name} {selectedEmployee.last_name}
+                    </h2>
+                    <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-mono font-bold text-[10px] border border-blue-200">
+                      {selectedEmployee.employee_code || 'EMP'}
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono font-bold text-[10px] border border-emerald-200">
+                      Active Workforce
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-500 font-medium flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span>Department: <span className="font-bold text-slate-800">{selectedEmployee.department || 'Operations'}</span></span>
+                    <span>•</span>
+                    <span>Base Hourly Rate: <span className="font-bold text-slate-800 font-mono">₹{numHourlyRate}/hr</span></span>
+                    <span>•</span>
+                    <span>Email: <span className="font-bold text-slate-800">{selectedEmployee.email || 'N/A'}</span></span>
+                  </div>
+                </div>
               </div>
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <h2 className="text-lg font-extrabold text-slate-900">
-                    {selectedEmployee.first_name} {selectedEmployee.last_name}
-                  </h2>
-                  <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-mono font-bold text-[10px] border border-blue-200">
-                    {selectedEmployee.employee_code || 'EMP'}
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono font-bold text-[10px] border border-emerald-200">
-                    Active Workforce
-                  </span>
-                </div>
-                <div className="text-xs text-slate-500 font-medium flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span>{selectedEmployee.department || 'Operations'}</span>
-                  <span>•</span>
-                  <span>Base Rate: <span className="font-bold text-slate-800">₹{hourlyRate} / hr</span></span>
-                  <span>•</span>
-                  <span>Email: <span className="font-bold text-slate-800">{selectedEmployee.email || 'N/A'}</span></span>
-                </div>
+
+              {/* Action Buttons: Export & Print */}
+              <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+                <button
+                  type="button"
+                  onClick={() => window.open(api.defaults.baseURL + '/reports/export-csv', '_blank')}
+                  className="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
+                  Export CSV
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download Report
+                </button>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
-              <select
-                value={selectedEmployeeId}
-                onChange={handleEmployeeChange}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
-              >
-                {employees.map(emp => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.first_name} {emp.last_name} ({emp.employee_code || 'EMP'})
-                  </option>
-                ))}
-              </select>
+            {/* Employee Search & Select Control Bar */}
+            <div className="pt-3 border-t border-slate-100 flex flex-col md:flex-row items-stretch md:items-center gap-3">
+              {/* Search input */}
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search employee by name, code, or department..."
+                  className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder:text-slate-400"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
 
-              <button
-                type="button"
-                onClick={() => window.open(api.defaults.baseURL + '/reports/export-csv', '_blank')}
-                className="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 shadow-2xs cursor-pointer"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
-                Export CSV
-              </button>
+              {/* Filtered Dropdown */}
+              <div className="w-full md:w-80">
+                <select
+                  value={selectedEmployeeId}
+                  onChange={(e) => handleEmployeeSelect(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
+                >
+                  {filteredEmployees.length > 0 ? (
+                    filteredEmployees.map(emp => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.first_name} {emp.last_name} ({emp.employee_code || 'EMP'}) — {emp.department || 'General'}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>No matching employees found</option>
+                  )}
+                </select>
+              </div>
 
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Download Report
-              </button>
+              <div className="text-[11px] text-slate-400 font-mono shrink-0">
+                {filteredEmployees.length} of {employees.length} employees
+              </div>
             </div>
           </div>
 
@@ -265,12 +415,12 @@ export const PayrollReport = () => {
                 <Award className="w-4 h-4 text-amber-500" />
               </div>
               <div className="my-2">
-                <div className="text-xl font-black text-slate-900 tracking-tight">
-                  ₹{performanceBonus.toLocaleString('en-IN')}
+                <div className="text-xl font-black text-slate-900 tracking-tight font-mono">
+                  ₹{numPerformanceBonus.toLocaleString('en-IN')}
                 </div>
               </div>
               <div className="text-[10px] text-slate-500 font-mono border-t border-slate-100 pt-1 flex justify-between">
-                <span className="text-blue-600 font-bold">Tier 1 Incentive</span>
+                <span className="text-blue-600 font-bold">Incentive</span>
                 <span>Audit Verified</span>
               </div>
             </div>
@@ -284,13 +434,13 @@ export const PayrollReport = () => {
                 <Clock className="w-4 h-4 text-teal-600" />
               </div>
               <div className="my-2">
-                <div className="text-xl font-black text-teal-700 tracking-tight">
-                  +{overtimeHours} <span className="text-xs font-medium text-slate-500">Extra Hours</span>
+                <div className="text-xl font-black text-teal-700 tracking-tight font-mono">
+                  +{numOvertimeHours} <span className="text-xs font-medium text-slate-500">Extra Hours</span>
                 </div>
               </div>
               <div className="text-[10px] text-slate-500 font-mono border-t border-slate-100 pt-1 flex justify-between">
                 <span>1.5x Multiplier</span>
-                <span className="text-teal-700 font-bold">+₹{overtimePay.toLocaleString('en-IN')}</span>
+                <span className="text-teal-700 font-bold font-mono">+₹{overtimePay.toLocaleString('en-IN')}</span>
               </div>
             </div>
 
@@ -303,13 +453,13 @@ export const PayrollReport = () => {
                 <Banknote className="w-4 h-4 text-red-500" />
               </div>
               <div className="my-2">
-                <div className="text-xl font-black text-red-600 tracking-tight">
-                  -₹{advanceDeduction.toLocaleString('en-IN')}
+                <div className="text-xl font-black text-red-600 tracking-tight font-mono">
+                  -₹{numAdvanceDeduction.toLocaleString('en-IN')}
                 </div>
               </div>
               <div className="text-[10px] text-slate-500 font-mono border-t border-slate-100 pt-1 flex justify-between">
                 <span>Scheduled Cycle</span>
-                <span className="text-slate-600 font-bold">{employeeAdvances.length} active</span>
+                <span className="text-slate-600 font-bold">Editable</span>
               </div>
             </div>
 
@@ -324,7 +474,7 @@ export const PayrollReport = () => {
                 </span>
               </div>
               <div className="my-2">
-                <div className="text-2xl font-black tracking-tight">
+                <div className="text-2xl font-black tracking-tight font-mono">
                   ₹{netTakeHome.toLocaleString('en-IN')}
                 </div>
               </div>
@@ -344,20 +494,35 @@ export const PayrollReport = () => {
                   <h2 className="text-base font-bold text-slate-900">
                     Monthly Salary Calculation Breakdown
                   </h2>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-mono font-bold">
+                    <Edit3 className="w-3 h-3" />
+                    DYNAMIC &amp; EDITABLE
+                  </span>
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Clear transparent itemization of gross earnings, authorized advance repayments, and net disbursable pay.
+                  Adjust base pay, hourly rates, overtime, bonus, or statutory deductions in real time. Click "Save Settings" to persist changes for this employee.
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => window.print()}
-                  className="px-3.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  onClick={handleResetDefaults}
+                  title="Reset to calculated defaults"
+                  className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
-                  <Printer className="w-3.5 h-3.5 text-slate-500" />
-                  Print Payslip
+                  <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                  Reset
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSavePayrollStructure}
+                  disabled={savingPayroll}
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  {savingPayroll ? 'Saving...' : 'Save Settings'}
                 </button>
 
                 <button
@@ -366,7 +531,7 @@ export const PayrollReport = () => {
                   className="px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  {payoutApproved ? 'Payout Authorized' : 'Approve & Authorize Payout'}
+                  {payoutApproved ? 'Payout Authorized' : 'Approve Payout'}
                 </button>
               </div>
             </div>
@@ -374,56 +539,146 @@ export const PayrollReport = () => {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-5 items-start">
               {/* Left Columns: Earnings & Entitlements + Deductions */}
               <div className="lg:col-span-8 space-y-6">
+                {/* Section 1: Earnings & Entitlements */}
                 <div>
-                  <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400 mb-3">
-                    EARNINGS &amp; ENTITLEMENTS
-                  </h3>
-                  <div className="space-y-2.5">
-                    <div className="p-3.5 bg-slate-50/70 border border-slate-100 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
+                      EARNINGS &amp; ENTITLEMENTS (EDITABLE)
+                    </h3>
+                    <span className="text-[10px] text-slate-400 font-mono">Live calculation enabled</span>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {/* Base Salary */}
+                    <div className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
-                        <div className="text-xs font-bold text-slate-900">Base Salary Hours</div>
-                        <div className="text-[10px] text-slate-400 font-mono">160.0 standard monthly hours quota</div>
+                        <div className="text-xs font-bold text-slate-900">Base Monthly Salary (₹)</div>
+                        <div className="text-[10px] text-slate-500 font-mono">Standard monthly compensation for 160.0 hours quota</div>
                       </div>
-                      <div className="text-sm font-bold text-slate-900 font-mono">₹{baseSalary.toLocaleString('en-IN')}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono font-bold text-slate-500">₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="500"
+                          value={baseSalary}
+                          onChange={(e) => setBaseSalary(e.target.value)}
+                          className="w-32 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                        />
+                      </div>
                     </div>
 
-                    <div className="p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl flex items-center justify-between">
+                    {/* Hourly Base Rate */}
+                    <div className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
-                        <div className="text-xs font-bold text-emerald-900">Approved Overtime (+{overtimeHours} hrs)</div>
-                        <div className="text-[10px] text-emerald-700 font-mono">1.5x Multiplier (₹{hourlyRate * 1.5} / hr)</div>
+                        <div className="text-xs font-bold text-slate-900">Standard Hourly Rate (₹/hr)</div>
+                        <div className="text-[10px] text-slate-500 font-mono">Used to compute overtime at 1.5x multiplier</div>
                       </div>
-                      <div className="text-sm font-bold text-emerald-700 font-mono">+₹{overtimePay.toLocaleString('en-IN')}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono font-bold text-slate-500">₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="10"
+                          value={hourlyRate}
+                          onChange={(e) => setHourlyRate(e.target.value)}
+                          className="w-32 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                        />
+                        <span className="text-[10px] font-mono text-slate-500">/hr</span>
+                      </div>
                     </div>
 
-                    <div className="p-3.5 bg-blue-50/50 border border-blue-100 rounded-xl flex items-center justify-between">
+                    {/* Approved Overtime */}
+                    <div className="p-3.5 bg-emerald-50/50 border border-emerald-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-bold text-emerald-900">Approved Overtime Hours</div>
+                        <div className="text-[10px] text-emerald-700 font-mono">
+                          1.5x Multiplier = ₹{Math.round(numHourlyRate * 1.5)}/hr • Total: ₹{overtimePay.toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={overtimeHours}
+                          onChange={(e) => setOvertimeHours(e.target.value)}
+                          className="w-24 px-2.5 py-1.5 bg-white border border-emerald-300 rounded-lg text-xs font-mono font-bold text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-right"
+                        />
+                        <span className="text-[10px] font-mono text-emerald-700">hrs</span>
+                        <span className="text-xs font-mono font-bold text-emerald-800 ml-2">
+                          +₹{overtimePay.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Performance Bonus */}
+                    <div className="p-3.5 bg-blue-50/50 border border-blue-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
                         <div className="text-xs font-bold text-blue-900">Performance &amp; Punctuality Bonus</div>
-                        <div className="text-[10px] text-blue-700 font-mono">Based on attendance consistency</div>
+                        <div className="text-[10px] text-blue-700 font-mono">Special attendance or milestone reward</div>
                       </div>
-                      <div className="text-sm font-bold text-blue-700 font-mono">+₹{performanceBonus.toLocaleString('en-IN')}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono font-bold text-blue-600">₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="100"
+                          value={performanceBonus}
+                          onChange={(e) => setPerformanceBonus(e.target.value)}
+                          className="w-32 px-2.5 py-1.5 bg-white border border-blue-300 rounded-lg text-xs font-mono font-bold text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
 
+                {/* Section 2: Deductions & Recoveries */}
                 <div>
-                  <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400 mb-3">
-                    DEDUCTIONS &amp; RECOVERIES
-                  </h3>
-                  <div className="space-y-2.5">
-                    <div className="p-3.5 bg-red-50/40 border border-red-100 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
+                      DEDUCTIONS &amp; RECOVERIES (EDITABLE)
+                    </h3>
+                    <span className="text-[10px] text-slate-400 font-mono">Deducted from gross pay</span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {/* Advance Salary Deduction */}
+                    <div className="p-3.5 bg-red-50/40 border border-red-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
                         <div className="text-xs font-bold text-red-900">Advance Salary Installment Recovery</div>
-                        <div className="text-[10px] text-red-700 font-mono">Auto-deducted from issued advance balance</div>
+                        <div className="text-[10px] text-red-700 font-mono">Auto-scheduled or custom repayment for this billing cycle</div>
                       </div>
-                      <div className="text-sm font-bold text-red-600 font-mono">-₹{advanceDeduction.toLocaleString('en-IN')}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono font-bold text-red-600">-₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="500"
+                          value={advanceDeduction}
+                          onChange={(e) => setAdvanceDeduction(e.target.value)}
+                          className="w-32 px-2.5 py-1.5 bg-white border border-red-300 rounded-lg text-xs font-mono font-bold text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500 text-right"
+                        />
+                      </div>
                     </div>
 
-                    <div className="p-3.5 bg-slate-50/70 border border-slate-100 rounded-xl flex items-center justify-between">
+                    {/* Statutory Deductions */}
+                    <div className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
                         <div className="text-xs font-bold text-slate-800">Statutory Deductions (PF &amp; Taxes)</div>
-                        <div className="text-[10px] text-slate-400 font-mono">Provident Fund &amp; Professional Tax estimate</div>
+                        <div className="text-[10px] text-slate-500 font-mono">Provident Fund, Professional Tax &amp; TDS estimate</div>
                       </div>
-                      <div className="text-sm font-bold text-red-600 font-mono">-₹{statutoryDeductions.toLocaleString('en-IN')}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono font-bold text-red-600">-₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="100"
+                          value={statutoryDeductions}
+                          onChange={(e) => setStatutoryDeductions(e.target.value)}
+                          className="w-32 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -441,15 +696,15 @@ export const PayrollReport = () => {
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between text-slate-600">
                     <span>Gross Base Pay:</span>
-                    <span className="font-mono font-bold text-slate-800">₹{baseSalary.toLocaleString('en-IN')}.00</span>
+                    <span className="font-mono font-bold text-slate-800">₹{numBaseSalary.toLocaleString('en-IN')}.00</span>
                   </div>
                   <div className="flex justify-between text-emerald-700">
-                    <span>Overtime (+{overtimeHours} hrs):</span>
+                    <span>Overtime (+{numOvertimeHours} hrs):</span>
                     <span className="font-mono font-bold">+₹{overtimePay.toLocaleString('en-IN')}.00</span>
                   </div>
                   <div className="flex justify-between text-blue-700">
                     <span>Performance Incentive:</span>
-                    <span className="font-mono font-bold">+₹{performanceBonus.toLocaleString('en-IN')}.00</span>
+                    <span className="font-mono font-bold">+₹{numPerformanceBonus.toLocaleString('en-IN')}.00</span>
                   </div>
                   <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-2">
                     <span>Total Gross Payable:</span>
@@ -459,11 +714,11 @@ export const PayrollReport = () => {
                   <div className="pt-2 border-t border-slate-200 space-y-1.5">
                     <div className="flex justify-between text-red-600">
                       <span>Advance Salary Recovery:</span>
-                      <span className="font-mono font-bold">-₹{advanceDeduction.toLocaleString('en-IN')}.00</span>
+                      <span className="font-mono font-bold">-₹{numAdvanceDeduction.toLocaleString('en-IN')}.00</span>
                     </div>
                     <div className="flex justify-between text-red-600">
                       <span>Taxes &amp; PF Deductions:</span>
-                      <span className="font-mono font-bold">-₹{statutoryDeductions.toLocaleString('en-IN')}.00</span>
+                      <span className="font-mono font-bold">-₹{numStatutoryDeductions.toLocaleString('en-IN')}.00</span>
                     </div>
                     <div className="flex justify-between font-bold text-slate-700">
                       <span>Total Deductions:</span>

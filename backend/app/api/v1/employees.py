@@ -25,6 +25,9 @@ class EmployeeUpdate(BaseModel):
     assigned_shift: Optional[str] = None
     shift_start: Optional[str] = None
     shift_end: Optional[str] = None
+    base_salary: Optional[float] = None
+    hourly_rate: Optional[float] = None
+    statutory_deductions: Optional[float] = None
 
 @router.get("/")
 async def list_employees(
@@ -91,7 +94,10 @@ async def create_employee(
         phone=payload.phone,
         assigned_shift=payload.assigned_shift or "General Shift (09:00 AM – 05:30 PM • 8.5h)",
         shift_start=payload.shift_start or "09:00",
-        shift_end=payload.shift_end or "17:30"
+        shift_end=payload.shift_end or "17:30",
+        base_salary=payload.base_salary if payload.base_salary is not None else 40000.0,
+        hourly_rate=payload.hourly_rate if payload.hourly_rate is not None else 250.0,
+        statutory_deductions=payload.statutory_deductions if payload.statutory_deductions is not None else 3000.0
     ).dict()
     await store.insert_one("employees", emp_dict)
 
@@ -288,6 +294,12 @@ async def update_employee(
         update_fields["shift_start"] = payload.shift_start.strip()
     if payload.shift_end is not None:
         update_fields["shift_end"] = payload.shift_end.strip()
+    if payload.base_salary is not None:
+        update_fields["base_salary"] = float(payload.base_salary)
+    if payload.hourly_rate is not None:
+        update_fields["hourly_rate"] = float(payload.hourly_rate)
+    if payload.statutory_deductions is not None:
+        update_fields["statutory_deductions"] = float(payload.statutory_deductions)
 
     if not update_fields:
         return emp

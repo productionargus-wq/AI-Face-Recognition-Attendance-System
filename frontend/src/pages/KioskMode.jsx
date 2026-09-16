@@ -25,8 +25,8 @@ export const KioskMode = () => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
-  const [orgList, setOrgList] = useState([]);
-  const [selectedOrg, setSelectedOrg] = useState(organization?.slug || '');
+  const orgSlug = organization?.slug || organization?.id || '';
+  const [selectedOrg, setSelectedOrg] = useState(orgSlug);
   const [streamActive, setStreamActive] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -47,26 +47,8 @@ export const KioskMode = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Fetch organizations
-  useEffect(() => {
-    const fetchOrgs = async () => {
-      try {
-        const res = await api.get('/organizations/public/list');
-        setOrgList(res.data);
-        if (!selectedOrg && res.data.length > 0) {
-          const initialOrg = res.data[0].slug || res.data[0].id;
-          setSelectedOrg(initialOrg);
-          fetchRecentPunches(initialOrg);
-        }
-      } catch (err) {
-        console.error('Failed to load orgs', err);
-      }
-    };
-    fetchOrgs();
-  }, []);
-
   const fetchRecentPunches = async (orgTarget) => {
-    const org = orgTarget || selectedOrg;
+    const org = orgTarget || selectedOrg || orgSlug;
     if (!org) return;
     try {
       const res = await api.get(`/attendance/kiosk-stream?organization_slug_or_id=${encodeURIComponent(org)}`);
@@ -79,10 +61,11 @@ export const KioskMode = () => {
   };
 
   useEffect(() => {
-    if (selectedOrg) {
-      fetchRecentPunches(selectedOrg);
+    if (orgSlug) {
+      setSelectedOrg(orgSlug);
+      fetchRecentPunches(orgSlug);
     }
-  }, [selectedOrg]);
+  }, [orgSlug]);
 
   // Camera handling
   useEffect(() => {
@@ -240,19 +223,11 @@ export const KioskMode = () => {
             </div>
             
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-[11px] text-slate-500 font-medium">Tenant Gate:</span>
-              <select
-                value={selectedOrg}
-                onChange={(e) => setSelectedOrg(e.target.value)}
-                className="text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:border-blue-500 cursor-pointer"
-              >
-                {orgList.length === 0 && organization && (
-                  <option value={organization.slug || organization.id}>{organization.name}</option>
-                )}
-                {orgList.map(o => (
-                  <option key={o.id} value={o.slug || o.id}>{o.name}</option>
-                ))}
-              </select>
+              <span className="text-[11px] text-slate-500 font-medium font-mono uppercase">Tenant Gate:</span>
+              <span className="text-xs font-bold text-slate-800 bg-slate-100 border border-slate-200 rounded px-2.5 py-0.5 flex items-center gap-1.5 font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                {organization?.name || 'Argus Enterprise'}
+              </span>
             </div>
           </div>
         </div>

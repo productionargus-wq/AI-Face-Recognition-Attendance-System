@@ -18,6 +18,44 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
     shift_end: '17:30'
   });
 
+  const formatTime12h = (time24) => {
+    if (!time24) return '';
+    try {
+      const [h, m] = time24.split(':').map(Number);
+      const suffix = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 || 12;
+      return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${suffix}`;
+    } catch {
+      return time24;
+    }
+  };
+
+  const calculateHours = (inTime, outTime) => {
+    if (!inTime || !outTime) return 8.5;
+    try {
+      const [h1, m1] = inTime.split(':').map(Number);
+      const [h2, m2] = outTime.split(':').map(Number);
+      let diffMins = (h2 * 60 + m2) - (h1 * 60 + m1);
+      if (diffMins < 0) diffMins += 24 * 60;
+      return Math.round((diffMins / 60) * 10) / 10;
+    } catch {
+      return 8.5;
+    }
+  };
+
+  const handleCustomTimingChange = (newStart, newEnd) => {
+    const start = newStart !== undefined ? newStart : formData.shift_start;
+    const end = newEnd !== undefined ? newEnd : formData.shift_end;
+    const hrs = calculateHours(start, end);
+    const shiftDesc = `Custom Shift (${formatTime12h(start)} – ${formatTime12h(end)} • ${hrs}h)`;
+    setFormData(prev => ({
+      ...prev,
+      shift_start: start,
+      shift_end: end,
+      assigned_shift: shiftDesc
+    }));
+  };
+
   const handleShiftChange = (shiftName) => {
     let start = '09:00';
     let end = '17:30';
@@ -289,13 +327,28 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-slate-700">
                 Assigned Shift / Working Schedule
               </label>
               <select
-                value={formData.assigned_shift}
-                onChange={(e) => handleShiftChange(e.target.value)}
+                value={
+                  [
+                    'General Shift (09:00 AM – 05:30 PM • 8.5h)',
+                    'Morning Shift (06:00 AM – 02:30 PM • 8.5h)',
+                    'Evening Shift (02:00 PM – 10:30 PM • 8.5h)',
+                    'Night Shift (09:00 PM – 05:30 AM • 8.5h)',
+                    'Standard Shift (10:00 AM – 07:00 PM • 9.0h)',
+                    'Flexible Schedule (8.0h)'
+                  ].includes(formData.assigned_shift) ? formData.assigned_shift : 'CUSTOM'
+                }
+                onChange={(e) => {
+                  if (e.target.value === 'CUSTOM') {
+                    handleCustomTimingChange(formData.shift_start, formData.shift_end);
+                  } else {
+                    handleShiftChange(e.target.value);
+                  }
+                }}
                 className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer font-medium"
               >
                 <option value="General Shift (09:00 AM – 05:30 PM • 8.5h)">General Shift (09:00 AM – 05:30 PM • 8.5h)</option>
@@ -304,7 +357,36 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
                 <option value="Night Shift (09:00 PM – 05:30 AM • 8.5h)">Night Shift (09:00 PM – 05:30 AM • 8.5h)</option>
                 <option value="Standard Shift (10:00 AM – 07:00 PM • 9.0h)">Standard Shift (10:00 AM – 07:00 PM • 9.0h)</option>
                 <option value="Flexible Schedule (8.0h)">Flexible Schedule (8.0h)</option>
+                <option value="CUSTOM">Custom Shift (Explicit timings below)</option>
               </select>
+
+              {/* Explicit Shift Timing Pickers */}
+              <div className="grid grid-cols-2 gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Shift Start Time
+                  </label>
+                  <input
+                    type="time"
+                    required
+                    value={formData.shift_start}
+                    onChange={(e) => handleCustomTimingChange(e.target.value, undefined)}
+                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Shift End Time
+                  </label>
+                  <input
+                    type="time"
+                    required
+                    value={formData.shift_end}
+                    onChange={(e) => handleCustomTimingChange(undefined, e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
             </div>
 
             <button

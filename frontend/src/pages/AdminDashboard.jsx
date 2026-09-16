@@ -119,6 +119,18 @@ export const AdminDashboard = () => {
     });
   }, [employees, records]);
 
+  // Distinct registered departments only (no hardcoding)
+  const registeredDepartments = React.useMemo(() => {
+    const depts = new Set();
+    (employees || []).forEach(emp => {
+      if (emp.department && emp.department.trim()) depts.add(emp.department.trim());
+    });
+    (records || []).forEach(rec => {
+      if (rec.department && rec.department.trim()) depts.add(rec.department.trim());
+    });
+    return ['All Departments', ...Array.from(depts)];
+  }, [employees, records]);
+
   return (
     <div className="space-y-6">
       {/* Top Banner Header: Title + Export (Matches Image 1) */}
@@ -284,12 +296,9 @@ export const AdminDashboard = () => {
               onChange={(e) => setSelectedDept(e.target.value)}
               className="px-3 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
             >
-              <option value="All Departments">All Departments</option>
-              <option value="Engineering">Engineering</option>
-              <option value="R&D Lab">R&D Lab</option>
-              <option value="Operations">Operations</option>
-              <option value="Field Ops">Field Ops</option>
-              <option value="Product Dev">Product Dev</option>
+              {registeredDepartments.map((dept) => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
             </select>
           </div>
         </div>

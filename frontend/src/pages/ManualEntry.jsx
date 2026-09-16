@@ -37,6 +37,8 @@ export const ManualEntry = () => {
     employeeId: '',
     logDate: new Date().toISOString().split('T')[0],
     shift: 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
+    shiftStart: '09:00',
+    shiftEnd: '17:30',
     punchIn: '09:00',
     punchOut: '17:30',
     reason: 'Hardware Incident: Biometric Terminal 04 Unresponsive',
@@ -69,7 +71,50 @@ export const ManualEntry = () => {
   };
 
   const computedHours = calculateHours(formData.punchIn, formData.punchOut);
-  const dynamicEnteredShift = `Custom Shift (${formatTime12h(formData.punchIn)} – ${formatTime12h(formData.punchOut)} • ${computedHours}h)`;
+  const scheduledHours = calculateHours(formData.shiftStart, formData.shiftEnd);
+
+  const handleShiftPresetChange = (preset) => {
+    let start = '09:00';
+    let end = '17:30';
+    if (preset.includes('Morning')) {
+      start = '06:00';
+      end = '14:30';
+    } else if (preset.includes('Evening')) {
+      start = '14:00';
+      end = '22:30';
+    } else if (preset.includes('Night')) {
+      start = '21:00';
+      end = '05:30';
+    } else if (preset.includes('General')) {
+      start = '09:00';
+      end = '17:30';
+    } else if (preset.includes('Entered')) {
+      start = formData.punchIn;
+      end = formData.punchOut;
+    }
+    const hrs = calculateHours(start, end);
+    const label = preset.includes('Entered') 
+      ? `Custom Shift (${formatTime12h(start)} – ${formatTime12h(end)} • ${hrs}h)`
+      : `${preset.split('(')[0].trim()} (${formatTime12h(start)} – ${formatTime12h(end)} • ${hrs}h)`;
+    setFormData(prev => ({
+      ...prev,
+      shift: label,
+      shiftStart: start,
+      shiftEnd: end
+    }));
+  };
+
+  const handleCustomShiftTimeChange = (type, val) => {
+    const start = type === 'start' ? val : formData.shiftStart;
+    const end = type === 'end' ? val : formData.shiftEnd;
+    const hrs = calculateHours(start, end);
+    const formatted = `Custom Shift (${formatTime12h(start)} – ${formatTime12h(end)} • ${hrs}h)`;
+    setFormData(prev => ({
+      ...prev,
+      [type === 'start' ? 'shiftStart' : 'shiftEnd']: val,
+      shift: formatted
+    }));
+  };
 
   useEffect(() => {
     fetchInitialData();
@@ -85,7 +130,14 @@ export const ManualEntry = () => {
 
       setEmployees(empRes.data || []);
       if (empRes.data && empRes.data.length > 0) {
-        setFormData(prev => ({ ...prev, employeeId: empRes.data[0].id }));
+        const first = empRes.data[0];
+        setFormData(prev => ({
+          ...prev,
+          employeeId: first.id,
+          shift: first.assigned_shift || prev.shift,
+          shiftStart: first.shift_start || prev.shiftStart,
+          shiftEnd: first.shift_end || prev.shiftEnd
+        }));
       }
       setRecords(ovrRes.data || []);
     } catch (err) {
@@ -135,6 +187,8 @@ export const ManualEntry = () => {
       employeeId: employees.length > 0 ? employees[0].id : '',
       logDate: new Date().toISOString().split('T')[0],
       shift: 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
+      shiftStart: '09:00',
+      shiftEnd: '17:30',
       punchIn: '09:00',
       punchOut: '17:30',
       reason: 'Hardware Incident: Biometric Terminal 04 Unresponsive',
@@ -241,7 +295,17 @@ export const ManualEntry = () => {
               <select
                 required
                 value={formData.employeeId}
-                onChange={(e) => setFormData({ ...formData, employeeId: e.target.value })}
+                onChange={(e) => {
+                  const empId = e.target.value;
+                  const selectedEmp = employees.find(emp => emp.id === empId);
+                  setFormData(prev => ({
+                    ...prev,
+                    employeeId: empId,
+                    shift: selectedEmp?.assigned_shift || prev.shift,
+                    shiftStart: selectedEmp?.shift_start || prev.shiftStart,
+                    shiftEnd: selectedEmp?.shift_end || prev.shiftEnd
+                  }));
+                }}
                 className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {employees.map(emp => (
@@ -281,18 +345,21 @@ export const ManualEntry = () => {
                   Duty Shift Assignment
                 </label>
                 <span className="text-[10px] text-blue-600 font-bold font-mono">
-                  {computedHours} hrs calculated
+                  {scheduledHours} hrs scheduled
                 </span>
               </div>
               
               <div className="space-y-2">
                 <select
                   value={formData.shift}
-                  onChange={(e) => setFormData({ ...formData, shift: e.target.value })}
+                  onChange={(e) => handleShiftPresetChange(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                 >
-                  <option value={dynamicEnteredShift}>
-                    ⏱️ Entered Shift Timings ({formatTime12h(formData.punchIn)} – {formatTime12h(formData.punchOut)} • {computedHours}h)
+                  <option value={`Custom Shift (${formatTime12h(formData.shiftStart)} – ${formatTime12h(formData.shiftEnd)} • ${scheduledHours}h)`}>
+                    ⏱️ Custom Shift ({formatTime12h(formData.shiftStart)} – ${formatTime12h(formData.shiftEnd)} • ${scheduledHours}h)
+                  </option>
+                  <option value={`Custom Shift (${formatTime12h(formData.punchIn)} – ${formatTime12h(formData.punchOut)} • ${computedHours}h)`}>
+                    🔄 Match Punch Timings ({formatTime12h(formData.punchIn)} – {formatTime12h(formData.punchOut)} • ${computedHours}h)
                   </option>
                   <option value="General Shift (09:00 AM – 05:30 PM • 8.5h)">General Shift (09:00 AM – 05:30 PM • 8.5h)</option>
                   <option value="Morning Shift (06:00 AM – 02:30 PM • 8.5h)">Morning Shift (06:00 AM – 02:30 PM • 8.5h)</option>
@@ -300,6 +367,32 @@ export const ManualEntry = () => {
                   <option value="Night Shift (09:00 PM – 05:30 AM • 8.5h)">Night Shift (09:00 PM – 05:30 AM • 8.5h)</option>
                   <option value="Flexible Shift (8.0h)">Flexible Shift (8.0h)</option>
                 </select>
+
+                {/* Explicit Shift Timing Pickers */}
+                <div className="grid grid-cols-2 gap-2 p-2.5 bg-blue-50/40 rounded-xl border border-blue-100">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">
+                      Shift Start Time
+                    </label>
+                    <input
+                      type="time"
+                      value={formData.shiftStart}
+                      onChange={(e) => handleCustomShiftTimeChange('start', e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">
+                      Shift End Time
+                    </label>
+                    <input
+                      type="time"
+                      value={formData.shiftEnd}
+                      onChange={(e) => handleCustomShiftTimeChange('end', e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
 
                 <div className="relative">
                   <input

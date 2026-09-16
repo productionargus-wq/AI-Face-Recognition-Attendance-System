@@ -82,6 +82,9 @@ class EmployeeCreate(BaseModel):
     assigned_shift: Optional[str] = "General Shift (09:00 AM – 05:30 PM • 8.5h)"
     shift_start: Optional[str] = "09:00"
     shift_end: Optional[str] = "17:30"
+    base_salary: Optional[float] = 40000.0
+    hourly_rate: Optional[float] = 250.0
+    statutory_deductions: Optional[float] = 3000.0
 
 class Employee(BaseModel):
     id: str = Field(default_factory=generate_uuid)
@@ -96,6 +99,9 @@ class Employee(BaseModel):
     assigned_shift: Optional[str] = "General Shift (09:00 AM – 05:30 PM • 8.5h)"
     shift_start: Optional[str] = "09:00"
     shift_end: Optional[str] = "17:30"
+    base_salary: Optional[float] = 40000.0
+    hourly_rate: Optional[float] = 250.0
+    statutory_deductions: Optional[float] = 3000.0
     consent_given: bool = False
     consent_timestamp: Optional[datetime] = None
     consent_ip: Optional[str] = None
