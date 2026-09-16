@@ -80,11 +80,11 @@ export const AppLayout = ({ children }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fbff] flex flex-col md:flex-row text-slate-800 font-sans">
-      {/* Desktop Left Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 bg-white border-r border-slate-200 shrink-0 z-30 min-h-screen">
+    <div className="h-screen bg-[#f8fbff] flex flex-col md:flex-row text-slate-800 font-sans overflow-hidden">
+      {/* Desktop Left Sidebar - Fixed in place */}
+      <aside className="hidden md:flex flex-col w-64 bg-white border-r border-slate-200 shrink-0 z-30 h-full overflow-y-auto">
         {/* Brand Header */}
-        <div className="h-16 border-b border-slate-100 flex items-center px-5 gap-3">
+        <div className="h-16 border-b border-slate-100 flex items-center px-5 gap-3 shrink-0">
           <div className="w-8 h-8 rounded-lg bg-[#0080ff] flex items-center justify-center text-white shadow-sm font-bold">
             <ScanFace className="w-5 h-5" />
           </div>
@@ -99,7 +99,7 @@ export const AppLayout = ({ children }) => {
         </div>
 
         {/* Navigation Items */}
-        <nav className="flex-1 py-4 px-3 space-y-1">
+        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const isActive = location.pathname === item.path;
             const Icon = item.icon;
@@ -129,7 +129,7 @@ export const AppLayout = ({ children }) => {
         </nav>
 
         {/* Sidebar Footer / Org Details */}
-        <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+        <div className="p-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
           <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">
             Current Tenant
           </div>
@@ -142,10 +142,10 @@ export const AppLayout = ({ children }) => {
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Header Bar */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8 shrink-0 z-20">
+      {/* Main Content Area - Scrollable */}
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
+        {/* Top Header Bar - Sticky */}
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8 shrink-0 sticky top-0 z-20">
           {/* Mobile Menu Button & Brand */}
           <div className="flex items-center gap-3 md:hidden">
             <button

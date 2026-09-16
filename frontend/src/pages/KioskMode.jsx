@@ -54,7 +54,9 @@ export const KioskMode = () => {
         const res = await api.get('/organizations/public/list');
         setOrgList(res.data);
         if (!selectedOrg && res.data.length > 0) {
-          setSelectedOrg(res.data[0].slug || res.data[0].id);
+          const initialOrg = res.data[0].slug || res.data[0].id;
+          setSelectedOrg(initialOrg);
+          fetchRecentPunches(initialOrg);
         }
       } catch (err) {
         console.error('Failed to load orgs', err);
@@ -62,6 +64,25 @@ export const KioskMode = () => {
     };
     fetchOrgs();
   }, []);
+
+  const fetchRecentPunches = async (orgTarget) => {
+    const org = orgTarget || selectedOrg;
+    if (!org) return;
+    try {
+      const res = await api.get(`/attendance/kiosk-stream?organization_slug_or_id=${encodeURIComponent(org)}`);
+      if (res.data && Array.isArray(res.data)) {
+        setRecentPunches(res.data);
+      }
+    } catch (err) {
+      console.error('Failed to load recent kiosk punches', err);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedOrg) {
+      fetchRecentPunches(selectedOrg);
+    }
+  }, [selectedOrg]);
 
   // Camera handling
   useEffect(() => {
@@ -166,7 +187,12 @@ export const KioskMode = () => {
         avatar: punchData.employee_name ? punchData.employee_name.split(' ').map(n=>n[0]).join('').slice(0,2) : 'EM'
       };
 
-      setRecentPunches(prev => [newEntry, ...prev.slice(0, 3)]);
+      setRecentPunches(prev => [newEntry, ...prev.filter(p => p.id !== newEntry.id).slice(0, 9)]);
+
+      // Sync persisted records from server
+      setTimeout(() => {
+        fetchRecentPunches(selectedOrg);
+      }, 600);
 
     } catch (err) {
       setScanStatus('ERROR');

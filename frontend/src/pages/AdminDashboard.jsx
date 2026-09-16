@@ -385,13 +385,13 @@ export const AdminDashboard = () => {
 
                   {/* Shift Status */}
                   <td className="p-3.5">
-                    {rec.shift_status === 'ON-TIME' ? (
+                    {rec.shift_status === 'ON-TIME' || (!rec.shift_status && rec.status === 'PRESENT') ? (
                       <span className="px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-mono font-bold">
                         ON-TIME
                       </span>
-                    ) : rec.shift_status?.includes('LATE') ? (
+                    ) : (rec.shift_status?.includes('LATE') || rec.status === 'LATE') ? (
                       <span className="px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-mono font-bold">
-                        {rec.shift_status}
+                        {rec.shift_status || 'LATE'}
                       </span>
                     ) : (
                       <span className="text-slate-400 text-xs">—</span>

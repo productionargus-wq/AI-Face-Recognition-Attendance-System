@@ -108,6 +108,8 @@ async def kiosk_punch(payload: KioskPunchPayload):
     if total_cur_mins > total_start_mins:
         record_status = AttendanceStatus.LATE
 
+    shift_status = "LATE" if record_status == AttendanceStatus.LATE else "ON-TIME"
+
     if not existing_record:
         punch_action = "CHECK_IN"
         new_att = {
@@ -124,6 +126,7 @@ async def kiosk_punch(payload: KioskPunchPayload):
             "check_out_time": None,
             "total_hours": 0.0,
             "status": record_status,
+            "shift_status": shift_status,
             "verification_mode": "FACE_KIOSK",
             "confidence_score": confidence,
             "liveness_verified": True,
@@ -156,6 +159,25 @@ async def kiosk_punch(payload: KioskPunchPayload):
         existing_record["total_hours"] = total_hours
         res_record = existing_record
 
+    # 1. Record persistent punch stream event for LIVE PUNCH EVENT STREAM
+    fn = matched_emp.get("first_name", "")
+    ln = matched_emp.get("last_name", "")
+    initials = ((fn[:1] if fn else "") + (ln[:1] if ln else "")).upper() or "EM"
+    punch_event = {
+        "id": f"EVT-{now_utc.strftime('%Y%m%d%H%M%S%f')}",
+        "organization_id": org_id,
+        "employee_name": f"{fn} {ln}".strip(),
+        "employee_code": matched_emp["employee_code"],
+        "department": matched_emp.get("department", "Operations"),
+        "time": time_str,
+        "date": today_str,
+        "timestamp": now_utc.isoformat(),
+        "operation": "SHIFT START [IN]" if punch_action == "CHECK_IN" else "SHIFT END [OUT]",
+        "is_in": punch_action == "CHECK_IN",
+        "avatar": initials
+    }
+    await store.insert_one("attendance_events", punch_event)
+
     return {
         "status": "success",
         "action": punch_action,
@@ -165,9 +187,73 @@ async def kiosk_punch(payload: KioskPunchPayload):
         "timestamp": time_str,
         "date": today_str,
         "attendance_status": res_record.get("status", "PRESENT"),
+        "shift_status": res_record.get("shift_status", shift_status),
         "confidence": round(confidence * 100, 1),
         "total_hours": res_record.get("total_hours", 0.0)
     }
+
+@attendance_router.get("/kiosk-stream")
+async def get_kiosk_stream(organization_slug_or_id: Optional[str] = None, organization_id: Optional[str] = None):
+    """Retrieve persisted live punch event stream records for kiosk display."""
+    target = organization_slug_or_id or organization_id
+    if not target:
+        return []
+        
+    org = await store.find_one("organizations", {"slug": target})
+    if not org:
+        org = await store.find_one("organizations", {"id": target})
+    org_id = org["id"] if org else target
+
+    today_str = datetime.now(IST_TZ).strftime("%Y-%m-%d")
+
+    events = await store.find_many("attendance_events", {
+        "organization_id": org_id,
+        "date": today_str
+    }, sort_key="timestamp", sort_desc=True, limit=10)
+
+    if not events:
+        # Graceful fallback: construct event list from today's attendance table
+        records = await store.find_many("attendance", {
+            "organization_id": org_id,
+            "date": today_str
+        }, sort_key="check_in", sort_desc=True, limit=10)
+
+        fallback_events = []
+        for r in records:
+            name = r.get("employee_name", "Employee")
+            name_parts = name.split()
+            av = (name_parts[0][:1] + (name_parts[1][:1] if len(name_parts) > 1 else "")).upper() or "EM"
+
+            if r.get("check_out_time"):
+                fallback_events.append({
+                    "id": f"{r['id']}-out",
+                    "employee_name": name,
+                    "employee_code": r.get("employee_code", "EMP"),
+                    "department": r.get("department", "Operations"),
+                    "time": r.get("check_out_time"),
+                    "date": r.get("date"),
+                    "timestamp": r.get("check_out") or r.get("date"),
+                    "operation": "SHIFT END [OUT]",
+                    "is_in": False,
+                    "avatar": av
+                })
+            if r.get("check_in_time"):
+                fallback_events.append({
+                    "id": f"{r['id']}-in",
+                    "employee_name": name,
+                    "employee_code": r.get("employee_code", "EMP"),
+                    "department": r.get("department", "Operations"),
+                    "time": r.get("check_in_time"),
+                    "date": r.get("date"),
+                    "timestamp": r.get("check_in") or r.get("date"),
+                    "operation": "SHIFT START [IN]",
+                    "is_in": True,
+                    "avatar": av
+                })
+        fallback_events.sort(key=lambda x: str(x.get("timestamp") or ""), reverse=True)
+        return fallback_events[:10]
+
+    return events
 
 @attendance_router.get("/today")
 async def get_today_attendance(auth_ctx: Dict[str, Any] = Depends(require_org_admin)):
@@ -178,6 +264,16 @@ async def get_today_attendance(auth_ctx: Dict[str, Any] = Depends(require_org_ad
         "organization_id": org_id,
         "date": today_str
     }, sort_key="check_in", sort_desc=True)
+
+    # Normalize shift_status on all records
+    for r in records:
+        if not r.get("shift_status"):
+            if r.get("status") == AttendanceStatus.LATE:
+                r["shift_status"] = "LATE"
+            elif r.get("status") == AttendanceStatus.PRESENT or r.get("check_in"):
+                r["shift_status"] = "ON-TIME"
+            else:
+                r["shift_status"] = "—"
 
     all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
     total_emps_count = len(all_emps)
@@ -221,6 +317,14 @@ async def get_attendance_history(
         query["department"] = department
 
     records = await store.find_many("attendance", query, sort_key="date", sort_desc=True, limit=500)
+    for r in records:
+        if not r.get("shift_status"):
+            if r.get("status") == AttendanceStatus.LATE:
+                r["shift_status"] = "LATE"
+            elif r.get("status") == AttendanceStatus.PRESENT or r.get("check_in"):
+                r["shift_status"] = "ON-TIME"
+            else:
+                r["shift_status"] = "—"
     return records
 
 @attendance_router.get("/my-history")

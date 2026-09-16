@@ -43,6 +43,34 @@ export const ManualEntry = () => {
     confirmed: true
   });
 
+  const formatTime12h = (time24) => {
+    if (!time24) return '';
+    try {
+      const [h, m] = time24.split(':').map(Number);
+      const suffix = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 || 12;
+      return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${suffix}`;
+    } catch {
+      return time24;
+    }
+  };
+
+  const calculateHours = (inTime, outTime) => {
+    if (!inTime || !outTime) return 8.5;
+    try {
+      const [h1, m1] = inTime.split(':').map(Number);
+      const [h2, m2] = outTime.split(':').map(Number);
+      let diffMins = (h2 * 60 + m2) - (h1 * 60 + m1);
+      if (diffMins < 0) diffMins += 24 * 60; // Overnight
+      return Math.round((diffMins / 60) * 10) / 10;
+    } catch {
+      return 8.5;
+    }
+  };
+
+  const computedHours = calculateHours(formData.punchIn, formData.punchOut);
+  const dynamicEnteredShift = `Custom Shift (${formatTime12h(formData.punchIn)} – ${formatTime12h(formData.punchOut)} • ${computedHours}h)`;
+
   useEffect(() => {
     fetchInitialData();
   }, []);
@@ -81,14 +109,15 @@ export const ManualEntry = () => {
     setSubmitting(true);
     setErrorMessage('');
     try {
+      const hoursToSave = calculateHours(formData.punchIn, formData.punchOut);
       const res = await api.post('/attendance/manual', {
         employee_id: formData.employeeId,
         log_date: formData.logDate,
-        shift: formData.shift,
+        shift: formData.shift || dynamicEnteredShift,
         punch_in: formData.punchIn,
         punch_out: formData.punchOut,
         reason: formData.reason,
-        hours: 8.5
+        hours: hoursToSave
       });
 
       setRecords(prev => [res.data, ...prev]);
@@ -247,18 +276,45 @@ export const ManualEntry = () => {
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
-                Duty Shift Assignment
-              </label>
-              <select
-                value={formData.shift}
-                onChange={(e) => setFormData({ ...formData, shift: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="General Shift (09:00 AM – 05:30 PM • 8.5h)">General Shift (09:00 AM – 05:30 PM • 8.5h)</option>
-                <option value="Morning Shift (06:00 AM – 02:30 PM • 8.5h)">Morning Shift (06:00 AM – 02:30 PM • 8.5h)</option>
-                <option value="Night Shift (09:00 PM – 05:30 AM • 8.5h)">Night Shift (09:00 PM – 05:30 AM • 8.5h)</option>
-              </select>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                  Duty Shift Assignment
+                </label>
+                <span className="text-[10px] text-blue-600 font-bold font-mono">
+                  {computedHours} hrs calculated
+                </span>
+              </div>
+              
+              <div className="space-y-2">
+                <select
+                  value={formData.shift}
+                  onChange={(e) => setFormData({ ...formData, shift: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value={dynamicEnteredShift}>
+                    ⏱️ Entered Shift Timings ({formatTime12h(formData.punchIn)} – {formatTime12h(formData.punchOut)} • {computedHours}h)
+                  </option>
+                  <option value="General Shift (09:00 AM – 05:30 PM • 8.5h)">General Shift (09:00 AM – 05:30 PM • 8.5h)</option>
+                  <option value="Morning Shift (06:00 AM – 02:30 PM • 8.5h)">Morning Shift (06:00 AM – 02:30 PM • 8.5h)</option>
+                  <option value="Evening Shift (02:00 PM – 10:30 PM • 8.5h)">Evening Shift (02:00 PM – 10:30 PM • 8.5h)</option>
+                  <option value="Night Shift (09:00 PM – 05:30 AM • 8.5h)">Night Shift (09:00 PM – 05:30 AM • 8.5h)</option>
+                  <option value="Flexible Shift (8.0h)">Flexible Shift (8.0h)</option>
+                </select>
+
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    value={formData.shift}
+                    onChange={(e) => setFormData({ ...formData, shift: e.target.value })}
+                    placeholder="Custom shift description or working hours..."
+                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-400"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 pointer-events-none">
+                    EDITABLE
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -293,22 +349,46 @@ export const ManualEntry = () => {
             </div>
           </div>
 
-          {/* Justification dropdown */}
+          {/* Justification dropdown & custom text */}
           <div>
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
-              Justification / Exception Reason
-            </label>
-            <select
-              value={formData.reason}
-              onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-              className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="Hardware Incident: Biometric Terminal 04 Unresponsive">Hardware Incident: Biometric Terminal 04 Unresponsive</option>
-              <option value="On-site Field Duty: Client Facility Deployment">On-site Field Duty: Client Facility Deployment</option>
-              <option value="Forgot Face Scan: Verified by Floor Supervisor">Forgot Face Scan: Verified by Floor Supervisor</option>
-              <option value="Kiosk Calibration: Scheduled Sensor Maintenance">Kiosk Calibration: Scheduled Sensor Maintenance</option>
-              <option value="Network Disconnection: Offline Terminal Cache Failure">Network Disconnection: Offline Terminal Cache Failure</option>
-            </select>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                Justification / Exception Reason
+              </label>
+              <span className="text-[10px] text-slate-400 font-mono">
+                Select preset or type custom reason
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              <select
+                value={formData.reason}
+                onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+              >
+                <option value="Hardware Incident: Biometric Terminal 04 Unresponsive">Hardware Incident: Biometric Terminal 04 Unresponsive</option>
+                <option value="On-site Field Duty: Client Facility Deployment">On-site Field Duty: Client Facility Deployment</option>
+                <option value="Forgot Face Scan: Verified by Floor Supervisor">Forgot Face Scan: Verified by Floor Supervisor</option>
+                <option value="Kiosk Calibration: Scheduled Sensor Maintenance">Kiosk Calibration: Scheduled Sensor Maintenance</option>
+                <option value="Network Disconnection: Offline Terminal Cache Failure">Network Disconnection: Offline Terminal Cache Failure</option>
+                <option value="Official External Client Meeting / Field Visit">Official External Client Meeting / Field Visit</option>
+                <option value="Approved Manager Overtime Permission">Approved Manager Overtime Permission</option>
+              </select>
+
+              <div className="relative">
+                <input
+                  type="text"
+                  required
+                  value={formData.reason}
+                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                  placeholder="Type custom justification or exception reason..."
+                  className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-400"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 pointer-events-none">
+                  EDITABLE
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Compliance Checkbox */}

@@ -14,6 +14,15 @@ class FaceEnrollmentPayload(BaseModel):
     consent_given: bool
     client_ip: Optional[str] = "127.0.0.1"
 
+class EmployeeUpdate(BaseModel):
+    employee_code: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    department: Optional[str] = None
+    designation: Optional[str] = None
+    phone: Optional[str] = None
+
 @router.get("/")
 async def list_employees(
     department: Optional[str] = None,
@@ -228,3 +237,83 @@ async def delete_employee(
     await store.insert_one("audit_logs", audit)
 
     return {"status": "success", "message": "Employee removed and access revoked successfully."}
+
+@router.put("/{employee_id}")
+async def update_employee(
+    employee_id: str,
+    payload: EmployeeUpdate,
+    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+):
+    """Update employee details and synchronize associated user account."""
+    org_id = auth_ctx["org_id"]
+    emp = await store.find_one("employees", {"id": employee_id, "organization_id": org_id})
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    update_fields = {}
+    if payload.employee_code and payload.employee_code != emp.get("employee_code"):
+        existing_code = await store.find_one("employees", {
+            "organization_id": org_id,
+            "employee_code": payload.employee_code,
+            "id": {"$ne": employee_id}
+        })
+        if existing_code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Employee code '{payload.employee_code}' already belongs to another employee."
+            )
+        update_fields["employee_code"] = payload.employee_code
+
+    if payload.first_name is not None:
+        update_fields["first_name"] = payload.first_name.strip()
+    if payload.last_name is not None:
+        update_fields["last_name"] = payload.last_name.strip()
+    if payload.email is not None:
+        update_fields["email"] = str(payload.email).strip().lower()
+    if payload.department is not None:
+        update_fields["department"] = payload.department.strip()
+    if payload.designation is not None:
+        update_fields["designation"] = payload.designation.strip()
+    if payload.phone is not None:
+        update_fields["phone"] = payload.phone.strip()
+
+    if not update_fields:
+        return emp
+
+    update_fields["updated_at"] = datetime.utcnow().isoformat()
+    await store.update_one("employees", {"id": employee_id, "organization_id": org_id}, update_fields)
+
+    # Sync name and email in users collection if changed
+    user_updates = {}
+    if "email" in update_fields:
+        user_updates["email"] = update_fields["email"]
+    if "first_name" in update_fields or "last_name" in update_fields:
+        fn = update_fields.get("first_name", emp.get("first_name", ""))
+        ln = update_fields.get("last_name", emp.get("last_name", ""))
+        user_updates["name"] = f"{fn} {ln}".strip()
+    
+    if user_updates:
+        await store.update_one("users", {
+            "organization_id": org_id,
+            "$or": [{"employee_id": employee_id}, {"email": emp.get("email")}]
+        }, user_updates)
+
+    # Audit log
+    audit = AuditLog(
+        organization_id=org_id,
+        actor_id=auth_ctx["sub"],
+        actor_name=auth_ctx.get("name", "Admin"),
+        actor_role=auth_ctx.get("role", "org_admin"),
+        action="UPDATE_EMPLOYEE",
+        target_resource="Employee",
+        target_id=employee_id,
+        details=update_fields
+    ).dict()
+    await store.insert_one("audit_logs", audit)
+
+    updated_emp = await store.find_one("employees", {"id": employee_id, "organization_id": org_id})
+    if updated_emp:
+        updated_emp["has_biometric"] = len(updated_emp.get("face_embeddings", [])) > 0
+        updated_emp["face_embeddings"] = None
+    return updated_emp
+

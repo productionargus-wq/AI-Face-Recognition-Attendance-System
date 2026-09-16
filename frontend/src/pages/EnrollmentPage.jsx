@@ -1,553 +1,557 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { 
   Fingerprint, 
   ShieldCheck, 
-  Lock, 
-  Check, 
-  Camera, 
-  RotateCcw, 
   CheckCircle2, 
   AlertCircle, 
   Clock, 
-  ChevronDown,
-  Sparkles,
-  Terminal,
-  RefreshCw,
-  Plus,
-  UserPlus
+  ChevronDown, 
+  Plus, 
+  Search, 
+  Filter, 
+  Edit2, 
+  Trash2, 
+  User, 
+  Mail, 
+  Phone, 
+  Building2, 
+  Briefcase, 
+  RefreshCw, 
+  X,
+  Lock,
+  Check
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
 import { EnrollEmployeeModal } from '../components/EnrollEmployeeModal';
 
 export const EnrollmentPage = () => {
   const { organization } = useAuth();
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-
-  // Form State - Clean blank start for new organizations
-  const [formData, setFormData] = useState({
-    fullName: '',
-    employeeId: '',
-    department: '',
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDept, setSelectedDept] = useState('All Departments');
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  
+  // Edit Employee State
+  const [editingEmployee, setEditingEmployee] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    first_name: '',
+    last_name: '',
+    employee_code: '',
     email: '',
-    assignedSchedule: '08:30 AM - 05:00 PM'
+    department: '',
+    designation: '',
+    phone: ''
   });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
 
-  // Camera & Vector Snapshot State
-  const [streamActive, setStreamActive] = useState(false);
-  const [capturedFrame, setCapturedFrame] = useState(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [statusMessage, setStatusMessage] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
-
-  // Recent Terminal Verification Audit table data (empty by default)
-  const [auditList, setAuditList] = useState([]);
+  // Status Notification
+  const [actionMessage, setActionMessage] = useState({ type: '', text: '' });
 
   useEffect(() => {
-    startCamera();
-    fetchRecentEmployees();
-    return () => {
-      stopCamera();
-    };
+    fetchEmployees();
   }, []);
 
-  const fetchRecentEmployees = async () => {
+  const fetchEmployees = async () => {
+    setLoading(true);
     try {
       const res = await api.get('/employees/');
-      if (res.data && res.data.length > 0) {
-        const mapped = res.data.slice(0, 5).map((e, idx) => ({
-          id: e.id || 'aud-' + idx,
-          registeredTime: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-          employeeName: `${e.first_name} ${e.last_name}`.trim(),
-          employeeId: e.employee_code,
-          department: e.department || 'Engineering',
-          status: e.has_biometric ? 'ENROLLED' : 'RE-CALIBRATE'
-        }));
-        setAuditList(mapped);
-      } else {
-        setAuditList([]);
-      }
+      setEmployees(res.data || []);
     } catch (err) {
-      setAuditList([]);
-    }
-  };
-
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setStreamActive(true);
-      }
-    } catch (err) {
-      console.error('Camera error', err);
-      setErrorMessage('Could not initialize optical camera. Check permissions.');
-    }
-  };
-
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const tracks = videoRef.current.srcObject.getTracks();
-      tracks.forEach(track => track.stop());
-    }
-  };
-
-  const handleSnapFrame = () => {
-    if (!videoRef.current || !canvasRef.current) return;
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-    setCapturedFrame(dataUrl);
-    setStatusMessage('Frame captured. Biometric vectors ready for validation.');
-    setErrorMessage('');
-  };
-
-  const handleRetakeFrame = () => {
-    setCapturedFrame(null);
-    setStatusMessage('');
-    setErrorMessage('');
-  };
-
-  const handleSaveEnrollment = async (e) => {
-    e.preventDefault();
-    setErrorMessage('');
-    setStatusMessage('');
-
-    if (!capturedFrame) {
-      // Auto snap if not already snapped
-      handleSnapFrame();
-    }
-
-    setIsProcessing(true);
-
-    try {
-      // Split full name into first and last name
-      const nameParts = formData.fullName.trim().split(' ');
-      const firstName = nameParts[0] || 'Employee';
-      const lastName = nameParts.slice(1).join(' ') || 'Staff';
-
-      // 1. Create Employee Profile
-      const empRes = await api.post('/employees/', {
-        employee_code: formData.employeeId,
-        first_name: firstName,
-        last_name: lastName,
-        email: formData.email,
-        department: formData.department,
-        designation: formData.department,
-        phone: '1234567890'
-      });
-
-      const newEmp = empRes.data;
-
-      // 2. Enroll Biometric Vectors
-      const snapToEnroll = capturedFrame || (canvasRef.current && canvasRef.current.toDataURL('image/jpeg', 0.9));
-      if (snapToEnroll) {
-        await api.post(`/employees/${newEmp.id}/enroll-face`, {
-          samples: [snapToEnroll],
-          consent_given: true
-        });
-      }
-
-      confetti({
-        particleCount: 60,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
-
-      setStatusMessage('Biometric enrollment successfully finalized & encrypted!');
-
-      // Prepend to audit list
-      setAuditList(prev => [
-        {
-          id: 'aud-' + Date.now(),
-          registeredTime: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-          employeeName: formData.fullName,
-          employeeId: formData.employeeId,
-          department: formData.department,
-          status: 'ENROLLED'
-        },
-        ...prev.slice(0, 4)
-      ]);
-
-      // Reset form with next ID
-      setTimeout(() => {
-        const randNum = Math.floor(1000 + Math.random() * 9000);
-        setFormData({
-          fullName: '',
-          employeeId: `ARG-${randNum}-SEC`,
-          department: 'Systems Architecture',
-          email: '',
-          assignedSchedule: '08:30 AM - 05:00 PM'
-        });
-        setCapturedFrame(null);
-        setStatusMessage('');
-      }, 2500);
-
-    } catch (err) {
-      setErrorMessage(err.response?.data?.detail || 'Failed to complete biometric enrollment.');
+      console.error('Failed to load employees', err);
+      showNotice('error', 'Unable to retrieve employee records.');
     } finally {
-      setIsProcessing(false);
+      setLoading(false);
     }
   };
+
+  const showNotice = (type, text) => {
+    setActionMessage({ type, text });
+    setTimeout(() => setActionMessage({ type: '', text: '' }), 4000);
+  };
+
+  const handleOpenEdit = (emp) => {
+    setEditingEmployee(emp);
+    setEditFormData({
+      first_name: emp.first_name || '',
+      last_name: emp.last_name || '',
+      employee_code: emp.employee_code || '',
+      email: emp.email || '',
+      department: emp.department || 'Operations',
+      designation: emp.designation || 'Staff',
+      phone: emp.phone || ''
+    });
+    setEditError('');
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!editingEmployee) return;
+    setEditSaving(true);
+    setEditError('');
+
+    try {
+      const res = await api.put(`/employees/${editingEmployee.id}`, editFormData);
+      setEmployees(prev => prev.map(emp => emp.id === editingEmployee.id ? { ...emp, ...res.data } : emp));
+      setEditingEmployee(null);
+      showNotice('success', `Employee ${res.data.first_name} ${res.data.last_name} updated successfully.`);
+    } catch (err) {
+      setEditError(err.response?.data?.detail || 'Failed to update employee details.');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDeleteEmployee = async (emp) => {
+    const fullName = `${emp.first_name} ${emp.last_name}`.trim();
+    if (!window.confirm(`Revoke biometric access and remove "${fullName}" (${emp.employee_code})?`)) {
+      return;
+    }
+
+    try {
+      await api.delete(`/employees/${emp.id}`);
+      setEmployees(prev => prev.filter(e => e.id !== emp.id));
+      showNotice('success', `Employee "${fullName}" removed and credentials revoked.`);
+    } catch (err) {
+      showNotice('error', err.response?.data?.detail || 'Failed to remove employee.');
+    }
+  };
+
+  // Distinct departments for filter
+  const departments = ['All Departments', ...new Set(employees.map(e => e.department).filter(Boolean))];
+
+  // Filtering
+  const filteredEmployees = employees.filter(emp => {
+    const query = searchQuery.toLowerCase();
+    const fullName = `${emp.first_name} ${emp.last_name}`.toLowerCase();
+    const code = (emp.employee_code || '').toLowerCase();
+    const dept = (emp.department || '').toLowerCase();
+    const email = (emp.email || '').toLowerCase();
+
+    const matchesSearch = !query || fullName.includes(query) || code.includes(query) || dept.includes(query) || email.includes(query);
+    const matchesDept = selectedDept === 'All Departments' || emp.department?.toLowerCase() === selectedDept.toLowerCase();
+
+    return matchesSearch && matchesDept;
+  });
 
   return (
-    <div className="space-y-4 max-w-7xl mx-auto">
+    <div className="space-y-5 max-w-7xl mx-auto">
       {/* 1. Header Banner */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0 shadow-xs">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0 shadow-2xs">
             <Fingerprint className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-sm sm:text-base font-bold font-mono tracking-wider text-slate-900 uppercase">
-              BIOMETRIC ENROLLMENT
-            </h1>
-            <p className="text-xs text-slate-500 font-medium">
-              Register personnel credentials and vectorize 128-dimensional facial embeddings.
+            <div className="flex items-center gap-2">
+              <h1 className="text-base sm:text-lg font-black tracking-tight text-slate-900 uppercase font-mono">
+                BIOMETRIC ENROLLMENT & DIRECTORY
+              </h1>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-200">
+                {employees.length} REGISTERED
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Manage registered workforce biometric credentials, facial vectorization profiles, and personnel records.
             </p>
           </div>
         </div>
 
         <button
           type="button"
-          onClick={() => setIsModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all self-start sm:self-auto cursor-pointer"
+          onClick={() => setIsAddModalOpen(true)}
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#0080ff] hover:bg-blue-600 active:scale-[0.99] text-white rounded-xl text-xs font-bold shadow-xs transition-all self-start sm:self-auto cursor-pointer"
         >
-          <Plus className="w-4 h-4" />
-          Add Employee
+          <Plus className="w-4 h-4 stroke-[2.5]" />
+          <span>Add Employee</span>
         </button>
       </div>
 
-      {/* 2. Main 2-Column Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Left Column: Personnel Record Form (approx 5 cols) */}
-        <div className="lg:col-span-5 bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
-          <form onSubmit={handleSaveEnrollment} className="space-y-4">
-            {/* Header row */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <span className="text-xs font-bold font-mono text-slate-700 tracking-wider uppercase">
-                PERSONNEL RECORD
-              </span>
-              <div className="flex items-center gap-1 text-[11px] font-mono text-emerald-700 font-bold">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>RECORD_NEW</span>
-              </div>
-            </div>
-
-            {/* Field: Full Name */}
-            <div>
-              <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                [FULL_NAME]
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={formData.fullName}
-                  onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                  placeholder="e.g. Dr. Aris Thorne"
-                  required
-                  className="w-full text-xs font-medium text-slate-900 bg-white border border-slate-200 rounded-lg px-3 py-2.5 pr-8 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
-                <div className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center pointer-events-none">
-                  <Check className="w-3 h-3 stroke-[2.5]" />
-                </div>
-              </div>
-            </div>
-
-            {/* Field Row: Employee ID & Department */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                  [EMPLOYEE_ID]
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={formData.employeeId}
-                    onChange={(e) => setFormData({ ...formData, employeeId: e.target.value })}
-                    required
-                    className="w-full text-xs font-mono font-bold text-blue-600 bg-blue-50/40 border border-slate-200 rounded-lg px-3 py-2.5 pr-8 focus:outline-none focus:border-blue-500"
-                  />
-                  <Lock className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                  [DEPARTMENT]
-                </label>
-                <input
-                  type="text"
-                  value={formData.department}
-                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  placeholder="e.g. Systems Architecture"
-                  required
-                  className="w-full text-xs font-medium text-slate-900 bg-white border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-blue-500"
-                />
-              </div>
-            </div>
-
-            {/* Field: E-Mail */}
-            <div>
-              <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                [E-MAIL]
-              </label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="e.g. a.thorne@argus-sec.internal"
-                required
-                className="w-full text-xs font-medium text-slate-900 bg-white border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            {/* Field: Assigned Schedule */}
-            <div>
-              <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                [ASSIGNED_SCHEDULE]
-              </label>
-              <div className="relative">
-                <select
-                  value={formData.assignedSchedule}
-                  onChange={(e) => setFormData({ ...formData, assignedSchedule: e.target.value })}
-                  className="w-full text-xs font-medium text-slate-900 bg-white border border-slate-200 rounded-lg px-3 py-2.5 pr-8 appearance-none focus:outline-none focus:border-blue-500 cursor-pointer"
-                >
-                  <option value="08:30 AM - 05:00 PM">08:30 AM - 05:00 PM</option>
-                  <option value="09:00 AM - 06:00 PM">09:00 AM - 06:00 PM</option>
-                  <option value="08:00 AM - 04:30 PM">08:00 AM - 04:30 PM</option>
-                  <option value="10:00 AM - 07:00 PM">10:00 AM - 07:00 PM</option>
-                  <option value="Night Shift (08:00 PM - 05:00 AM)">Night Shift (08:00 PM - 05:00 AM)</option>
-                </select>
-                <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
-            </div>
-
-            {/* Feedback Messages */}
-            {errorMessage && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-xs text-red-700">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{errorMessage}</span>
-              </div>
-            )}
-
-            {statusMessage && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2 text-xs text-emerald-700">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>{statusMessage}</span>
-              </div>
-            )}
-          </form>
-
-          <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-400 font-mono">
-            ENCRYPTION: AES-256-GCM / 128-D EMBEDDINGS
-          </div>
+      {/* Action Notice Banner */}
+      {actionMessage.text && (
+        <div className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center gap-2 animate-in fade-in duration-200 ${
+          actionMessage.type === 'success' 
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+            : 'bg-red-50 border-red-200 text-red-800'
+        }`}>
+          {actionMessage.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+          )}
+          <span>{actionMessage.text}</span>
         </div>
+      )}
 
-        {/* Right Column: Live Camera Biometric HUD & Actions (approx 7 cols) */}
-        <div className="lg:col-span-7 bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between gap-4">
-          {/* Top Status Header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
-              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">
-                OPTICAL BIOMETRIC ACQUISITION SENSOR
-              </span>
-            </div>
-            <span className="text-[10px] font-mono text-cyan-600 font-bold">
-              CAMERA_STATE: {streamActive ? 'ONLINE' : 'OFFLINE'}
-            </span>
+      {/* 2. Registered Employees Directory Card */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+        {/* Filter Toolbar */}
+        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/40">
+          <div className="relative w-full sm:w-80">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name, ID, or department..."
+              className="w-full pl-9 pr-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+            />
           </div>
 
-          {/* Camera Viewport with Cybernetic Reticle */}
-          <div className="relative w-full aspect-[16/10] bg-slate-950 rounded-lg overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
-            {/* Corner Cybernetic Brackets */}
-            <div className="hud-corner-tl !border-cyan-400 !w-5 !h-5 !top-3 !left-3 z-10 pointer-events-none" />
-            <div className="hud-corner-tr !border-cyan-400 !w-5 !h-5 !top-3 !right-3 z-10 pointer-events-none" />
-            <div className="hud-corner-bl !border-cyan-400 !w-5 !h-5 !bottom-3 !left-3 z-10 pointer-events-none" />
-            <div className="hud-corner-br !border-cyan-400 !w-5 !h-5 !bottom-3 !right-3 z-10 pointer-events-none" />
-
-            {/* Video or Preview */}
-            {capturedFrame ? (
-              <img
-                src={capturedFrame}
-                alt="Captured Face Frame"
-                className="w-full h-full object-cover"
-                style={{ transform: 'scaleX(-1)' }}
-              />
-            ) : (
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-                style={{ transform: 'scaleX(-1)' }}
-              />
-            )}
-            <canvas ref={canvasRef} className="hidden" />
-
-            {/* Face Targeting Mesh & Brackets Overlay */}
-            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="relative w-44 sm:w-56 h-52 sm:h-64 border border-cyan-400/30 rounded-2xl flex items-center justify-center">
-                {/* HUD Corner markers */}
-                <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-cyan-400" />
-                <div className="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 border-cyan-400" />
-                <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 border-cyan-400" />
-                <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-cyan-400" />
-
-                {/* Subtle blueprint grid glow */}
-                <div className="w-12 h-12 border border-cyan-400/20 rounded-full flex items-center justify-center">
-                  <div className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-ping" />
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom In-Camera Control Toolbar */}
-            <div className="absolute bottom-3 inset-x-3 z-20 bg-slate-900/80 backdrop-blur-md rounded-lg p-2 flex items-center justify-between border border-slate-700/60">
-              <div className="flex items-center gap-2 pl-2 text-slate-400">
-                <Terminal className="w-4 h-4 text-cyan-400" />
-                <span className="text-[10px] font-mono uppercase text-slate-300">
-                  {capturedFrame ? 'FRAME LOCKED' : 'LIVE ACQUISITION'}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleRetakeFrame}
-                  className="px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono font-bold tracking-wider uppercase transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <RotateCcw className="w-3 h-3 text-slate-400" />
-                  <span>RETAKE FRAME</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSnapFrame}
-                  className="px-3.5 py-1.5 rounded-md bg-[#0080ff] hover:bg-blue-600 active:scale-95 text-white text-[11px] font-mono font-bold tracking-wider uppercase transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Camera className="w-3 h-3 text-white" />
-                  <span>SNAP</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Action Row Below Camera */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-            <div className="flex items-center gap-2 text-xs font-mono text-slate-600">
-              <Fingerprint className="w-4 h-4 text-emerald-600" />
-              <span>READY FOR PROFILE VALIDATION</span>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative w-full sm:w-56">
+              <select
+                value={selectedDept}
+                onChange={(e) => setSelectedDept(e.target.value)}
+                className="w-full pl-3 pr-8 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+              >
+                {departments.map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
 
             <button
-              type="button"
-              onClick={handleSaveEnrollment}
-              disabled={isProcessing}
-              className="w-full sm:w-auto px-6 py-3 rounded-lg bg-[#007348] hover:bg-[#005f3b] active:scale-[0.99] text-white font-bold font-mono text-xs uppercase tracking-wider transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+              onClick={fetchEmployees}
+              title="Refresh Directory"
+              className="p-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl transition-colors cursor-pointer"
             >
-              {isProcessing ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>SAVING ENROLLMENT...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>SAVE & COMPLETE ENROLLMENT</span>
-                </>
-              )}
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-blue-600' : ''}`} />
             </button>
+          </div>
+        </div>
+
+        {/* Table Content */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs min-w-[760px]">
+            <thead>
+              <tr className="bg-slate-50 text-[10px] text-slate-400 uppercase font-mono font-bold tracking-wider border-b border-slate-200">
+                <th className="py-3 px-4">EMPLOYEE & ID</th>
+                <th className="py-3 px-4">DEPARTMENT</th>
+                <th className="py-3 px-4">DESIGNATION</th>
+                <th className="py-3 px-4">CONTACT</th>
+                <th className="py-3 px-4">BIOMETRIC STATUS</th>
+                <th className="py-3 px-4 text-right">ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <RefreshCw className="w-6 h-6 animate-spin text-blue-600" />
+                      <p className="text-xs font-bold text-slate-600">Loading workforce directory...</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredEmployees.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-14 text-center text-slate-400">
+                    <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                      <Fingerprint className="w-8 h-8 text-slate-300 stroke-1" />
+                      <p className="text-xs font-bold text-slate-700">
+                        {searchQuery ? 'No matching personnel found.' : 'No employees registered yet.'}
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        {searchQuery 
+                          ? 'Try clearing the search query or department filter.' 
+                          : 'Click the "+ Add Employee" button above to enroll your first staff member and capture biometric vectors.'}
+                      </p>
+                      {!searchQuery && (
+                        <button
+                          onClick={() => setIsAddModalOpen(true)}
+                          className="mt-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#0080ff] hover:bg-blue-600 text-white rounded-lg text-xs font-bold cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Enroll Employee
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredEmployees.map((emp) => {
+                const fullName = `${emp.first_name} ${emp.last_name}`.trim();
+                const initials = ((emp.first_name?.[0] || '') + (emp.last_name?.[0] || '')).toUpperCase() || 'EM';
+                const hasBio = Boolean(emp.has_biometric);
+
+                return (
+                  <tr key={emp.id} className="hover:bg-slate-50/70 transition-colors">
+                    {/* Employee & Code */}
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-slate-800 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                          {initials}
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-900 text-xs">{fullName}</div>
+                          <div className="text-[10px] font-mono text-blue-600 font-bold">{emp.employee_code}</div>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Department */}
+                    <td className="py-3 px-4">
+                      <span className="inline-flex items-center gap-1 text-slate-700">
+                        <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{emp.department || 'Operations'}</span>
+                      </span>
+                    </td>
+
+                    {/* Designation */}
+                    <td className="py-3 px-4">
+                      <span className="inline-flex items-center gap-1 text-slate-600">
+                        <Briefcase className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{emp.designation || 'Staff'}</span>
+                      </span>
+                    </td>
+
+                    {/* Contact */}
+                    <td className="py-3 px-4">
+                      <div className="space-y-0.5">
+                        <div className="text-[11px] text-slate-600 font-mono flex items-center gap-1">
+                          <Mail className="w-3 h-3 text-slate-400" />
+                          <span className="truncate max-w-[170px]">{emp.email || '—'}</span>
+                        </div>
+                        {emp.phone && (
+                          <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
+                            <Phone className="w-2.5 h-2.5 text-slate-400" />
+                            <span>{emp.phone}</span>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Biometric Status */}
+                    <td className="py-3 px-4">
+                      {hasBio ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-mono font-bold">
+                          <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                          ENROLLED (128-D)
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-mono font-bold">
+                          <AlertCircle className="w-3 h-3 text-amber-600" />
+                          PENDING BIOMETRIC
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Actions */}
+                    <td className="py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(emp)}
+                          title="Edit Employee Details"
+                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteEmployee(emp)}
+                          title="Remove Employee"
+                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer info */}
+        <div className="p-3.5 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2">
+          <div className="flex items-center gap-2 font-mono">
+            <Lock className="w-3 h-3 text-emerald-600" />
+            <span>BIOMETRIC ENCRYPTION: AES-256-GCM / 128-D NORMALIZED EMBEDDINGS</span>
+          </div>
+          <div>
+            Showing <span className="font-bold text-slate-700">{filteredEmployees.length}</span> of {employees.length} personnel
           </div>
         </div>
       </div>
 
-      {/* 3. Bottom Table Card: Recent Terminal Verification Audit */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs">
-        <div className="flex items-center gap-2 mb-3 pb-3 border-b border-slate-100">
-          <Clock className="w-4 h-4 text-blue-600" />
-          <h3 className="text-xs font-bold font-mono tracking-wider text-slate-800 uppercase">
-            RECENT TERMINAL VERIFICATION AUDIT
-          </h3>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-100 text-slate-400 text-[10px] uppercase font-mono tracking-wider bg-slate-50/50">
-                <th className="py-2.5 px-3">REGISTERED TIME</th>
-                <th className="py-2.5 px-3">EMPLOYEE NAME</th>
-                <th className="py-2.5 px-3">EMPLOYEE ID</th>
-                <th className="py-2.5 px-3">DEPARTMENT</th>
-                <th className="py-2.5 px-3 text-right">STATUS</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {auditList.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-400">
-                    <div className="flex flex-col items-center justify-center gap-1.5">
-                      <Fingerprint className="w-7 h-7 text-slate-300 stroke-1" />
-                      <p className="text-xs font-bold text-slate-600">
-                        No personnel enrolled yet.
-                      </p>
-                      <p className="text-[11px] text-slate-400 max-w-sm">
-                        Fill in the personnel record above and capture an optical frame to enroll your first employee.
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              ) : auditList.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="py-3 px-3 font-mono text-slate-600 font-medium">
-                    {row.registeredTime}
-                  </td>
-                  <td className="py-3 px-3 font-bold text-slate-900">
-                    {row.employeeName}
-                  </td>
-                  <td className="py-3 px-3 font-mono font-bold text-blue-600">
-                    {row.employeeId}
-                  </td>
-                  <td className="py-3 px-3 text-slate-600">
-                    {row.department}
-                  </td>
-                  <td className="py-3 px-3 text-right">
-                    <span
-                      className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded ${
-                        row.status === 'ENROLLED'
-                          ? 'bg-cyan-50 text-cyan-700 border border-cyan-200'
-                          : 'bg-red-50 text-red-700 border border-red-200'
-                      }`}
-                    >
-                      {row.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Replicated Add Employee Modal from Admin Dashboard */}
+      {/* 3. Add Employee 3-Step Wizard Modal */}
       <EnrollEmployeeModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
         onEmployeeCreated={() => {
-          fetchRecentEmployees();
-          setIsModalOpen(false);
+          fetchEmployees();
+          setIsAddModalOpen(false);
+          showNotice('success', 'New employee profile and biometric vectors registered.');
         }}
       />
+
+      {/* 4. Edit Employee Details Modal */}
+      {editingEmployee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl w-full max-w-lg overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+                  <Edit2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-slate-800">
+                    EDIT EMPLOYEE PROFILE
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Update record details for {editingEmployee.employee_code}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingEmployee(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body / Form */}
+            <form onSubmit={handleSaveEdit} className="p-5 space-y-4">
+              {editError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{editError}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    First Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.first_name}
+                    onChange={(e) => setEditFormData({ ...editFormData, first_name: e.target.value })}
+                    className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Last Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.last_name}
+                    onChange={(e) => setEditFormData({ ...editFormData, last_name: e.target.value })}
+                    className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Employee ID / Code
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.employee_code}
+                    onChange={(e) => setEditFormData({ ...editFormData, employee_code: e.target.value })}
+                    className="w-full text-xs font-mono font-bold text-blue-600 bg-blue-50/30 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Department
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.department}
+                    onChange={(e) => setEditFormData({ ...editFormData, department: e.target.value })}
+                    className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Designation
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.designation}
+                    onChange={(e) => setEditFormData({ ...editFormData, designation: e.target.value })}
+                    className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Phone Number
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.phone}
+                    onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                    placeholder="e.g. +91 9876543210"
+                    className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                  Email Address (User Portal Login)
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={editFormData.email}
+                  onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                  className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingEmployee(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSaving}
+                  className="px-5 py-2 rounded-xl bg-[#0080ff] hover:bg-blue-600 text-white text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                >
+                  {editSaving ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving Changes...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>Update Profile</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
