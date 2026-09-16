@@ -15,7 +15,10 @@ import {
   ExternalLink,
   Phone,
   Info,
-  Inbox
+  Inbox,
+  Check,
+  X,
+  RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
@@ -29,6 +32,11 @@ export const LeaveApply = () => {
   const [toDate, setToDate] = useState(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
   const [reason, setReason] = useState('');
   const [contactPhone, setContactPhone] = useState('');
+
+  const [employees, setEmployees] = useState([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+  const [updatingId, setUpdatingId] = useState(null);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -44,12 +52,34 @@ export const LeaveApply = () => {
   const fetchLeaves = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/leaves');
-      setLeaveHistory(res.data || []);
+      const [leavesRes, empsRes] = await Promise.all([
+        api.get('/leaves'),
+        api.get('/employees/').catch(() => ({ data: [] }))
+      ]);
+      setLeaveHistory(leavesRes.data || []);
+      const empList = empsRes.data || [];
+      setEmployees(empList);
+      if (empList.length > 0 && !selectedEmployeeId) {
+        setSelectedEmployeeId(empList[0].id);
+      }
     } catch (err) {
       console.error('Failed to load leave history', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUpdateStatus = async (leaveId, status) => {
+    setUpdatingId(leaveId);
+    try {
+      const res = await api.patch(`/leaves/${leaveId}/status`, { status });
+      setLeaveHistory(prev => prev.map(item => item.id === leaveId ? { ...item, ...res.data } : item));
+      setStatusMessage(`Leave request marked as ${status === 'APPROVED' ? 'Approved' : 'Rejected'}.`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    } catch (err) {
+      setErrorMessage(err.response?.data?.detail || `Failed to ${status.toLowerCase()} leave request.`);
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -63,17 +93,21 @@ export const LeaveApply = () => {
     setSubmitting(true);
     setErrorMessage('');
     try {
-      const res = await api.post('/leaves', {
+      const payload = {
         category: selectedCategory,
         from_date: fromDate,
         to_date: toDate,
         duration_mode: durationMode,
         reason: reason.trim(),
         contact_phone: contactPhone || null
-      });
+      };
+      if ((user?.role === 'org_admin' || user?.role === 'super_admin') && selectedEmployeeId) {
+        payload.employee_id = selectedEmployeeId;
+      }
+      const res = await api.post('/leaves', payload);
 
       setLeaveHistory(prev => [res.data, ...prev]);
-      setStatusMessage('Leave application submitted successfully for supervisor approval.');
+      setStatusMessage('Leave application submitted successfully.');
       setTimeout(() => setStatusMessage(''), 4000);
       setReason('');
     } catch (err) {
@@ -300,6 +334,25 @@ export const LeaveApply = () => {
           </div>
 
           <form onSubmit={handleSubmitLeave} className="space-y-4">
+            {(user?.role === 'org_admin' || user?.role === 'super_admin') && employees.length > 0 && (
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Employee Selection
+                </label>
+                <select
+                  value={selectedEmployeeId}
+                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                  className="w-full text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.first_name} {emp.last_name} ({emp.employee_code}) - {emp.department}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Step 1: Category selection pills */}
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">
@@ -547,7 +600,8 @@ export const LeaveApply = () => {
                     <th className="py-2.5 px-3">LEAVE DETAILS</th>
                     <th className="py-2.5 px-3">REASON</th>
                     <th className="py-2.5 px-3">STATUS</th>
-                    <th className="py-2.5 px-3 text-right">PAYROLL EFFECT</th>
+                    <th className="py-2.5 px-3">PAYROLL EFFECT</th>
+                    <th className="py-2.5 px-3 text-right">ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -592,18 +646,58 @@ export const LeaveApply = () => {
 
                         {/* Status */}
                         <td className="py-3 px-3 whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
+                            item.status === 'Approved' 
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : item.status === 'Rejected'
+                              ? 'bg-red-50 text-red-700 border-red-200'
+                              : 'bg-blue-50 text-blue-700 border-blue-200'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              item.status === 'Approved' ? 'bg-emerald-500' : item.status === 'Rejected' ? 'bg-red-500' : 'bg-blue-500'
+                            }`} />
                             {item.status || 'Pending Review'}
                           </span>
                         </td>
 
                         {/* Payroll Effect */}
-                        <td className="py-3 px-3 text-right">
+                        <td className="py-3 px-3">
                           <span className="inline-flex items-center gap-1 text-slate-700 font-medium text-[11px]">
-                            <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                            <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                             {item.payroll_effect || item.payrollEffect || 'Salary Protected'}
                           </span>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-3 px-3 text-right whitespace-nowrap">
+                          {(user?.role === 'org_admin' || user?.role === 'super_admin') && (item.status === 'Pending Review' || !item.status) ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                disabled={updatingId === item.id}
+                                onClick={() => handleUpdateStatus(item.id, 'APPROVED')}
+                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                title="Approve Leave"
+                              >
+                                <Check className="w-3 h-3 stroke-[2.5]" />
+                                <span>Approve</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={updatingId === item.id}
+                                onClick={() => handleUpdateStatus(item.id, 'REJECTED')}
+                                className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                title="Reject Leave"
+                              >
+                                <X className="w-3 h-3 stroke-[2.5]" />
+                                <span>Reject</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] font-mono text-slate-400">
+                              {item.approved_by || (item.status === 'Approved' ? 'Approved' : 'Recorded')}
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );

@@ -30,6 +30,7 @@ class EmployeeUpdate(BaseModel):
     base_salary: Optional[float] = None
     hourly_rate: Optional[float] = None
     statutory_deductions: Optional[float] = None
+    permissions: Optional[List[str]] = None
 
 @router.get("/")
 async def list_employees(
@@ -112,6 +113,8 @@ async def create_employee(
                     detail=f"An employee with email '{payload.email}' already exists in your organization."
                 )
 
+    default_perms = payload.permissions if payload.permissions is not None else ["/admin", "/kiosk", "/leave-apply", "/advance-money"]
+
     emp_dict = Employee(
         organization_id=org_id,
         employee_code=payload.employee_code,
@@ -126,7 +129,8 @@ async def create_employee(
         shift_end=payload.shift_end or "17:30",
         base_salary=payload.base_salary if payload.base_salary is not None else 40000.0,
         hourly_rate=payload.hourly_rate if payload.hourly_rate is not None else 250.0,
-        statutory_deductions=payload.statutory_deductions if payload.statutory_deductions is not None else 3000.0
+        statutory_deductions=payload.statutory_deductions if payload.statutory_deductions is not None else 3000.0,
+        permissions=default_perms
     ).dict()
     await store.insert_one("employees", emp_dict)
 
@@ -139,9 +143,15 @@ async def create_employee(
             email=payload.email,
             hashed_password=get_password_hash("Argus@123"), # Default temp password
             role=UserRole.EMPLOYEE,
-            employee_id=emp_dict["id"]
+            employee_id=emp_dict["id"],
+            permissions=default_perms
         ).dict()
         await store.insert_one("users", user_dict)
+    else:
+        await store.update_one("users", {"id": existing_user["id"]}, {
+            "employee_id": emp_dict["id"],
+            "permissions": default_perms
+        })
 
     # Audit log
     audit = AuditLog(
@@ -343,6 +353,8 @@ async def update_employee(
         update_fields["hourly_rate"] = float(payload.hourly_rate)
     if payload.statutory_deductions is not None:
         update_fields["statutory_deductions"] = float(payload.statutory_deductions)
+    if payload.permissions is not None:
+        update_fields["permissions"] = payload.permissions
 
     if not update_fields:
         return emp
@@ -350,20 +362,101 @@ async def update_employee(
     update_fields["updated_at"] = datetime.utcnow().isoformat()
     await store.update_one("employees", {"id": employee_id, "organization_id": org_id}, update_fields)
 
-    # Sync name and email in users collection if changed
+    # Compute new details for cascade
+    fn = update_fields.get("first_name", emp.get("first_name", ""))
+    ln = update_fields.get("last_name", emp.get("last_name", ""))
+    new_full_name = f"{fn} {ln}".strip()
+    new_code = update_fields.get("employee_code", emp.get("employee_code"))
+    new_dept = update_fields.get("department", emp.get("department"))
+    old_code = emp.get("employee_code")
+    old_email = emp.get("email")
+    new_email = update_fields.get("email", old_email)
+
+    # 1. Sync name, email, and permissions in users collection
     user_updates = {}
     if "email" in update_fields:
-        user_updates["email"] = update_fields["email"]
+        user_updates["email"] = new_email
     if "first_name" in update_fields or "last_name" in update_fields:
-        fn = update_fields.get("first_name", emp.get("first_name", ""))
-        ln = update_fields.get("last_name", emp.get("last_name", ""))
-        user_updates["name"] = f"{fn} {ln}".strip()
+        user_updates["name"] = new_full_name
+    if "permissions" in update_fields:
+        user_updates["permissions"] = update_fields["permissions"]
     
     if user_updates:
-        await store.update_one("users", {
+        await store.update_many("users", {
             "organization_id": org_id,
-            "$or": [{"employee_id": employee_id}, {"email": emp.get("email")}]
+            "$or": [{"employee_id": employee_id}, {"email": old_email}]
         }, user_updates)
+
+    # 2. Cascade employee_name, employee_code, department across attendance collection
+    att_updates = {}
+    if "first_name" in update_fields or "last_name" in update_fields:
+        att_updates["employee_name"] = new_full_name
+    if "employee_code" in update_fields:
+        att_updates["employee_code"] = new_code
+    if "department" in update_fields:
+        att_updates["department"] = new_dept
+    if att_updates:
+        await store.update_many("attendance", {
+            "organization_id": org_id,
+            "employee_id": employee_id
+        }, att_updates)
+
+    # 3. Cascade across attendance_events (kiosk live stream)
+    evt_updates = {}
+    if "first_name" in update_fields or "last_name" in update_fields:
+        evt_updates["employee_name"] = new_full_name
+        initials = ((fn[:1] if fn else "") + (ln[:1] if ln else "")).upper() or "EM"
+        evt_updates["avatar"] = initials
+    if "employee_code" in update_fields:
+        evt_updates["employee_code"] = new_code
+    if "department" in update_fields:
+        evt_updates["department"] = new_dept
+    if evt_updates:
+        query_evt = {
+            "organization_id": org_id,
+            "$or": [{"employee_id": employee_id}, {"employee_code": old_code}]
+        }
+        await store.update_many("attendance_events", query_evt, evt_updates)
+
+    # 4. Cascade across manual_overrides
+    ovr_updates = {}
+    if "first_name" in update_fields or "last_name" in update_fields:
+        ovr_updates["employee_name"] = new_full_name
+    if "employee_code" in update_fields:
+        ovr_updates["employee_code"] = new_code
+    if "department" in update_fields:
+        ovr_updates["department"] = new_dept
+    if ovr_updates:
+        await store.update_many("manual_overrides", {
+            "organization_id": org_id,
+            "employee_id": employee_id
+        }, ovr_updates)
+
+    # 5. Cascade across advances
+    adv_updates = {}
+    if "first_name" in update_fields or "last_name" in update_fields:
+        adv_updates["name"] = new_full_name
+    if "employee_code" in update_fields:
+        adv_updates["emp_code"] = new_code
+    if "department" in update_fields:
+        adv_updates["dept"] = new_dept
+    if adv_updates:
+        await store.update_many("advances", {
+            "organization_id": org_id,
+            "employee_id": employee_id
+        }, adv_updates)
+
+    # 6. Cascade across leaves
+    lvr_updates = {}
+    if "first_name" in update_fields or "last_name" in update_fields:
+        lvr_updates["name"] = new_full_name
+    if "employee_code" in update_fields:
+        lvr_updates["emp_code"] = new_code
+    if lvr_updates:
+        await store.update_many("leaves", {
+            "organization_id": org_id,
+            "employee_id": employee_id
+        }, lvr_updates)
 
     # Audit log
     audit = AuditLog(

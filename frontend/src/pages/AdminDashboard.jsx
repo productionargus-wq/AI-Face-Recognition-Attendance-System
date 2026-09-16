@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
-import { EnrollEmployeeModal } from '../components/EnrollEmployeeModal';
+import { EnrollEmployeeModal, ALL_PERMISSIONS, DEFAULT_PERMISSIONS } from '../components/EnrollEmployeeModal';
 import { RevokeAccessModal } from '../components/RevokeAccessModal';
 import { 
   Users, 
@@ -21,7 +21,9 @@ import {
   Filter,
   BarChart3,
   TrendingUp,
-  X
+  X,
+  Check,
+  RefreshCw
 } from 'lucide-react';
 
 export const AdminDashboard = () => {
@@ -40,6 +42,24 @@ export const AdminDashboard = () => {
   // Revoke Biometric Access Confirmation Modal State
   const [employeeToDelete, setEmployeeToDelete] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Edit Employee Modal State
+  const [editingEmployee, setEditingEmployee] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    first_name: '',
+    last_name: '',
+    employee_code: '',
+    email: '',
+    department: 'Operations',
+    designation: 'Staff',
+    phone: '',
+    assigned_shift: 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
+    shift_start: '09:00',
+    shift_end: '17:30',
+    permissions: DEFAULT_PERMISSIONS
+  });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
 
   useEffect(() => {
     fetchDashboardData();
@@ -67,6 +87,40 @@ export const AdminDashboard = () => {
 
   const handleExportExcel = () => {
     window.open(api.defaults.baseURL + '/reports/export-excel', '_blank');
+  };
+
+  const handleOpenEdit = (emp) => {
+    setEditingEmployee(emp);
+    setEditFormData({
+      first_name: emp.first_name || '',
+      last_name: emp.last_name || '',
+      employee_code: emp.employee_code || '',
+      email: emp.email || '',
+      department: emp.department || 'Operations',
+      designation: emp.designation || 'Staff',
+      phone: emp.phone || '',
+      assigned_shift: emp.assigned_shift || 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
+      shift_start: emp.shift_start || '09:00',
+      shift_end: emp.shift_end || '17:30',
+      permissions: emp.permissions || DEFAULT_PERMISSIONS
+    });
+    setEditError('');
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!editingEmployee) return;
+    setEditSaving(true);
+    setEditError('');
+    try {
+      await api.put(`/employees/${editingEmployee.id}`, editFormData);
+      setEditingEmployee(null);
+      await fetchDashboardData();
+    } catch (err) {
+      setEditError(err.response?.data?.detail || 'Failed to update employee details.');
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const handleConfirmDelete = async () => {
@@ -98,11 +152,34 @@ export const AdminDashboard = () => {
   // Active workforce IDs set
   const activeEmpIds = React.useMemo(() => new Set((employees || []).map(e => e.id)), [employees]);
 
-  // Live records strictly for active enrolled workforce
+  // Employee Map for dynamic name and detail enrichment
+  const empMap = React.useMemo(() => {
+    const map = new Map();
+    (employees || []).forEach(e => map.set(e.id, e));
+    return map;
+  }, [employees]);
+
+  // Live records strictly for active enrolled workforce and enriched with current master data
   const records = React.useMemo(() => {
     const raw = todayData.records || [];
-    return raw.filter(r => !r.employee_id || activeEmpIds.has(r.employee_id));
-  }, [todayData.records, activeEmpIds]);
+    return raw
+      .filter(r => !r.employee_id || activeEmpIds.has(r.employee_id))
+      .map(r => {
+        const emp = empMap.get(r.employee_id);
+        if (emp) {
+          const fn = emp.first_name || '';
+          const ln = emp.last_name || '';
+          const fullName = `${fn} ${ln}`.trim() || emp.name || r.employee_name;
+          return {
+            ...r,
+            employee_name: fullName,
+            employee_code: emp.employee_code || r.employee_code,
+            department: emp.department || r.department
+          };
+        }
+        return r;
+      });
+  }, [todayData.records, activeEmpIds, empMap]);
 
   // Filtering records by department & search
   const filteredRecords = records.filter(r => {
@@ -436,7 +513,21 @@ export const AdminDashboard = () => {
                   {/* Action Icons */}
                   <td className="p-3.5 text-right">
                     <div className="flex items-center justify-end gap-2 text-slate-400">
-                      <button className="hover:text-blue-600 p-1 cursor-pointer">
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          const emp = employees.find(e => e.id === rec.employee_id) || {
+                            id: rec.employee_id,
+                            first_name: rec.employee_name?.split(' ')[0] || '',
+                            last_name: rec.employee_name?.split(' ').slice(1).join(' ') || '',
+                            employee_code: rec.employee_code,
+                            department: rec.department
+                          };
+                          handleOpenEdit(emp);
+                        }}
+                        className="hover:text-blue-600 p-1 cursor-pointer"
+                        title="Edit Employee Details & Permissions"
+                      >
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
                       <button 
@@ -468,48 +559,48 @@ export const AdminDashboard = () => {
           <div>
             Showing <strong className="text-slate-800">1 to {filteredRecords.length}</strong> of {totalEmployees} punch logs
           </div>
-          <div className="flex items-center gap-1 font-mono text-[11px]">
-            <button className="px-2.5 py-1 border border-slate-200 rounded text-slate-600 hover:bg-slate-50 cursor-pointer">
-              PREVIOUS
+          <div className="flex items-center gap-1">
+            <button className="px-2.5 py-1 rounded border border-slate-200 text-slate-400 text-xs disabled:opacity-50" disabled>
+              Previous
             </button>
-            <button className="px-2.5 py-1 bg-blue-600 text-white rounded font-bold">
+            <button className="px-2.5 py-1 rounded bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold font-mono">
               1
             </button>
-            <button className="px-2.5 py-1 border border-slate-200 rounded text-slate-600 hover:bg-slate-50 cursor-pointer">
-              2
-            </button>
-            <button className="px-2.5 py-1 border border-slate-200 rounded text-slate-600 hover:bg-slate-50 cursor-pointer">
-              3
-            </button>
-            <button className="px-2.5 py-1 border border-slate-200 rounded text-slate-600 hover:bg-slate-50 cursor-pointer">
-              NEXT
+            <button className="px-2.5 py-1 rounded border border-slate-200 text-slate-600 text-xs hover:bg-slate-50">
+              Next
             </button>
           </div>
         </div>
       </div>
 
-      {/* Bottom Analytics Breakdown Panel: Department Attendance Ratios (Matches Image 1) */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
-        <div className="flex items-center justify-between mb-4">
-          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-            DEPARTMENT ATTENDANCE RATIOS
+      {/* Dynamic Department Ratios */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
+              <Building2 className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Enrolled Department Attendance Ratios</h3>
+              <p className="text-xs text-slate-500">Live attendance percentage per department</p>
+            </div>
           </div>
-          <div className="text-xs font-mono font-bold text-slate-700">
-            OVERALL ATTENDANCE: <span className="text-emerald-600 px-2 py-0.5 bg-emerald-50 rounded border border-emerald-200">{presentCount}/{totalRoster} Total ({presentRate}%)</span>
-          </div>
+          <span className="text-xs font-bold text-blue-600 font-mono bg-blue-50 px-2.5 py-1 rounded-md">
+            {departmentStats.length} Registered Depts
+          </span>
         </div>
 
         {departmentStats.length === 0 ? (
-          <div className="p-6 text-center text-slate-400 text-xs">
-            No departments or employees registered yet. Enrolled department attendance ratios will appear here automatically.
+          <div className="text-center py-6 text-slate-400 text-xs font-mono">
+            No registered departments found. Add employees to view attendance ratios.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs font-semibold text-slate-700">
-            {departmentStats.map((ds) => (
-              <div key={ds.dept} className="space-y-1.5">
-                <div className="flex justify-between">
-                  <span>{ds.dept}</span>
-                  <span className="font-mono text-blue-600 font-bold">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+            {departmentStats.map(ds => (
+              <div key={ds.department} className="p-3 bg-slate-50/70 border border-slate-200/80 rounded-xl space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                  <span className="truncate pr-2">{ds.department}</span>
+                  <span className="font-mono text-blue-600">
                     {ds.present}/{ds.total} ({ds.pct}%)
                   </span>
                 </div>
@@ -532,6 +623,219 @@ export const AdminDashboard = () => {
           fetchDashboardData();
         }}
       />
+
+      {/* Edit Employee Modal with Permissions */}
+      {editingEmployee && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-200 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <Edit2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Edit Employee &amp; Permissions
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-mono">
+                    ID: {editingEmployee.id}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingEmployee(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {editError && (
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
+                <span>{editError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEdit} className="mt-4 space-y-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    First Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.first_name}
+                    onChange={(e) => setEditFormData({ ...editFormData, first_name: e.target.value })}
+                    className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Last Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.last_name}
+                    onChange={(e) => setEditFormData({ ...editFormData, last_name: e.target.value })}
+                    className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Employee Code
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.employee_code}
+                    onChange={(e) => setEditFormData({ ...editFormData, employee_code: e.target.value })}
+                    className="w-full text-xs font-mono font-bold text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Department
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.department}
+                    onChange={(e) => setEditFormData({ ...editFormData, department: e.target.value })}
+                    className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Designation
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.designation}
+                    onChange={(e) => setEditFormData({ ...editFormData, designation: e.target.value })}
+                    className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={editFormData.email}
+                    onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                    className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* User Access & Permissions Checkboxes */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800">
+                      User Access &amp; Permissions
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Select which sidebar tabs this employee can see in their portal.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setEditFormData(prev => ({ ...prev, permissions: ALL_PERMISSIONS.map(p => p.id) }))}
+                      className="text-blue-600 hover:underline cursor-pointer"
+                    >
+                      Select All
+                    </button>
+                    <span className="text-slate-300">•</span>
+                    <button
+                      type="button"
+                      onClick={() => setEditFormData(prev => ({ ...prev, permissions: DEFAULT_PERMISSIONS }))}
+                      className="text-slate-500 hover:underline cursor-pointer"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  {ALL_PERMISSIONS.map((perm) => {
+                    const isChecked = (editFormData.permissions || []).includes(perm.id);
+                    return (
+                      <label
+                        key={perm.id}
+                        className={`flex items-start gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                          isChecked 
+                            ? 'bg-blue-50/60 border-blue-200 text-slate-900' 
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            const current = editFormData.permissions || [];
+                            if (e.target.checked) {
+                              setEditFormData(prev => ({ ...prev, permissions: [...current, perm.id] }));
+                            } else {
+                              setEditFormData(prev => ({ ...prev, permissions: current.filter(p => p !== perm.id) }));
+                            }
+                          }}
+                          className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold">{perm.label}</div>
+                          <div className="text-[10px] text-slate-400 truncate">{perm.desc}</div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingEmployee(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSaving}
+                  className="px-5 py-2 rounded-xl bg-[#0080ff] hover:bg-blue-600 text-white text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                >
+                  {editSaving ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving Changes...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>Update Profile</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Revoke Biometric Access Confirmation Modal */}
       <RevokeAccessModal

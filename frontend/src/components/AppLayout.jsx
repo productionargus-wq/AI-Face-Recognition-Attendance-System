@@ -21,58 +21,67 @@ export const AppLayout = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, organization, logout } = useAuth();
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const isEmployee = user?.role === 'employee';
+  const userPermissions = user?.permissions || (isEmployee ? ['/admin', '/kiosk', '/leave-apply', '/advance-money'] : null);
 
-  const navItems = [
+  const rawNavItems = [
     {
-      name: 'Admin Dashboard',
-      path: '/admin',
+      name: isEmployee ? 'Employee Dashboard' : 'Admin Dashboard',
+      path: isEmployee ? '/portal' : '/admin',
+      altPaths: ['/admin', '/portal'],
       icon: LayoutDashboard,
-      roles: ['org_admin', 'super_admin']
+      id: '/admin'
     },
     {
       name: 'Attendance Capture',
       path: '/kiosk',
       icon: ScanFace,
-      roles: ['all']
+      id: '/kiosk'
     },
     {
       name: 'Biometric Enrollment',
       path: '/enrollment',
       icon: Fingerprint,
-      roles: ['org_admin', 'super_admin']
+      id: '/enrollment'
     },
     {
       name: 'Manual Entry',
       path: '/manual-entry',
       icon: CalendarCheck,
-      roles: ['org_admin', 'super_admin']
+      id: '/manual-entry'
     },
     {
       name: 'Advance Money',
       path: '/advance-money',
       icon: Banknote,
-      roles: ['org_admin', 'super_admin']
+      id: '/advance-money'
     },
     {
       name: 'Leave Apply',
       path: '/leave-apply',
       icon: CalendarDays,
-      roles: ['all']
+      id: '/leave-apply'
     },
     {
       name: 'Salary & Payroll',
       path: '/payroll',
       icon: CreditCard,
-      roles: ['org_admin', 'super_admin']
+      id: '/payroll'
     },
     {
       name: 'Settings',
       path: '/settings',
       icon: SettingsIcon,
-      roles: ['org_admin', 'super_admin']
+      id: '/settings'
     }
   ];
+
+  // Filter tabs: admins see everything, employees see only permitted tabs
+  const navItems = rawNavItems.filter(item => {
+    if (!isEmployee) return true;
+    if (!userPermissions) return false;
+    return userPermissions.includes(item.id) || userPermissions.includes(item.path);
+  });
 
   const handleLogout = () => {
     logout();
@@ -101,7 +110,7 @@ export const AppLayout = ({ children }) => {
         {/* Navigation Items */}
         <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
-            const isActive = location.pathname === item.path;
+            const isActive = location.pathname === item.path || (item.altPaths && item.altPaths.includes(location.pathname));
             const Icon = item.icon;
 
             return (
@@ -227,7 +236,7 @@ export const AppLayout = ({ children }) => {
         {mobileSidebarOpen && (
           <div className="md:hidden bg-white border-b border-slate-200 px-4 py-3 space-y-1 shadow-md z-30">
             {navItems.map((item) => {
-              const isActive = location.pathname === item.path;
+              const isActive = location.pathname === item.path || (item.altPaths && item.altPaths.includes(location.pathname));
               const Icon = item.icon;
               return (
                 <Link

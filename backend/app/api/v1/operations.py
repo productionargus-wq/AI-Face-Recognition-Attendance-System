@@ -131,7 +131,7 @@ async def list_manual_overrides(
 ):
     org_id = auth_ctx["org_id"]
     all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
-    active_emp_ids = {e["id"] for e in all_emps}
+    emp_map = {e["id"]: e for e in all_emps}
     records = await store.find_many(
         "manual_overrides", 
         {"organization_id": org_id}, 
@@ -139,28 +139,45 @@ async def list_manual_overrides(
         sort_desc=True, 
         limit=100
     )
-    return [r for r in records if r.get("employee_id") in active_emp_ids]
+    res = []
+    for r in records:
+        if r.get("employee_id") in emp_map:
+            emp = emp_map[r["employee_id"]]
+            r["employee_name"] = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+            r["employee_code"] = emp.get("employee_code", r.get("employee_code"))
+            r["department"] = emp.get("department", r.get("department"))
+            res.append(r)
+    return res
 
 
 # ----------------- 2. SALARY ADVANCES -----------------
 
 class AdvanceRequestPayload(BaseModel):
-    employee_id: str
+    employee_id: Optional[str] = None
     total_advance: float
     installments: int = 2
     reason: Optional[str] = None
 
+class StatusUpdatePayload(BaseModel):
+    status: str  # 'APPROVED', 'REJECTED'
+    comment: Optional[str] = None
+
 @operations_router.get("/advances")
 async def list_advances(
     cycle: Optional[str] = None,
-    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+    auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
 ):
     org_id = auth_ctx["org_id"]
     all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
-    active_emp_ids = {e["id"] for e in all_emps}
+    emp_map = {e["id"]: e for e in all_emps}
     query = {"organization_id": org_id}
     if cycle:
         query["cycle"] = cycle
+    if auth_ctx.get("role") == "employee":
+        emp = await store.find_one("employees", {"email": auth_ctx["email"], "organization_id": org_id})
+        if emp:
+            query["employee_id"] = emp["id"]
+
     advances = await store.find_many(
         "advances", 
         query, 
@@ -168,21 +185,39 @@ async def list_advances(
         sort_desc=True, 
         limit=100
     )
-    return [a for a in advances if a.get("employee_id") in active_emp_ids]
+    res = []
+    for a in advances:
+        if a.get("employee_id") in emp_map:
+            emp = emp_map[a["employee_id"]]
+            a["name"] = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+            a["emp_code"] = emp.get("employee_code", a.get("emp_code"))
+            a["dept"] = emp.get("department", a.get("dept"))
+            res.append(a)
+    return res
 
 @operations_router.post("/advances")
 async def issue_salary_advance(
     payload: AdvanceRequestPayload,
-    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+    auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
 ):
     org_id = auth_ctx["org_id"]
-    emp = await store.find_one("employees", {"id": payload.employee_id, "organization_id": org_id})
+    is_admin = auth_ctx.get("role") in ("org_admin", "super_admin")
+    target_emp_id = payload.employee_id
+    if not is_admin or not target_emp_id:
+        user_emp = await store.find_one("employees", {"email": auth_ctx.get("email"), "organization_id": org_id})
+        if user_emp:
+            target_emp_id = user_emp["id"]
+
+    emp = await store.find_one("employees", {"id": target_emp_id, "organization_id": org_id})
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found.")
 
     months = max(1, payload.installments)
     monthly_deduction = round(payload.total_advance / months, 2)
     emp_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+
+    approval_text = "Approved & Active" if is_admin else "Pending Approval"
+    approval_type = "active" if is_admin else "pending"
 
     record = {
         "id": f"ADV-{uuid.uuid4().hex[:6].upper()}",
@@ -197,15 +232,51 @@ async def issue_salary_advance(
         "progress_text": f"0 of {months} mos",
         "progress_percent": 0,
         "balance": payload.total_advance,
-        "approval": "Approved & Active",
-        "approval_type": "active",
-        "cycle_impact": f"Will deduct ₹{monthly_deduction:,.0f} on cycle cut",
-        "reason": payload.reason or "Authorized Salary Advance",
+        "approval": approval_text,
+        "approval_type": approval_type,
+        "cycle_impact": f"Will deduct ₹{monthly_deduction:,.0f} on cycle cut" if is_admin else "Awaiting Supervisor Approval",
+        "reason": payload.reason or ("Authorized Salary Advance" if is_admin else "Employee Advance Request"),
         "created_at": datetime.utcnow().isoformat()
     }
 
     await store.insert_one("advances", record)
     return record
+
+@operations_router.patch("/advances/{advance_id}/status")
+async def update_advance_status(
+    advance_id: str,
+    payload: StatusUpdatePayload,
+    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+):
+    org_id = auth_ctx["org_id"]
+    adv = await store.find_one("advances", {"id": advance_id, "organization_id": org_id})
+    if not adv:
+        raise HTTPException(status_code=404, detail="Advance record not found.")
+
+    new_status = payload.status.upper()
+    admin_name = auth_ctx.get("name", "Admin")
+    if new_status == "APPROVED":
+        update = {
+            "approval": "Approved & Active",
+            "approval_type": "active",
+            "cycle_impact": f"Will deduct ₹{adv.get('next_deduction', 0):,.0f} on cycle cut",
+            "approved_by": admin_name,
+            "approved_at": datetime.utcnow().isoformat()
+        }
+    elif new_status == "REJECTED":
+        update = {
+            "approval": "Rejected",
+            "approval_type": "rejected",
+            "cycle_impact": "Request Rejected (No Deduction)",
+            "rejected_by": admin_name,
+            "rejected_at": datetime.utcnow().isoformat()
+        }
+    else:
+        raise HTTPException(status_code=400, detail="Status must be APPROVED or REJECTED.")
+
+    await store.update_one("advances", {"id": advance_id, "organization_id": org_id}, update)
+    adv.update(update)
+    return adv
 
 
 # ----------------- 3. LEAVE APPLICATIONS -----------------
@@ -225,9 +296,8 @@ async def list_leaves(
 ):
     org_id = auth_ctx["org_id"]
     all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
-    active_emp_ids = {e["id"] for e in all_emps}
+    emp_map = {e["id"]: e for e in all_emps}
     query = {"organization_id": org_id}
-    # If standard employee, show their own leaves; if admin, show all
     if auth_ctx.get("role") == "employee":
         emp = await store.find_one("employees", {"email": auth_ctx["email"], "organization_id": org_id})
         if emp:
@@ -240,7 +310,14 @@ async def list_leaves(
         sort_desc=True, 
         limit=100
     )
-    return [l for l in leaves if l.get("employee_id") in active_emp_ids]
+    res = []
+    for l in leaves:
+        if l.get("employee_id") in emp_map:
+            emp = emp_map[l["employee_id"]]
+            l["name"] = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+            l["emp_code"] = emp.get("employee_code", l.get("emp_code"))
+            res.append(l)
+    return res
 
 @operations_router.post("/leaves")
 async def submit_leave(
@@ -285,3 +362,39 @@ async def submit_leave(
 
     await store.insert_one("leaves", record)
     return record
+
+@operations_router.patch("/leaves/{leave_id}/status")
+async def update_leave_status(
+    leave_id: str,
+    payload: StatusUpdatePayload,
+    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+):
+    org_id = auth_ctx["org_id"]
+    leave = await store.find_one("leaves", {"id": leave_id, "organization_id": org_id})
+    if not leave:
+        raise HTTPException(status_code=404, detail="Leave record not found.")
+
+    new_status = payload.status.upper()
+    admin_name = auth_ctx.get("name", "Admin")
+    if new_status == "APPROVED":
+        update = {
+            "status": "Approved",
+            "status_type": "success",
+            "approved_by": admin_name,
+            "approved_at": datetime.utcnow().isoformat(),
+            "payroll_effect": "-₹1,333 Ded. (Approved)" if leave.get("category_code") == "LOP" else "Salary Protected"
+        }
+    elif new_status == "REJECTED":
+        update = {
+            "status": "Rejected",
+            "status_type": "danger",
+            "approved_by": f"Rejected by {admin_name}",
+            "rejected_at": datetime.utcnow().isoformat(),
+            "payroll_effect": "No Impact (Rejected)"
+        }
+    else:
+        raise HTTPException(status_code=400, detail="Status must be APPROVED or REJECTED.")
+
+    await store.update_one("leaves", {"id": leave_id, "organization_id": org_id}, update)
+    leave.update(update)
+    return leave

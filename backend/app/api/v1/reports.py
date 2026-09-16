@@ -209,12 +209,25 @@ async def get_kiosk_stream(organization_slug_or_id: Optional[str] = None, organi
     active_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
     active_emp_ids = {e["id"] for e in active_emps}
     active_emp_codes = {e.get("employee_code") for e in active_emps if e.get("employee_code")}
+    emp_map_by_id = {e["id"]: e for e in active_emps}
+    emp_map_by_code = {e.get("employee_code"): e for e in active_emps if e.get("employee_code")}
 
     events = await store.find_many("attendance_events", {
         "organization_id": org_id,
         "date": today_str
     }, sort_key="timestamp", sort_desc=True, limit=20)
     events = [e for e in events if e.get("employee_id") in active_emp_ids or e.get("employee_code") in active_emp_codes]
+
+    # Dynamically resolve latest employee details on events
+    for ev in events:
+        emp = emp_map_by_id.get(ev.get("employee_id")) or emp_map_by_code.get(ev.get("employee_code"))
+        if emp:
+            fn = emp.get("first_name", "")
+            ln = emp.get("last_name", "")
+            ev["employee_name"] = f"{fn} {ln}".strip()
+            ev["employee_code"] = emp.get("employee_code", ev.get("employee_code"))
+            ev["department"] = emp.get("department", ev.get("department"))
+            ev["avatar"] = ((fn[:1] if fn else "") + (ln[:1] if ln else "")).upper() or "EM"
 
     if not events:
         # Graceful fallback: construct event list from today's attendance table
@@ -226,16 +239,27 @@ async def get_kiosk_stream(organization_slug_or_id: Optional[str] = None, organi
 
         fallback_events = []
         for r in records:
-            name = r.get("employee_name", "Employee")
-            name_parts = name.split()
-            av = (name_parts[0][:1] + (name_parts[1][:1] if len(name_parts) > 1 else "")).upper() or "EM"
+            emp = emp_map_by_id.get(r.get("employee_id")) or emp_map_by_code.get(r.get("employee_code"))
+            if emp:
+                fn = emp.get("first_name", "")
+                ln = emp.get("last_name", "")
+                name = f"{fn} {ln}".strip()
+                code = emp.get("employee_code", r.get("employee_code"))
+                dept = emp.get("department", r.get("department"))
+                av = ((fn[:1] if fn else "") + (ln[:1] if ln else "")).upper() or "EM"
+            else:
+                name = r.get("employee_name", "Employee")
+                code = r.get("employee_code", "EMP")
+                dept = r.get("department", "Operations")
+                name_parts = name.split()
+                av = (name_parts[0][:1] + (name_parts[1][:1] if len(name_parts) > 1 else "")).upper() or "EM"
 
             if r.get("check_out_time"):
                 fallback_events.append({
                     "id": f"{r['id']}-out",
                     "employee_name": name,
-                    "employee_code": r.get("employee_code", "EMP"),
-                    "department": r.get("department", "Operations"),
+                    "employee_code": code,
+                    "department": dept,
                     "time": r.get("check_out_time"),
                     "date": r.get("date"),
                     "timestamp": r.get("check_out") or r.get("date"),
@@ -247,8 +271,8 @@ async def get_kiosk_stream(organization_slug_or_id: Optional[str] = None, organi
                 fallback_events.append({
                     "id": f"{r['id']}-in",
                     "employee_name": name,
-                    "employee_code": r.get("employee_code", "EMP"),
-                    "department": r.get("department", "Operations"),
+                    "employee_code": code,
+                    "department": dept,
                     "time": r.get("check_in_time"),
                     "date": r.get("date"),
                     "timestamp": r.get("check_in") or r.get("date"),
@@ -267,7 +291,7 @@ async def get_today_attendance(auth_ctx: Dict[str, Any] = Depends(require_org_ad
     today_str = datetime.now(IST_TZ).strftime("%Y-%m-%d")
     
     all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
-    active_emp_ids = {e["id"] for e in all_emps}
+    emp_map = {e["id"]: e for e in all_emps}
     total_emps_count = len(all_emps)
 
     raw_records = await store.find_many("attendance", {
@@ -275,8 +299,15 @@ async def get_today_attendance(auth_ctx: Dict[str, Any] = Depends(require_org_ad
         "date": today_str
     }, sort_key="check_in", sort_desc=True)
 
-    # Strictly filter records to active employees only
-    records = [r for r in raw_records if r.get("employee_id") in active_emp_ids]
+    # Strictly filter records to active employees only and dynamically enrich
+    records = []
+    for r in raw_records:
+        if r.get("employee_id") in emp_map:
+            emp = emp_map[r["employee_id"]]
+            r["employee_name"] = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+            r["employee_code"] = emp.get("employee_code", r.get("employee_code"))
+            r["department"] = emp.get("department", r.get("department"))
+            records.append(r)
 
     # Normalize shift_status on all records
     for r in records:
@@ -328,8 +359,15 @@ async def get_attendance_history(
 
     raw_records = await store.find_many("attendance", query, sort_key="date", sort_desc=True, limit=500)
     all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
-    active_emp_ids = {e["id"] for e in all_emps}
-    records = [r for r in raw_records if r.get("employee_id") in active_emp_ids]
+    emp_map = {e["id"]: e for e in all_emps}
+    records = []
+    for r in raw_records:
+        if r.get("employee_id") in emp_map:
+            emp = emp_map[r["employee_id"]]
+            r["employee_name"] = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+            r["employee_code"] = emp.get("employee_code", r.get("employee_code"))
+            r["department"] = emp.get("department", r.get("department"))
+            records.append(r)
 
     for r in records:
         if not r.get("shift_status"):
@@ -358,11 +396,20 @@ async def get_my_attendance(auth_ctx: Dict[str, Any] = Depends(require_tenant_co
     if not emp_id:
         return []
 
-    records = await store.find_many("attendance", {
+    emp = await store.find_one("employees", {"id": emp_id, "organization_id": org_id})
+    raw_records = await store.find_many("attendance", {
         "organization_id": org_id,
         "employee_id": emp_id
     }, sort_key="date", sort_desc=True, limit=60)
-    return records
+    if emp:
+        fn = emp.get("first_name", "")
+        ln = emp.get("last_name", "")
+        emp_name = f"{fn} {ln}".strip()
+        for r in raw_records:
+            r["employee_name"] = emp_name
+            r["employee_code"] = emp.get("employee_code", r.get("employee_code"))
+            r["department"] = emp.get("department", r.get("department"))
+    return raw_records
 
 # ----------------- REPORTS ROUTER (CSV/EXCEL) -----------------
 
@@ -384,8 +431,15 @@ async def export_csv(
 
     raw_records = await store.find_many("attendance", query, sort_key="date", sort_desc=True)
     all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
-    active_emp_ids = {e["id"] for e in all_emps}
-    records = [r for r in raw_records if r.get("employee_id") in active_emp_ids]
+    emp_map = {e["id"]: e for e in all_emps}
+    records = []
+    for r in raw_records:
+        if r.get("employee_id") in emp_map:
+            emp = emp_map[r["employee_id"]]
+            r["employee_name"] = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+            r["employee_code"] = emp.get("employee_code", r.get("employee_code"))
+            r["department"] = emp.get("department", r.get("department"))
+            records.append(r)
     
     rows = []
     for r in records:
@@ -427,8 +481,15 @@ async def export_excel(
 
     raw_records = await store.find_many("attendance", query, sort_key="date", sort_desc=True)
     all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
-    active_emp_ids = {e["id"] for e in all_emps}
-    records = [r for r in raw_records if r.get("employee_id") in active_emp_ids]
+    emp_map = {e["id"]: e for e in all_emps}
+    records = []
+    for r in raw_records:
+        if r.get("employee_id") in emp_map:
+            emp = emp_map[r["employee_id"]]
+            r["employee_name"] = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+            r["employee_code"] = emp.get("employee_code", r.get("employee_code"))
+            r["department"] = emp.get("department", r.get("department"))
+            records.append(r)
     
     rows = []
     for r in records:

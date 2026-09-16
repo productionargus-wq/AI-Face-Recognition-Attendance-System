@@ -45,6 +45,9 @@ export const AdvanceMoney = () => {
     reason: ''
   });
 
+  const isEmployee = user?.role === 'employee';
+  const isAdmin = !isEmployee;
+
   useEffect(() => {
     fetchInitialData();
   }, [cycle]);
@@ -57,9 +60,13 @@ export const AdvanceMoney = () => {
         api.get(`/advances?cycle=${encodeURIComponent(cycle)}`).catch(() => ({ data: [] }))
       ]);
 
-      setEmployees(empRes.data || []);
-      if (empRes.data && empRes.data.length > 0) {
-        setNewAdvance(prev => ({ ...prev, employeeId: empRes.data[0].id }));
+      const empList = empRes.data || [];
+      setEmployees(empList);
+      if (empList.length > 0) {
+        const defaultEmp = isEmployee
+          ? empList.find(e => e.email === user?.email || e.id === user?.employee_id) || empList[0]
+          : empList[0];
+        setNewAdvance(prev => ({ ...prev, employeeId: defaultEmp.id }));
       }
       setAdvances(advRes.data || []);
     } catch (err) {
@@ -83,24 +90,42 @@ export const AdvanceMoney = () => {
         employee_id: newAdvance.employeeId,
         total_advance: parseFloat(newAdvance.amount),
         installments: parseInt(newAdvance.installments) || 2,
-        reason: newAdvance.reason || 'Authorized Salary Advance'
+        reason: newAdvance.reason || (isAdmin ? 'Authorized Salary Advance' : 'Salary Advance Request')
       });
 
       setAdvances(prev => [res.data, ...prev]);
       setModalOpen(false);
-      setStatusMessage('Salary advance issued and scheduled for payroll deduction.');
+      setStatusMessage(isAdmin 
+        ? 'Salary advance issued and scheduled for payroll deduction.' 
+        : 'Salary advance request submitted successfully for supervisor approval.');
       setTimeout(() => setStatusMessage(''), 4000);
 
+      const defaultEmp = isEmployee
+        ? employees.find(e => e.email === user?.email || e.id === user?.employee_id) || employees[0]
+        : (employees.length > 0 ? employees[0] : null);
+
       setNewAdvance({
-        employeeId: employees.length > 0 ? employees[0].id : '',
+        employeeId: defaultEmp ? defaultEmp.id : '',
         amount: '',
         installments: 2,
         reason: ''
       });
     } catch (err) {
-      setErrorMessage(err.response?.data?.detail || 'Failed to issue salary advance.');
+      setErrorMessage(err.response?.data?.detail || 'Failed to submit salary advance.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleUpdateStatus = async (advanceId, newStatus) => {
+    try {
+      const res = await api.patch(`/advances/${advanceId}/status`, { status: newStatus });
+      setAdvances(prev => prev.map(a => a.id === advanceId ? { ...a, ...(res.data.record || res.data) } : a));
+      setStatusMessage(`Advance status updated to ${newStatus === 'APPROVED' ? 'Approved & Disbursed' : 'Rejected'}.`);
+      setTimeout(() => setStatusMessage(''), 4000);
+    } catch (err) {
+      setErrorMessage(err.response?.data?.detail || 'Failed to update advance status.');
+      setTimeout(() => setErrorMessage(''), 4000);
     }
   };
 
@@ -109,13 +134,39 @@ export const AdvanceMoney = () => {
     setSlipModalOpen(true);
   };
 
-  // Dynamic KPI calculations from actual records
-  const totalDisbursed = advances.reduce((acc, curr) => acc + (Number(curr.total_advance || curr.totalAdvance) || 0), 0);
-  const totalDeductions = advances.reduce((acc, curr) => acc + (Number(curr.next_deduction || curr.nextDeduction) || 0), 0);
-  const remainingBalance = advances.reduce((acc, curr) => acc + (Number(curr.balance) || 0), 0);
-  const activeCount = advances.filter(a => (a.approval_type || a.approvalType) === 'active').length;
+  // Build reactive employee map so edited names/details dynamically cascade
+  const empMap = React.useMemo(() => {
+    const map = {};
+    (employees || []).forEach(e => {
+      map[e.id] = e;
+      if (e.employee_code) map[e.employee_code] = e;
+    });
+    return map;
+  }, [employees]);
 
-  const filteredAdvances = advances.filter(a => {
+  const enrichedAdvances = advances.map(a => {
+    const emp = (a.employee_id && empMap[a.employee_id]) || (a.emp_code && empMap[a.emp_code]) || null;
+    return {
+      ...a,
+      name: emp ? `${emp.first_name} ${emp.last_name}` : (a.name || 'Employee'),
+      emp_code: emp ? emp.employee_code : (a.emp_code || a.empCode || 'EMP'),
+      dept: emp ? emp.department : (a.dept || 'Operations')
+    };
+  });
+
+  // Dynamic KPI calculations from actual records
+  const totalDisbursed = enrichedAdvances
+    .filter(a => (a.approval_type || a.approvalType) === 'active' || (a.approval || '').includes('Approved'))
+    .reduce((acc, curr) => acc + (Number(curr.total_advance || curr.totalAdvance) || 0), 0);
+  const totalDeductions = enrichedAdvances
+    .filter(a => (a.approval_type || a.approvalType) === 'active' || (a.approval || '').includes('Approved'))
+    .reduce((acc, curr) => acc + (Number(curr.next_deduction || curr.nextDeduction) || 0), 0);
+  const remainingBalance = enrichedAdvances
+    .filter(a => (a.approval_type || a.approvalType) === 'active' || (a.approval || '').includes('Approved'))
+    .reduce((acc, curr) => acc + (Number(curr.balance) || 0), 0);
+  const activeCount = enrichedAdvances.filter(a => (a.approval_type || a.approvalType) === 'active' || (a.approval || '').includes('Approved')).length;
+
+  const filteredAdvances = enrichedAdvances.filter(a => {
     const name = a.name || '';
     const code = a.emp_code || a.empCode || '';
     const dept = a.dept || '';
@@ -398,10 +449,22 @@ export const AdvanceMoney = () => {
 
                       {/* Approval Status Badge */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-mono font-bold text-[10px] border border-blue-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                          {adv.approval || 'Approved & Active'}
-                        </span>
+                        {((adv.approval_type || adv.approvalType) === 'active' || (adv.approval || '').toLowerCase().includes('approved')) ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-mono font-bold text-[10px] border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            {adv.approval || 'Approved & Active'}
+                          </span>
+                        ) : ((adv.approval_type || adv.approvalType) === 'rejected' || (adv.approval || '').toLowerCase().includes('rejected')) ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 font-mono font-bold text-[10px] border border-rose-200">
+                            <X className="w-3 h-3 text-rose-600" />
+                            {adv.approval || 'Rejected'}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-mono font-bold text-[10px] border border-amber-200">
+                            <Clock className="w-3 h-3 text-amber-600" />
+                            {adv.approval || 'Pending Approval'}
+                          </span>
+                        )}
                       </td>
 
                       {/* Cycle Impact */}
@@ -411,13 +474,37 @@ export const AdvanceMoney = () => {
 
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => openSlip(adv)}
-                          className="text-blue-600 hover:text-blue-800 font-bold text-xs hover:underline cursor-pointer"
-                        >
-                          Slip
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {isAdmin && ((adv.approval_type || adv.approvalType) === 'pending' || (adv.approval || '').toLowerCase().includes('pending')) && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateStatus(adv.id, 'APPROVED')}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer"
+                                title="Approve & Disburse Salary Advance"
+                              >
+                                <CheckCircle2 className="w-3 h-3" />
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateStatus(adv.id, 'REJECTED')}
+                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                                title="Reject Advance Request"
+                              >
+                                <X className="w-3 h-3" />
+                                Reject
+                              </button>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => openSlip(adv)}
+                            className="text-blue-600 hover:text-blue-800 font-bold text-xs hover:underline cursor-pointer ml-1"
+                          >
+                            Slip
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -465,7 +552,7 @@ export const AdvanceMoney = () => {
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <Banknote className="w-4 h-4 text-blue-600" />
-                Issue Salary Advance
+                {isAdmin ? 'Issue Salary Advance' : 'Apply for Salary Advance'}
               </h3>
               <button 
                 type="button" 
@@ -479,21 +566,28 @@ export const AdvanceMoney = () => {
             <form onSubmit={handleIssueAdvance} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Select Enrolled Employee *
+                  {isAdmin ? 'Select Enrolled Employee *' : 'Employee *'}
                 </label>
                 {employees.length > 0 ? (
-                  <select
-                    required
-                    value={newAdvance.employeeId}
-                    onChange={(e) => setNewAdvance({ ...newAdvance, employeeId: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  >
-                    {employees.map(emp => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.first_name} {emp.last_name} ({emp.employee_code || 'EMP'}) — {emp.department || 'General'}
-                      </option>
-                    ))}
-                  </select>
+                  isEmployee ? (
+                    <div className="px-3.5 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800">
+                      {employees.find(e => e.id === newAdvance.employeeId)?.first_name || user?.name || 'Self'} (
+                      {employees.find(e => e.id === newAdvance.employeeId)?.employee_code || user?.employee_code || 'EMP'})
+                    </div>
+                  ) : (
+                    <select
+                      required
+                      value={newAdvance.employeeId}
+                      onChange={(e) => setNewAdvance({ ...newAdvance, employeeId: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    >
+                      {employees.map(emp => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.first_name} {emp.last_name} ({emp.employee_code || 'EMP'}) — {emp.department || 'General'}
+                        </option>
+                      ))}
+                    </select>
+                  )
                 ) : (
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center justify-between">
                     <span>No enrolled employees found.</span>
@@ -558,10 +652,12 @@ export const AdvanceMoney = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting || employees.length === 0}
+                  disabled={submitting || (!isEmployee && employees.length === 0)}
                   className="px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer disabled:opacity-60"
                 >
-                  {submitting ? 'Authorizing...' : 'Authorize Advance'}
+                  {submitting 
+                    ? (isAdmin ? 'Authorizing...' : 'Submitting...') 
+                    : (isAdmin ? 'Authorize Advance' : 'Submit Advance Request')}
                 </button>
               </div>
             </form>

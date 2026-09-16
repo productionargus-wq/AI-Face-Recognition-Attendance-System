@@ -2,6 +2,19 @@ import React, { useState, useRef, useEffect } from 'react';
 import api from '../utils/api';
 import { X, Camera, CheckCircle2, AlertCircle, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
 
+export const ALL_PERMISSIONS = [
+  { id: '/admin', label: 'Employee Dashboard', desc: 'Self-service attendance & logs' },
+  { id: '/kiosk', label: 'Attendance Capture', desc: 'Kiosk facial recognition' },
+  { id: '/enrollment', label: 'Biometric Enrollment', desc: 'Face registration & roster' },
+  { id: '/manual-entry', label: 'Manual Entry', desc: 'Duty shifts & override logs' },
+  { id: '/advance-money', label: 'Advance Money', desc: 'Salary advance & repayment' },
+  { id: '/leave-apply', label: 'Leave Apply', desc: 'Leave applications & tracking' },
+  { id: '/payroll', label: 'Salary & Payroll', desc: 'Compensation & deductions' },
+  { id: '/settings', label: 'Settings', desc: 'Organization configurations' }
+];
+
+export const DEFAULT_PERMISSIONS = ['/admin', '/kiosk', '/leave-apply', '/advance-money'];
+
 export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
   const [step, setStep] = useState(1);
   
@@ -15,7 +28,8 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
     phone: '',
     assigned_shift: 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
     shift_start: '09:00',
-    shift_end: '17:30'
+    shift_end: '17:30',
+    permissions: DEFAULT_PERMISSIONS
   });
 
   const formatTime12h = (time24) => {
@@ -386,6 +400,71 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
                     className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* User Access & Permissions */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-xs font-bold text-slate-800">
+                    User Access & Permissions
+                  </label>
+                  <p className="text-[11px] text-slate-500">
+                    Check the sidebar tabs this employee is permitted to view in their UI.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, permissions: ALL_PERMISSIONS.map(p => p.id) }))}
+                    className="text-blue-600 hover:underline cursor-pointer"
+                  >
+                    Select All
+                  </button>
+                  <span className="text-slate-300">•</span>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, permissions: DEFAULT_PERMISSIONS }))}
+                    className="text-slate-500 hover:underline cursor-pointer"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                {ALL_PERMISSIONS.map((perm) => {
+                  const isChecked = (formData.permissions || []).includes(perm.id);
+                  return (
+                    <label
+                      key={perm.id}
+                      className={`flex items-start gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                        isChecked 
+                          ? 'bg-blue-50/60 border-blue-200 text-slate-900' 
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          const current = formData.permissions || [];
+                          if (e.target.checked) {
+                            setFormData(prev => ({ ...prev, permissions: [...current, perm.id] }));
+                          } else {
+                            setFormData(prev => ({ ...prev, permissions: current.filter(p => p !== perm.id) }));
+                          }
+                        }}
+                        className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold">{perm.label}</div>
+                        <div className="text-[10px] text-slate-400 truncate">{perm.desc}</div>
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
             </div>
 

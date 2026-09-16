@@ -14,22 +14,33 @@ import { LeaveApply } from './pages/LeaveApply';
 import { PayrollReport } from './pages/PayrollReport';
 import { OrgSettings } from './pages/OrgSettings';
 
-const ProtectedAdminRoute = ({ children }) => {
-  const { user, loading } = useAuth();
-  if (loading) return <div className="p-8 text-center text-slate-500 font-mono">Verifying credentials...</div>;
-  if (!user || user.role !== 'org_admin') {
-    return <Navigate to="/login" replace />;
-  }
-  return children;
-};
-
-const ProtectedEmployeeRoute = ({ children }) => {
+const ProtectedRoute = ({ children, requiredPath = null }) => {
   const { user, loading } = useAuth();
   if (loading) return <div className="p-8 text-center text-slate-500 font-mono">Verifying credentials...</div>;
   if (!user) {
     return <Navigate to="/login" replace />;
   }
+  if (user.role === 'org_admin' || user.role === 'super_admin') {
+    return children;
+  }
+  // Employee permissions check
+  if (requiredPath) {
+    const perms = user.permissions || ['/admin', '/kiosk', '/leave-apply', '/advance-money'];
+    const hasPerm = perms.includes(requiredPath) || (requiredPath === '/admin' && (perms.includes('/admin') || perms.includes('/portal')));
+    if (!hasPerm) {
+      const fallback = perms.find(p => p !== requiredPath) || '/portal';
+      return <Navigate to={fallback} replace />;
+    }
+  }
   return children;
+};
+
+const DashboardRouter = () => {
+  const { user } = useAuth();
+  if (user?.role === 'employee') {
+    return <EmployeePortal />;
+  }
+  return <AdminDashboard />;
 };
 
 function App() {
@@ -57,89 +68,88 @@ function App() {
           <Route
             path="/admin"
             element={
-              <ProtectedAdminRoute>
+              <ProtectedRoute requiredPath="/admin">
                 <AppLayout>
-                  <AdminDashboard />
+                  <DashboardRouter />
                 </AppLayout>
-              </ProtectedAdminRoute>
+              </ProtectedRoute>
             }
           />
 
           <Route
             path="/enrollment"
             element={
-              <ProtectedAdminRoute>
+              <ProtectedRoute requiredPath="/enrollment">
                 <AppLayout>
                   <EnrollmentPage />
                 </AppLayout>
-              </ProtectedAdminRoute>
+              </ProtectedRoute>
             }
           />
 
-          {/* 5 Newly Integrated Tabs from Uploaded Designs */}
           <Route
             path="/manual-entry"
             element={
-              <ProtectedAdminRoute>
+              <ProtectedRoute requiredPath="/manual-entry">
                 <AppLayout>
                   <ManualEntry />
                 </AppLayout>
-              </ProtectedAdminRoute>
+              </ProtectedRoute>
             }
           />
 
           <Route
             path="/advance-money"
             element={
-              <ProtectedAdminRoute>
+              <ProtectedRoute requiredPath="/advance-money">
                 <AppLayout>
                   <AdvanceMoney />
                 </AppLayout>
-              </ProtectedAdminRoute>
+              </ProtectedRoute>
             }
           />
 
           <Route
             path="/leave-apply"
             element={
-              <ProtectedEmployeeRoute>
+              <ProtectedRoute requiredPath="/leave-apply">
                 <AppLayout>
                   <LeaveApply />
                 </AppLayout>
-              </ProtectedEmployeeRoute>
+              </ProtectedRoute>
             }
           />
 
           <Route
             path="/payroll"
             element={
-              <ProtectedAdminRoute>
+              <ProtectedRoute requiredPath="/payroll">
                 <AppLayout>
                   <PayrollReport />
                 </AppLayout>
-              </ProtectedAdminRoute>
+              </ProtectedRoute>
             }
           />
 
           <Route
             path="/settings"
             element={
-              <ProtectedAdminRoute>
+              <ProtectedRoute requiredPath="/settings">
                 <AppLayout>
                   <OrgSettings />
                 </AppLayout>
-              </ProtectedAdminRoute>
+              </ProtectedRoute>
             }
           />
 
           <Route
             path="/portal"
             element={
-              <ProtectedEmployeeRoute>
+              <ProtectedRoute requiredPath="/admin">
                 <AppLayout>
                   <EmployeePortal />
                 </AppLayout>
-              </ProtectedEmployeeRoute>
+              </ProtectedRoute>
             }
           />
 

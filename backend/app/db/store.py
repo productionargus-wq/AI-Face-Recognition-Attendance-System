@@ -166,6 +166,34 @@ class UnifiedDataStore:
                     return True
             return False
 
+    async def update_many(self, collection: str, query: Dict[str, Any], update: Dict[str, Any]) -> int:
+        target_col = self._resolve_collection(collection)
+        db = await self.get_active_db()
+        count = 0
+        if db is not None:
+            try:
+                res = await db[target_col].update_many(query, {"$set": update})
+                count = res.modified_count
+            except Exception as e:
+                logger.warning(f"Error in MongoDB update_many {target_col}: {e}")
+
+        async with self.lock:
+            items = self._cache.get(target_col, []) or self._cache.get(collection, [])
+            for item in items:
+                match = True
+                if "$or" in query:
+                    match = any(all(item.get(k) == v for k, v in sub.items()) for sub in query["$or"])
+                else:
+                    for k, v in query.items():
+                        if item.get(k) != v:
+                            match = False
+                            break
+                if match:
+                    item.update(update)
+                    count += 1
+            self._save_local_storage(target_col)
+        return count
+
     async def delete_one(self, collection: str, query: Dict[str, Any]) -> bool:
         target_col = self._resolve_collection(collection)
         db = await self.get_active_db()

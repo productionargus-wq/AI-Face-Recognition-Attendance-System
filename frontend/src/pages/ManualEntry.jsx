@@ -196,9 +196,26 @@ export const ManualEntry = () => {
     });
   };
 
-  const filteredRecords = records.filter(r => {
-    const name = r.employee_name || r.name || '';
-    const code = r.employee_code || r.empCode || '';
+  const empMap = React.useMemo(() => {
+    const map = {};
+    (employees || []).forEach(e => {
+      map[e.id] = e;
+      if (e.employee_code) map[e.employee_code] = e;
+    });
+    return map;
+  }, [employees]);
+
+  const filteredRecords = records.map(r => {
+    const emp = (r.employee_id && empMap[r.employee_id]) || (r.employee_code && empMap[r.employee_code]) || null;
+    return {
+      ...r,
+      employee_name: emp ? `${emp.first_name} ${emp.last_name}` : (r.employee_name || r.name || 'Employee'),
+      employee_code: emp ? emp.employee_code : (r.employee_code || r.empCode || 'EMP'),
+      department: emp ? emp.department : (r.department || r.dept || 'Operations'),
+    };
+  }).filter(r => {
+    const name = r.employee_name || '';
+    const code = r.employee_code || '';
     const matchesSearch = name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           code.toLowerCase().includes(searchTerm.toLowerCase());
     if (filterTab === 'Pending Audit') return matchesSearch && (r.status_type === 'pending' || r.statusType === 'pending');

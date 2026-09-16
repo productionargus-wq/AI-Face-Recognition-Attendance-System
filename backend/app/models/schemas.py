@@ -58,6 +58,7 @@ class UserCreate(BaseModel):
     role: str = UserRole.EMPLOYEE
     organization_id: str
     employee_id: Optional[str] = None
+    permissions: Optional[List[str]] = None
 
 class User(BaseModel):
     id: str = Field(default_factory=generate_uuid)
@@ -67,6 +68,7 @@ class User(BaseModel):
     hashed_password: str
     role: str
     employee_id: Optional[str] = None
+    permissions: Optional[List[str]] = None
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -85,6 +87,7 @@ class EmployeeCreate(BaseModel):
     base_salary: Optional[float] = 40000.0
     hourly_rate: Optional[float] = 250.0
     statutory_deductions: Optional[float] = 3000.0
+    permissions: Optional[List[str]] = None
 
 class Employee(BaseModel):
     id: str = Field(default_factory=generate_uuid)
@@ -102,6 +105,7 @@ class Employee(BaseModel):
     base_salary: Optional[float] = 40000.0
     hourly_rate: Optional[float] = 250.0
     statutory_deductions: Optional[float] = 3000.0
+    permissions: Optional[List[str]] = None
     consent_given: bool = False
     consent_timestamp: Optional[datetime] = None
     consent_ip: Optional[str] = None

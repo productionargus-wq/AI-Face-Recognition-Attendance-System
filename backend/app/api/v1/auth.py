@@ -176,13 +176,15 @@ async def login(req: LoginRequest):
 
     # Guarantee an active employee user record exists
     if not user:
+        default_perms = emp.get("permissions") if emp else ["/admin", "/kiosk", "/leave-apply", "/advance-money"]
         user = User(
             organization_id=org_id,
             name=f"{emp['first_name']} {emp['last_name']}",
             email=req.email,
             hashed_password=get_password_hash("Argus@123"),
             role=UserRole.EMPLOYEE,
-            employee_id=emp["id"]
+            employee_id=emp["id"],
+            permissions=default_perms
         ).dict()
         await store.insert_one("users", user)
 
@@ -196,6 +198,13 @@ async def login(req: LoginRequest):
     }
     token = create_access_token(token_data)
     user_out = {k: v for k, v in user.items() if k != "hashed_password"}
+    if emp:
+        user_out["name"] = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip() or user_out.get("name")
+        if emp.get("permissions"):
+            user_out["permissions"] = emp.get("permissions")
+    if not user_out.get("permissions"):
+        user_out["permissions"] = ["/admin", "/kiosk", "/leave-apply", "/advance-money"]
+
     return LoginResponse(access_token=token, user=user_out, organization=org)
 
 @router.get("/me")
@@ -208,6 +217,25 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user_payload
     if user.get("organization_id"):
         org = await store.find_one("organizations", {"id": user["organization_id"]})
     user_out = {k: v for k, v in user.items() if k != "hashed_password"}
+
+    # Dynamically resolve latest employee details
+    if user.get("employee_id"):
+        emp = await store.find_one("employees", {"id": user["employee_id"]})
+        if emp:
+            fn = emp.get("first_name", "")
+            ln = emp.get("last_name", "")
+            user_out["name"] = f"{fn} {ln}".strip() or user_out.get("name")
+            user_out["employee_code"] = emp.get("employee_code")
+            user_out["department"] = emp.get("department")
+            if emp.get("permissions"):
+                user_out["permissions"] = emp.get("permissions")
+
+    if not user_out.get("permissions"):
+        if user_out.get("role") in ("org_admin", "super_admin"):
+            user_out["permissions"] = ["/admin", "/kiosk", "/enrollment", "/manual-entry", "/advance-money", "/leave-apply", "/payroll", "/settings"]
+        else:
+            user_out["permissions"] = ["/admin", "/kiosk", "/leave-apply", "/advance-money"]
+
     return {"user": user_out, "organization": org}
 
 @router.get("/health")
