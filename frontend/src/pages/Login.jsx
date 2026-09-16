@@ -13,6 +13,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { AttendanceTerminalModal } from '../components/AttendanceTerminalModal';
+import { PrecisionIdentityMatrix } from '../components/PrecisionIdentityMatrix';
 
 const GOOGLE_CLIENT_ID = '640635826843-g3jv0g9jfk79hohe6b1t1vbr60fegkut.apps.googleusercontent.com';
 
@@ -149,9 +150,12 @@ export const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fbff] bg-blueprint flex flex-col justify-between text-slate-800">
+    <div className="min-h-screen relative flex flex-col justify-between text-slate-800 overflow-x-hidden">
+      {/* 3D Precision Identity Matrix Background */}
+      <PrecisionIdentityMatrix />
+
       {/* Top Brand Header */}
-      <header className="h-16 border-b border-slate-200/80 bg-white/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 relative z-20">
+      <header className="h-16 border-b border-slate-200/70 bg-white/75 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 relative z-20 shadow-2xs">
         <div className="flex items-center gap-3 shrink-0">
           <div className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center shadow-xs border border-slate-200/80 bg-white p-0.5">
             <img 
@@ -209,10 +213,10 @@ export const Login = () => {
       </header>
 
       {/* Main Dual-Column Authentication Viewport */}
-      <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8">
+      <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8 relative z-10">
         {/* Page Top Heading */}
         <div className="max-w-4xl w-full mx-auto mb-6">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-mono font-bold mb-2">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50/90 border border-blue-200 text-blue-700 text-[10px] font-mono font-bold mb-2 backdrop-blur-xs">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
             WELCOME BACK
           </div>
@@ -227,7 +231,7 @@ export const Login = () => {
         <div className="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
           
           {/* Left Column: Live Optical Face Scanner Viewport */}
-          <div className="lg:col-span-5 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div className="lg:col-span-5 bg-white/85 backdrop-blur-md p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xl shadow-blue-900/5 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-4">
                 <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
@@ -302,10 +306,10 @@ export const Login = () => {
           </div>
 
           {/* Right Column: Google Single Sign-On Account Portal */}
-          <div className="lg:col-span-7 bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center">
+          <div className="lg:col-span-7 bg-white/85 backdrop-blur-md p-6 sm:p-8 rounded-2xl border border-slate-200/80 shadow-xl shadow-blue-900/5 flex flex-col justify-center">
             {/* Error / Access Denied Notification Banner */}
             {error && (
-              <div className="mb-4 p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2.5 animate-in fade-in duration-200">
+              <div className="mb-4 p-3.5 rounded-xl bg-red-50/90 border border-red-200 text-red-700 text-xs flex items-start gap-2.5 animate-in fade-in duration-200 backdrop-blur-xs">
                 <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <div className="font-bold text-red-800">Authentication Failed</div>
@@ -320,7 +324,7 @@ export const Login = () => {
                 type="button"
                 onClick={handleGoogleSignIn}
                 disabled={loading}
-                className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 active:scale-[0.99] text-slate-800 border-2 border-slate-200 hover:border-slate-300 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all cursor-pointer disabled:opacity-60"
+                className="w-full py-3.5 px-4 bg-white/90 hover:bg-white active:scale-[0.99] text-slate-800 border-2 border-slate-200 hover:border-slate-300 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all cursor-pointer disabled:opacity-60"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -351,7 +355,7 @@ export const Login = () => {
       </main>
 
       {/* Bottom Privacy & Compliance Trust Bar */}
-      <footer className="h-12 border-t border-slate-200/80 bg-white/70 backdrop-blur-xs px-6 flex items-center justify-between text-[11px] text-slate-500 font-medium">
+      <footer className="h-12 border-t border-slate-200/70 bg-white/75 backdrop-blur-md px-6 flex items-center justify-between text-[11px] text-slate-500 font-medium relative z-20">
         <div className="flex items-center gap-1.5 text-emerald-700">
           <ShieldCheck className="w-4 h-4 text-emerald-600" />
           <span>Zero-Knowledge Architecture: Encrypted 128-d vectors only.</span>

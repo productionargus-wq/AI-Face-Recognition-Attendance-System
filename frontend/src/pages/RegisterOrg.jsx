@@ -11,6 +11,7 @@ import {
   ScanFace,
   Sparkles
 } from 'lucide-react';
+import { PrecisionIdentityMatrix } from '../components/PrecisionIdentityMatrix';
 
 const GOOGLE_CLIENT_ID = '640635826843-g3jv0g9jfk79hohe6b1t1vbr60fegkut.apps.googleusercontent.com';
 
@@ -119,9 +120,12 @@ export const RegisterOrg = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fbff] bg-blueprint flex flex-col justify-between text-slate-800">
+    <div className="min-h-screen relative flex flex-col justify-between text-slate-800 overflow-x-hidden">
+      {/* 3D Precision Identity Matrix Background */}
+      <PrecisionIdentityMatrix />
+
       {/* Top Header */}
-      <header className="h-16 border-b border-slate-200/80 bg-white/70 backdrop-blur-xs px-6 flex items-center justify-between">
+      <header className="h-16 border-b border-slate-200/70 bg-white/75 backdrop-blur-md px-6 flex items-center justify-between relative z-20 shadow-2xs">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-[#0080ff] flex items-center justify-center text-white shadow-xs font-bold">
             <ScanFace className="w-5 h-5" />
@@ -148,10 +152,10 @@ export const RegisterOrg = () => {
       </header>
 
       {/* Main Dual-Column Setup Viewport */}
-      <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8">
+      <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8 relative z-10">
         {/* Page Top Heading */}
         <div className="max-w-4xl w-full mx-auto mb-6">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-mono font-bold mb-2">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50/90 border border-blue-200 text-blue-700 text-[10px] font-mono font-bold mb-2 backdrop-blur-xs">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
             ORGANISATION ONBOARDING
           </div>
@@ -166,7 +170,7 @@ export const RegisterOrg = () => {
         <div className="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
           
           {/* Left Column: Biometric Kiosk Terminal Preview */}
-          <div className="lg:col-span-5 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div className="lg:col-span-5 bg-white/85 backdrop-blur-md p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xl shadow-blue-900/5 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-4">
                 <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
@@ -221,9 +225,9 @@ export const RegisterOrg = () => {
           </div>
 
           {/* Right Column: Organization Registration Form */}
-          <div className="lg:col-span-7 bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center">
+          <div className="lg:col-span-7 bg-white/85 backdrop-blur-md p-6 sm:p-8 rounded-2xl border border-slate-200/80 shadow-xl shadow-blue-900/5 flex flex-col justify-center">
             {error && (
-              <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2 animate-in fade-in duration-150">
+              <div className="mb-4 p-3 rounded-xl bg-red-50/90 border border-red-200 text-red-700 text-xs flex items-center gap-2 animate-in fade-in duration-150 backdrop-blur-xs">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{error}</span>
               </div>
@@ -242,7 +246,7 @@ export const RegisterOrg = () => {
                     value={formData.name}
                     onChange={handleChange}
                     placeholder="e.g. Argus Technologies Ltd."
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                    className="w-full px-3.5 py-2.5 bg-white/90 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
                   />
                 </div>
               </div>
@@ -258,7 +262,7 @@ export const RegisterOrg = () => {
                     value={formData.gstin}
                     onChange={handleChange}
                     placeholder="33AAAAANM1RZN (Optional)"
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase font-bold tracking-wide"
+                    className="w-full px-3.5 py-2.5 bg-white/90 border border-slate-300 rounded-xl text-xs sm:text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase font-bold tracking-wide"
                   />
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1 font-mono">
@@ -271,7 +275,7 @@ export const RegisterOrg = () => {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3 px-4 bg-white hover:bg-slate-50 active:scale-[0.99] text-slate-800 border-2 border-slate-200 hover:border-slate-300 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all cursor-pointer disabled:opacity-60"
+                  className="w-full py-3 px-4 bg-white/90 hover:bg-white active:scale-[0.99] text-slate-800 border-2 border-slate-200 hover:border-slate-300 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all cursor-pointer disabled:opacity-60"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -298,7 +302,7 @@ export const RegisterOrg = () => {
       </main>
 
       {/* Bottom Privacy Footer */}
-      <footer className="border-t border-slate-200/80 bg-white/70 backdrop-blur-xs px-6 py-3 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2">
+      <footer className="border-t border-slate-200/70 bg-white/75 backdrop-blur-md px-6 py-3 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2 relative z-20">
         <div className="flex items-center gap-2 text-emerald-700 font-medium">
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>Your biometric data is encrypted and secure. Photos are never stored directly.</span>
