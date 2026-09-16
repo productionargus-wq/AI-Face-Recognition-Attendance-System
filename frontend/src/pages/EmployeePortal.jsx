@@ -24,6 +24,10 @@ export const EmployeePortal = () => {
 
   const totalHours = history.reduce((acc, curr) => acc + (curr.total_hours || 0), 0);
   const presentDays = history.filter(h => h.status === 'PRESENT' || h.status === 'LATE').length;
+  const onTimeDays = history.filter(h => 
+    h.status === 'PRESENT' && (h.shift_status === 'ON-TIME' || !h.shift_status || !h.shift_status.includes('LATE'))
+  ).length;
+  const punctualityScore = presentDays > 0 ? Math.round((onTimeDays / presentDays) * 100) : 100;
 
   return (
     <div className="min-h-[calc(100vh-4rem)] py-6 sm:py-8 px-3 sm:px-6 lg:px-8 max-w-5xl mx-auto space-y-4 sm:space-y-6">
@@ -75,7 +79,7 @@ export const EmployeePortal = () => {
           </div>
           <div>
             <div className="text-xs text-slate-500 font-medium">Punctuality Score</div>
-            <div className="text-xl sm:text-2xl font-bold text-indigo-600">98%</div>
+            <div className="text-xl sm:text-2xl font-bold text-indigo-600">{punctualityScore}%</div>
           </div>
         </div>
       </div>

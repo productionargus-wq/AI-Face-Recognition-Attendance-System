@@ -25,7 +25,17 @@ import api from '../utils/api';
 
 export const AdvanceMoney = () => {
   const { user } = useAuth();
-  const [cycle, setCycle] = useState('October 2024');
+  const availableCycles = React.useMemo(() => {
+    const list = [];
+    const now = new Date();
+    for (let i = -3; i <= 3; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      list.push(d.toLocaleString('en-US', { month: 'long', year: 'numeric' }));
+    }
+    return list;
+  }, []);
+
+  const [cycle, setCycle] = useState(() => new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }));
   const [searchTerm, setSearchTerm] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [slipModalOpen, setSlipModalOpen] = useState(false);
@@ -48,6 +58,15 @@ export const AdvanceMoney = () => {
   const isEmployee = user?.role === 'employee';
   const isAdmin = !isEmployee;
 
+  // Find linked employee record for logged in user
+  const myEmployee = React.useMemo(() => {
+    return (employees || []).find(e => 
+      (user?.employee_id && e.id === user.employee_id) ||
+      (user?.employee_code && e.employee_code === user.employee_code) ||
+      (user?.email && e.email === user.email)
+    );
+  }, [employees, user]);
+
   useEffect(() => {
     fetchInitialData();
   }, [cycle]);
@@ -66,7 +85,7 @@ export const AdvanceMoney = () => {
         const defaultEmp = isEmployee
           ? empList.find(e => e.email === user?.email || e.id === user?.employee_id) || empList[0]
           : empList[0];
-        setNewAdvance(prev => ({ ...prev, employeeId: defaultEmp.id }));
+        setNewAdvance(prev => ({ ...prev, employeeId: defaultEmp?.id || '' }));
       }
       setAdvances(advRes.data || []);
     } catch (err) {
@@ -78,8 +97,12 @@ export const AdvanceMoney = () => {
 
   const handleIssueAdvance = async (e) => {
     e.preventDefault();
-    if (!newAdvance.employeeId || !newAdvance.amount) {
-      setErrorMessage('Please select an employee and enter the advance amount.');
+    const targetEmpId = isEmployee 
+      ? (myEmployee?.id || user?.employee_id || user?.id || 'EMP-SELF')
+      : newAdvance.employeeId;
+
+    if (!targetEmpId || !newAdvance.amount) {
+      setErrorMessage(isEmployee ? 'Please enter the advance amount.' : 'Please select an employee and enter the advance amount.');
       return;
     }
 
@@ -87,7 +110,7 @@ export const AdvanceMoney = () => {
     setErrorMessage('');
     try {
       const res = await api.post('/advances', {
-        employee_id: newAdvance.employeeId,
+        employee_id: targetEmpId,
         total_advance: parseFloat(newAdvance.amount),
         installments: parseInt(newAdvance.installments) || 2,
         reason: newAdvance.reason || (isAdmin ? 'Authorized Salary Advance' : 'Salary Advance Request')
@@ -101,7 +124,7 @@ export const AdvanceMoney = () => {
       setTimeout(() => setStatusMessage(''), 4000);
 
       const defaultEmp = isEmployee
-        ? employees.find(e => e.email === user?.email || e.id === user?.employee_id) || employees[0]
+        ? myEmployee || employees.find(e => e.email === user?.email || e.id === user?.employee_id)
         : (employees.length > 0 ? employees[0] : null);
 
       setNewAdvance({
@@ -154,19 +177,32 @@ export const AdvanceMoney = () => {
     };
   });
 
+  // Filter records: for employee, strictly show their own advances
+  const roleFilteredAdvances = React.useMemo(() => {
+    if (!isEmployee) return enrichedAdvances;
+    return enrichedAdvances.filter(a => {
+      if (user?.employee_id && a.employee_id === user.employee_id) return true;
+      if (user?.employee_code && (a.emp_code === user.employee_code || a.empCode === user.employee_code)) return true;
+      if (user?.email && a.email === user.email) return true;
+      if (user?.name && a.name && a.name.toLowerCase() === user.name.toLowerCase()) return true;
+      return false;
+    });
+  }, [enrichedAdvances, isEmployee, user]);
+
   // Dynamic KPI calculations from actual records
-  const totalDisbursed = enrichedAdvances
+  const totalDisbursed = roleFilteredAdvances
     .filter(a => (a.approval_type || a.approvalType) === 'active' || (a.approval || '').includes('Approved'))
     .reduce((acc, curr) => acc + (Number(curr.total_advance || curr.totalAdvance) || 0), 0);
-  const totalDeductions = enrichedAdvances
+  const totalDeductions = roleFilteredAdvances
     .filter(a => (a.approval_type || a.approvalType) === 'active' || (a.approval || '').includes('Approved'))
     .reduce((acc, curr) => acc + (Number(curr.next_deduction || curr.nextDeduction) || 0), 0);
-  const remainingBalance = enrichedAdvances
+  const remainingBalance = roleFilteredAdvances
     .filter(a => (a.approval_type || a.approvalType) === 'active' || (a.approval || '').includes('Approved'))
     .reduce((acc, curr) => acc + (Number(curr.balance) || 0), 0);
-  const activeCount = enrichedAdvances.filter(a => (a.approval_type || a.approvalType) === 'active' || (a.approval || '').includes('Approved')).length;
+  const activeCount = roleFilteredAdvances.filter(a => (a.approval_type || a.approvalType) === 'active' || (a.approval || '').includes('Approved')).length;
+  const pendingCount = roleFilteredAdvances.filter(a => (a.approval_type || a.approvalType) === 'pending' || (a.approval || '').toLowerCase().includes('pending')).length;
 
-  const filteredAdvances = enrichedAdvances.filter(a => {
+  const filteredAdvances = roleFilteredAdvances.filter(a => {
     const name = a.name || '';
     const code = a.emp_code || a.empCode || '';
     const dept = a.dept || '';
@@ -181,10 +217,12 @@ export const AdvanceMoney = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            Advance Money Management
+            {isEmployee ? 'Advance Money Request' : 'Advance Money Management'}
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Track, disburse, and auto-amortize employee salary advances against monthly payroll for your organisation.
+            {isEmployee 
+              ? 'Submit and track your salary advances against monthly payroll.' 
+              : 'Track, disburse, and auto-amortize employee salary advances against monthly payroll for your organisation.'}
           </p>
         </div>
 
@@ -198,9 +236,9 @@ export const AdvanceMoney = () => {
               onChange={(e) => setCycle(e.target.value)}
               className="bg-transparent border-none focus:outline-none font-bold text-slate-800 cursor-pointer"
             >
-              <option value="October 2024">October 2024</option>
-              <option value="November 2024">November 2024</option>
-              <option value="December 2024">December 2024</option>
+              {availableCycles.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
 
@@ -211,7 +249,7 @@ export const AdvanceMoney = () => {
             className="inline-flex items-center gap-2 px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            Request / Issue Salary Advance
+            {isEmployee ? 'Request Advance Money' : 'Issue Salary Advance'}
           </button>
         </div>
       </div>
@@ -232,11 +270,11 @@ export const AdvanceMoney = () => {
 
       {/* 4 KPI Summary Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Disbursed */}
+        {/* Card 1: Total Disbursed / My Active Advance */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
-              TOTAL DISBURSED (CYCLE)
+              {isEmployee ? 'MY ACTIVE ADVANCE' : 'TOTAL DISBURSED (CYCLE)'}
             </span>
             <div className="w-7 h-7 rounded-lg bg-cyan-50 text-cyan-600 flex items-center justify-center font-bold">
               <Banknote className="w-4 h-4" />
@@ -248,7 +286,7 @@ export const AdvanceMoney = () => {
             </div>
           </div>
           <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-bold w-fit">
-            <span>{activeCount} Active Advances</span>
+            <span>{activeCount} Active {activeCount === 1 ? 'Advance' : 'Advances'}</span>
             <span className="text-slate-400 font-normal">in this cycle</span>
           </div>
         </div>
@@ -257,7 +295,7 @@ export const AdvanceMoney = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
-              DEDUCTIONS (CURRENT CYCLE)
+              {isEmployee ? 'UPCOMING DEDUCTION' : 'DEDUCTIONS (CURRENT CYCLE)'}
             </span>
             <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
               <ArrowUpRight className="w-4 h-4" />
@@ -278,7 +316,7 @@ export const AdvanceMoney = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
-              REMAINING ADVANCE BALANCE
+              {isEmployee ? 'REMAINING BALANCE' : 'REMAINING ADVANCE BALANCE'}
             </span>
             <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
               <Clock className="w-4 h-4" />
@@ -290,31 +328,37 @@ export const AdvanceMoney = () => {
             </div>
           </div>
           <div className="text-[11px] text-slate-500">
-            Deferred to upcoming payroll cycles
+            {isEmployee ? 'Outstanding amount across remaining cycles' : 'Deferred to upcoming payroll cycles'}
           </div>
         </div>
 
-        {/* Card 4: Disbursement Distribution */}
+        {/* Card 4: Request Status / Cycle Health */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
               <PieChart className="w-3.5 h-3.5 text-slate-400" />
-              CYCLE HEALTH
+              {isEmployee ? 'REQUEST STATUS' : 'CYCLE HEALTH'}
             </span>
-            <span className="text-[10px] font-mono text-slate-400">ACTIVE</span>
+            <span className="text-[10px] font-mono text-slate-400">
+              {isEmployee ? (pendingCount > 0 ? 'PENDING' : 'ACTIVE') : 'ACTIVE'}
+            </span>
           </div>
 
           <div className="my-2">
             <div className="text-sm font-bold text-slate-800">
-              {advances.length} Active Records
+              {isEmployee 
+                ? (pendingCount > 0 ? `${pendingCount} Under Review` : activeCount > 0 ? 'Active Repayment' : 'No Active Advances')
+                : `${advances.length} Active Records`}
             </div>
             <div className="text-xs text-slate-400 font-mono mt-0.5">
-              100% tenant reconciled
+              {isEmployee 
+                ? (pendingCount > 0 ? 'Awaiting supervisor approval' : 'Direct payroll amortization')
+                : '100% tenant reconciled'}
             </div>
           </div>
 
           <div className="text-[10px] text-slate-400 font-mono border-t border-slate-100 pt-1">
-            Reconciliation Engine: Synchronous
+            {isEmployee ? 'Auto-reconciles on cycle cut' : 'Reconciliation Engine: Synchronous'}
           </div>
         </div>
       </div>
@@ -329,10 +373,12 @@ export const AdvanceMoney = () => {
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                Active Advance Register &amp; Amortization
+                {isEmployee ? 'My Salary Advance Requests & Deductions' : 'Active Advance Register & Amortization'}
               </h2>
               <p className="text-xs text-slate-500">
-                Direct payroll amortization schedule per individual employee.
+                {isEmployee 
+                  ? 'Personal amortization schedule, deduction amounts, and status history.'
+                  : 'Direct payroll amortization schedule per individual employee.'}
               </p>
             </div>
           </div>
@@ -343,7 +389,7 @@ export const AdvanceMoney = () => {
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search employee or ID..."
+                placeholder={isEmployee ? "Search advances..." : "Search employee or ID..."}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 w-48 sm:w-56"
@@ -517,10 +563,12 @@ export const AdvanceMoney = () => {
                 <Inbox className="w-6 h-6" />
               </div>
               <h3 className="text-sm font-bold text-slate-800 mb-1">
-                No active salary advances for this cycle
+                {isEmployee ? 'No salary advance requests for this cycle' : 'No active salary advances for this cycle'}
               </h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto mb-4">
-                Click the button below to disburse and schedule a salary advance for your enrolled staff.
+                {isEmployee 
+                  ? 'Submit a salary advance request using the button below for supervisor review.'
+                  : 'Click the button below to disburse and schedule a salary advance for your enrolled staff.'}
               </p>
               <button
                 type="button"
@@ -528,7 +576,7 @@ export const AdvanceMoney = () => {
                 className="px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs inline-flex items-center gap-2 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                Issue First Advance
+                {isEmployee ? 'Request Advance Money' : 'Issue First Advance'}
               </button>
             </div>
           )}
@@ -537,7 +585,7 @@ export const AdvanceMoney = () => {
         {/* Footer */}
         <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
           <div>
-            Showing {filteredAdvances.length} active advance entries
+            Showing {filteredAdvances.length} {isEmployee ? 'personal advance entry(s)' : 'active advance entries'}
           </div>
           <div className="text-[11px] text-slate-400 font-mono">
             Direct Amortization Active
@@ -545,14 +593,14 @@ export const AdvanceMoney = () => {
         </div>
       </div>
 
-      {/* Modal: Issue Salary Advance */}
+      {/* Modal: Issue / Request Salary Advance */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-xl border border-slate-200 p-6 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <Banknote className="w-4 h-4 text-blue-600" />
-                {isAdmin ? 'Issue Salary Advance' : 'Apply for Salary Advance'}
+                {isEmployee ? 'Request Salary Advance' : 'Issue Salary Advance'}
               </h3>
               <button 
                 type="button" 
@@ -566,28 +614,40 @@ export const AdvanceMoney = () => {
             <form onSubmit={handleIssueAdvance} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  {isAdmin ? 'Select Enrolled Employee *' : 'Employee *'}
+                  {isEmployee ? 'Applicant Profile' : 'Select Enrolled Employee *'}
                 </label>
-                {employees.length > 0 ? (
-                  isEmployee ? (
-                    <div className="px-3.5 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800">
-                      {employees.find(e => e.id === newAdvance.employeeId)?.first_name || user?.name || 'Self'} (
-                      {employees.find(e => e.id === newAdvance.employeeId)?.employee_code || user?.employee_code || 'EMP'})
+                {isEmployee ? (
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs">
+                        {(user?.name || 'EM').split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="font-bold text-slate-900 text-xs sm:text-sm">
+                          {user?.name || 'Employee'}
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono">
+                          {user?.employee_code || (user?.employee_id ? `EMP-${user.employee_id.slice(0,4)}` : 'STAFF')} • {user?.email || 'Active Employee'}
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <select
-                      required
-                      value={newAdvance.employeeId}
-                      onChange={(e) => setNewAdvance({ ...newAdvance, employeeId: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    >
-                      {employees.map(emp => (
-                        <option key={emp.id} value={emp.id}>
-                          {emp.first_name} {emp.last_name} ({emp.employee_code || 'EMP'}) — {emp.department || 'General'}
-                        </option>
-                      ))}
-                    </select>
-                  )
+                    <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+                      Applicant
+                    </span>
+                  </div>
+                ) : employees.length > 0 ? (
+                  <select
+                    required
+                    value={newAdvance.employeeId}
+                    onChange={(e) => setNewAdvance({ ...newAdvance, employeeId: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  >
+                    {employees.map(emp => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.first_name} {emp.last_name} ({emp.employee_code || 'EMP'}) — {emp.department || 'General'}
+                      </option>
+                    ))}
+                  </select>
                 ) : (
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center justify-between">
                     <span>No enrolled employees found.</span>
