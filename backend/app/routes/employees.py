@@ -65,10 +65,37 @@ async def create_employee(
         "employee_code": payload.employee_code
     })
     if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Employee code '{payload.employee_code}' already exists in your organization."
-        )
+        if existing.get("is_active") is False:
+            # Stale soft-deleted employee: purge completely to allow clean re-enrollment
+            await store.delete_many("employees", {"id": existing["id"], "organization_id": org_id})
+            await store.delete_many("users", {"employee_id": existing["id"], "organization_id": org_id})
+            if existing.get("email"):
+                await store.delete_many("users", {"email": existing["email"], "organization_id": org_id})
+            await store.delete_many("attendance", {"employee_id": existing["id"], "organization_id": org_id})
+            if existing.get("employee_code"):
+                await store.delete_many("kiosk_stream", {"employee_code": existing.get("employee_code"), "organization_id": org_id})
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Employee code '{payload.employee_code}' already exists in your organization."
+            )
+
+    # Check unique email within organization
+    if payload.email:
+        existing_email_emp = await store.find_one("employees", {
+            "organization_id": org_id,
+            "email": payload.email
+        })
+        if existing_email_emp:
+            if existing_email_emp.get("is_active") is False:
+                await store.delete_many("employees", {"id": existing_email_emp["id"], "organization_id": org_id})
+                await store.delete_many("users", {"employee_id": existing_email_emp["id"], "organization_id": org_id})
+                await store.delete_many("users", {"email": payload.email, "organization_id": org_id})
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"An employee with email '{payload.email}' already exists in your organization."
+                )
 
     emp_dict = Employee(
         organization_id=org_id,
@@ -201,34 +228,32 @@ async def delete_employee(
     employee_id: str,
     auth_ctx: Dict[str, Any] = Depends(require_org_admin)
 ):
-    """Soft deletes or deactivates an employee, clears biometric embeddings, and purges today's active punches."""
+    """Completely and permanently removes an employee and all associated credentials/records from the database."""
     org_id = auth_ctx["org_id"]
     emp = await store.find_one("employees", {"id": employee_id, "organization_id": org_id})
     if not emp:
-        raise HTTPException(status_code=404, detail="Employee not found")
+        emp = await store.find_one("employees", {"id": employee_id})
+        if not emp:
+            raise HTTPException(status_code=404, detail="Employee not found")
 
-    await store.update_one("employees", {"id": employee_id, "organization_id": org_id}, {
-        "is_active": False,
-        "face_embeddings": []
-    })
+    emp_email = emp.get("email")
+    emp_code = emp.get("employee_code")
 
-    if emp.get("email"):
-        await store.update_one("users", {
-            "email": emp["email"],
-            "organization_id": org_id
-        }, {"is_active": False})
+    # 1. Completely delete employee document from DB
+    await store.delete_many("employees", {"id": employee_id, "organization_id": org_id})
+    await store.delete_many("employees", {"id": employee_id})
 
-    now_local = datetime.now(timezone.utc).astimezone(IST_TZ)
-    today_str = now_local.strftime("%Y-%m-%d")
-    await store.delete_many("attendance", {
-        "organization_id": org_id,
-        "employee_id": employee_id,
-        "date": today_str
-    })
-    if emp.get("employee_code"):
-        await store.delete_many("kiosk_stream", {
-            "organization_id": org_id,
-            "employee_code": emp.get("employee_code")
-        })
+    # 2. Completely delete associated user account from DB
+    if emp_email:
+        await store.delete_many("users", {"email": emp_email})
+    await store.delete_many("users", {"employee_id": employee_id})
 
-    return {"status": "success", "message": "Employee removed and access revoked successfully."}
+    # 3. Completely delete attendance records, kiosk stream, advances, overrides, and leaves
+    await store.delete_many("attendance", {"employee_id": employee_id})
+    if emp_code:
+        await store.delete_many("kiosk_stream", {"employee_code": emp_code})
+    await store.delete_many("advances", {"employee_id": employee_id})
+    await store.delete_many("manual_overrides", {"employee_id": employee_id})
+    await store.delete_many("leaves", {"employee_id": employee_id})
+
+    return {"status": "success", "message": "Employee and all associated records permanently removed from database."}
