@@ -662,14 +662,6 @@ export const AdminDashboard = () => {
         )}
       </div>
 
-      <EnrollEmployeeModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onEmployeeCreated={() => {
-          fetchDashboardData();
-        }}
-      />
-
       {/* Edit Employee Modal with Permissions */}
       {editingEmployee && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
