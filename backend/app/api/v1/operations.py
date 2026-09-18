@@ -472,6 +472,21 @@ class SalaryDisbursementPayload(BaseModel):
     logged_hours: Optional[float] = None
     hourly_rate: Optional[float] = None
     days_present: Optional[int] = None
+    half_days: Optional[int] = None
+    leave_days: Optional[int] = None
+    working_days: Optional[int] = None
+    allowance: Optional[float] = None
+    incentive: Optional[float] = None
+    others_earnings: Optional[float] = None
+    paid_salary: Optional[float] = None
+    advance_repayment: Optional[float] = None
+    other_deductions: Optional[float] = None
+    total_earnings: Optional[float] = None
+    total_deductions: Optional[float] = None
+    net_pay_words: Optional[str] = None
+    hours_salary: Optional[float] = None
+    day_salary: Optional[float] = None
+    half_day_salary: Optional[float] = None
 
 async def check_and_create_overdue_punch_reminders(org_id: str, emp_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """
@@ -617,6 +632,21 @@ async def disburse_salary(
     emp_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
     net_amount = payload.net_salary if payload.net_salary is not None else payload.amount
 
+    from app.api.v1.payroll import number_to_indian_words
+    net_words = payload.net_pay_words or number_to_indian_words(net_amount)
+    
+    tot_earn = payload.total_earnings if payload.total_earnings is not None else (
+        (payload.base_salary or emp.get("base_salary", 40000.0)) + 
+        (payload.overtime_pay or 0.0) + 
+        (payload.performance_bonus or 0.0) + 
+        (payload.allowance or 0.0)
+    )
+    tot_ded = payload.total_deductions if payload.total_deductions is not None else (
+        (payload.advance_deduction or 0.0) + 
+        (payload.statutory_deductions or emp.get("statutory_deductions", 3000.0)) + 
+        (payload.other_deductions or 0.0)
+    )
+
     # 1. Create a persistent salary disbursement transaction record
     disb_record = {
         "id": f"PAY-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{emp.get('employee_code', 'EMP')}",
@@ -626,16 +656,33 @@ async def disburse_salary(
         "employee_code": emp.get("employee_code"),
         "cycle": payload.cycle,
         "base_salary": payload.base_salary or emp.get("base_salary", 40000.0),
+        "basic_salary": payload.base_salary or emp.get("base_salary", 40000.0),
         "overtime_pay": payload.overtime_pay or 0.0,
         "bonus": payload.performance_bonus or 0.0,
-        "advance_deduction": payload.advance_deduction or 0.0,
+        "allowance": payload.allowance or 0.0,
+        "incentive": payload.incentive or payload.performance_bonus or 0.0,
+        "others_earnings": payload.others_earnings or payload.overtime_pay or 0.0,
+        "advance_deduction": payload.advance_deduction or payload.advance_repayment or 0.0,
+        "advance_repayment": payload.advance_repayment or payload.advance_deduction or 0.0,
         "statutory_deductions": payload.statutory_deductions or emp.get("statutory_deductions", 3000.0),
+        "paid_salary": payload.paid_salary or payload.statutory_deductions or emp.get("statutory_deductions", 3000.0),
+        "other_deductions": payload.other_deductions or 0.0,
+        "total_earnings": tot_earn,
+        "total_deductions": tot_ded,
         "net_salary": net_amount,
+        "net_pay": net_amount,
+        "net_pay_words": net_words,
         "employment_type": payload.employment_type or emp.get("employment_type", "FULL_TIME"),
         "calculation_basis": payload.calculation_basis,
         "logged_hours": payload.logged_hours,
-        "hourly_rate": payload.hourly_rate,
-        "days_present": payload.days_present,
+        "hourly_rate": payload.hourly_rate or emp.get("hourly_rate", 250.0),
+        "hours_salary": payload.hours_salary or payload.hourly_rate or emp.get("hourly_rate", 250.0),
+        "day_salary": payload.day_salary or emp.get("daily_wage_rate", 600.0),
+        "half_day_salary": payload.half_day_salary or emp.get("half_day_salary", 300.0),
+        "days_present": payload.days_present or 0,
+        "half_days": payload.half_days or 0,
+        "leave_days": payload.leave_days or 0,
+        "working_days": payload.working_days or payload.days_present or 0,
         "status": "PAID",
         "disbursed_by": admin_name,
         "disbursed_at": datetime.utcnow().isoformat(),

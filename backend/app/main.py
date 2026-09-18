@@ -9,6 +9,8 @@ from app.api.v1.employees import router as employees_router
 from app.api.v1.reports import attendance_router, reports_router
 from app.api.v1.organizations import router as org_router
 from app.api.v1.operations import operations_router
+from app.api.v1.payroll import payroll_router
+from app.api.v1.financial_entries import financial_entries_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -49,6 +51,8 @@ app.include_router(attendance_router, prefix=settings.API_V1_STR)
 app.include_router(org_router, prefix=settings.API_V1_STR)
 app.include_router(reports_router, prefix=settings.API_V1_STR)
 app.include_router(operations_router, prefix=settings.API_V1_STR)
+app.include_router(payroll_router, prefix=settings.API_V1_STR)
+app.include_router(financial_entries_router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 def root():

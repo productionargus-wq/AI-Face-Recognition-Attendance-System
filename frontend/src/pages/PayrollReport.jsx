@@ -22,23 +22,117 @@ import {
   Edit3,
   Send,
   FileText,
-  X
+  X,
+  Plus,
+  Trash2,
+  Users,
+  RefreshCw,
+  FileDown,
+  ArrowLeft,
+  ChevronDown,
+  Building2
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 
+// Number to Indian English words converter (e.g. 94 -> 'Ninety Four Rupees Only')
+function numberToIndianWords(num) {
+  if (num == null || isNaN(num)) return "Zero Rupees Only";
+  const val = Math.round(Number(num) * 100) / 100;
+  if (val < 0) return `Minus ${numberToIndianWords(-val)}`;
+  let rupees = Math.floor(val);
+  const paise = Math.round((val - rupees) * 100);
+
+  if (rupees === 0 && paise === 0) return "Zero Rupees Only";
+
+  const units = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+                 "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+  function convertTwoDigits(n) {
+    if (n < 20) return units[n];
+    const rem = n % 10;
+    return tens[Math.floor(n / 10)] + (rem > 0 ? ` ${units[rem]}` : "");
+  }
+
+  function convertThreeDigits(n) {
+    let res = "";
+    const h = Math.floor(n / 100);
+    const rem = n % 100;
+    if (h > 0) {
+      res += `${units[h]} Hundred`;
+      if (rem > 0) res += " and ";
+    }
+    if (rem > 0) {
+      res += convertTwoDigits(rem);
+    }
+    return res;
+  }
+
+  const parts = [];
+  const crores = Math.floor(rupees / 10000000);
+  rupees %= 10000000;
+  if (crores > 0) parts.push(`${convertThreeDigits(crores)} Crore`);
+
+  const lakhs = Math.floor(rupees / 100000);
+  rupees %= 100000;
+  if (lakhs > 0) parts.push(`${convertTwoDigits(lakhs)} Lakh`);
+
+  const thousands = Math.floor(rupees / 1000);
+  rupees %= 1000;
+  if (thousands > 0) parts.push(`${convertTwoDigits(thousands)} Thousand`);
+
+  if (rupees > 0) parts.push(convertThreeDigits(rupees));
+
+  const rupeesStr = parts.join(" ").trim() || "Zero";
+  let result = `${rupeesStr} Rupees`;
+  if (paise > 0) {
+    result += ` and ${convertTwoDigits(paise)} Paise`;
+  }
+  return `${result} Only`;
+}
+
+// Generate cycle dropdown options for last 12 months
+function getCycleOptions() {
+  const options = [];
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const val = `${year}-${month}`;
+    const label = d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    options.push({ value: val, label });
+  }
+  return options;
+}
+
 export const PayrollReport = () => {
   const { user, organization } = useAuth();
   const isEmployee = user?.role === 'employee' || user?.role === 'staff';
+
+  const cycleOptions = useMemo(() => getCycleOptions(), []);
+  const [selectedCycle, setSelectedCycle] = useState(cycleOptions[0]?.value || '2026-09');
+
+  // View Mode: 'individual' (Employee Ledger) or 'register' (Master Register)
+  const [activeTab, setActiveTab] = useState('individual');
 
   const [employees, setEmployees] = useState([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [advances, setAdvances] = useState([]);
+  const [financialEntries, setFinancialEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
   const [payoutApproved, setPayoutApproved] = useState(false);
+
+  // Master Register State
+  const [payrollRegister, setPayrollRegister] = useState([]);
+  const [loadingRegister, setLoadingRegister] = useState(false);
+  const [registerSearch, setRegisterSearch] = useState('');
+  const [batchDisbursing, setBatchDisbursing] = useState(false);
+  const [batchDisburseSuccess, setBatchDisburseSuccess] = useState('');
 
   // Payout history & slip modal
   const [payoutHistory, setPayoutHistory] = useState([]);
@@ -56,6 +150,12 @@ export const PayrollReport = () => {
   const [advanceDeduction, setAdvanceDeduction] = useState(0);
   const [statutoryDeductions, setStatutoryDeductions] = useState(3000);
 
+  // Manual Adjustments Form State
+  const [newFinType, setNewFinType] = useState('BONUS');
+  const [newFinAmount, setNewFinAmount] = useState('');
+  const [newFinReason, setNewFinReason] = useState('');
+  const [addingFinEntry, setAddingFinEntry] = useState(false);
+
   const [savingPayroll, setSavingPayroll] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -65,6 +165,46 @@ export const PayrollReport = () => {
   useEffect(() => {
     fetchInitialData();
   }, []);
+
+  // When cycle changes, reload attendance, financial entries, and register
+  useEffect(() => {
+    if (selectedEmployeeId) {
+      fetchEmployeeAttendance(selectedEmployeeId, selectedCycle);
+      fetchFinancialEntries(selectedEmployeeId, selectedCycle);
+    }
+    if (activeTab === 'register' && !isEmployee) {
+      fetchPayrollRegister(selectedCycle);
+    }
+  }, [selectedCycle]);
+
+  // When activeTab changes to register, fetch master register
+  useEffect(() => {
+    if (activeTab === 'register' && !isEmployee) {
+      fetchPayrollRegister(selectedCycle);
+    }
+  }, [activeTab]);
+
+  const fetchPayrollRegister = async (cycle) => {
+    setLoadingRegister(true);
+    try {
+      const res = await api.get(`/payroll/register?cycle=${cycle}`);
+      setPayrollRegister(res.data || []);
+    } catch (err) {
+      console.error('Failed to load payroll register', err);
+      setPayrollRegister([]);
+    } finally {
+      setLoadingRegister(false);
+    }
+  };
+
+  const fetchFinancialEntries = async (empId, cycle) => {
+    try {
+      const res = await api.get(`/financial-entries?employee_id=${empId}&cycle=${cycle}`);
+      setFinancialEntries(res.data || []);
+    } catch (err) {
+      setFinancialEntries([]);
+    }
+  };
 
   const fetchPayoutHistory = async (empId) => {
     try {
@@ -108,7 +248,8 @@ export const PayrollReport = () => {
         if (myEmp) {
           setEmployees([myEmp]);
           setSelectedEmployeeId(myEmp.id);
-          fetchEmployeeAttendance(myEmp.id);
+          fetchEmployeeAttendance(myEmp.id, selectedCycle);
+          fetchFinancialEntries(myEmp.id, selectedCycle);
           fetchPayoutHistory(myEmp.id);
         }
         setAdvances(advRes.data || []);
@@ -125,7 +266,8 @@ export const PayrollReport = () => {
         if (empList.length > 0) {
           const initialEmp = empList[0];
           setSelectedEmployeeId(initialEmp.id);
-          fetchEmployeeAttendance(initialEmp.id);
+          fetchEmployeeAttendance(initialEmp.id, selectedCycle);
+          fetchFinancialEntries(initialEmp.id, selectedCycle);
           fetchPayoutHistory(initialEmp.id);
         }
       }
@@ -136,13 +278,22 @@ export const PayrollReport = () => {
     }
   };
 
-  const fetchEmployeeAttendance = async (empId) => {
+  const fetchEmployeeAttendance = async (empId, cycle) => {
     try {
-      const res = await api.get(`/attendance/history?employee_id=${empId}`).catch(async () => {
-        // Fallback to today attendance filter if history query differs
-        const todayRes = await api.get('/attendance/today');
-        const list = (todayRes.data?.records || []).filter(r => r.employee_id === empId);
-        return { data: list };
+      const parts = (cycle || '2026-09').split('-');
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const lastDay = new Date(y, m, 0).getDate();
+      const startDate = `${cycle}-01`;
+      const endDate = `${cycle}-${String(lastDay).padStart(2, '0')}`;
+
+      const res = await api.get(`/attendance/history?employee_id=${empId}&start_date=${startDate}&end_date=${endDate}`).catch(async () => {
+        const fallback = await api.get(`/attendance/history?employee_id=${empId}`).catch(async () => {
+          const todayRes = await api.get('/attendance/today');
+          const list = (todayRes.data?.records || []).filter(r => r.employee_id === empId);
+          return { data: list };
+        });
+        return fallback;
       });
       setAttendanceRecords(res.data || []);
     } catch (err) {
@@ -152,7 +303,8 @@ export const PayrollReport = () => {
 
   const handleEmployeeSelect = (empId) => {
     setSelectedEmployeeId(empId);
-    fetchEmployeeAttendance(empId);
+    fetchEmployeeAttendance(empId, selectedCycle);
+    fetchFinancialEntries(empId, selectedCycle);
     fetchPayoutHistory(empId);
   };
 
@@ -168,7 +320,7 @@ export const PayrollReport = () => {
     statutory_deductions: 3000
   } : null);
 
-  // Synchronize compensation fields whenever the selected employee or attendance data changes
+  // Synchronize compensation fields whenever selected employee, attendance, advances, or cycle change
   useEffect(() => {
     if (!selectedEmployee) return;
 
@@ -195,7 +347,7 @@ export const PayrollReport = () => {
     setPayoutApproved(false);
     setSaveSuccess('');
     setSaveError('');
-  }, [selectedEmployeeId, attendanceRecords, advances]);
+  }, [selectedEmployeeId, attendanceRecords, advances, selectedCycle]);
 
   // Filtered employees based on search input
   const filteredEmployees = useMemo(() => {
@@ -248,7 +400,6 @@ export const PayrollReport = () => {
       };
       await api.put(`/employees/${selectedEmployee.id}`, payload);
 
-      // Update in-memory employees array
       setEmployees(prev => prev.map(e => e.id === selectedEmployee.id ? { ...e, ...payload } : e));
       setSaveSuccess(`Payroll compensation settings for ${selectedEmployee.first_name} ${selectedEmployee.last_name} saved to database.`);
       setTimeout(() => setSaveSuccess(''), 4000);
@@ -259,12 +410,62 @@ export const PayrollReport = () => {
     }
   };
 
-  // Attendance stats
+  // Add Manual Financial Entry (Bonus, Deduction, Reimbursement)
+  const handleAddFinancialEntry = async (e) => {
+    e.preventDefault();
+    if (!newFinAmount || Number(newFinAmount) <= 0) {
+      alert("Please enter a valid amount greater than 0.");
+      return;
+    }
+    if (!selectedEmployee) return;
+
+    setAddingFinEntry(true);
+    try {
+      const payload = {
+        employee_id: selectedEmployee.id,
+        type: newFinType,
+        amount: Number(newFinAmount),
+        cycle: selectedCycle,
+        reason: newFinReason.trim()
+      };
+      await api.post('/financial-entries', payload);
+      setNewFinAmount('');
+      setNewFinReason('');
+      fetchFinancialEntries(selectedEmployee.id, selectedCycle);
+      setSaveSuccess(`Added ${newFinType} adjustment of ₹${Number(newFinAmount).toLocaleString('en-IN')}.`);
+      setTimeout(() => setSaveSuccess(''), 4000);
+    } catch (err) {
+      alert(err.response?.data?.detail || "Failed to add manual adjustment.");
+    } finally {
+      setAddingFinEntry(false);
+    }
+  };
+
+  const handleDeleteFinancialEntry = async (entryId) => {
+    if (!window.confirm("Remove this financial adjustment?")) return;
+    try {
+      await api.delete(`/financial-entries/${entryId}`);
+      if (selectedEmployee) {
+        fetchFinancialEntries(selectedEmployee.id, selectedCycle);
+      }
+    } catch (err) {
+      alert("Failed to delete adjustment entry.");
+    }
+  };
+
+  // Attendance metrics
   const presentDays = attendanceRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE').length;
   const halfDaysCount = attendanceRecords.filter(r => r.status === 'HALF_DAY').length;
   const effectivePresentDays = presentDays + (0.5 * halfDaysCount);
   const totalLoggedHours = attendanceRecords.reduce((acc, curr) => acc + (Number(curr.total_hours) || 0), 0);
   const paidLeavesCount = attendanceRecords.filter(r => r.status === 'LEAVE').length;
+  const workingDaysCount = presentDays + halfDaysCount;
+  const leaveDaysCount = Math.max(0, 26 - workingDaysCount);
+
+  // Manual financial entry totals
+  const manualBonuses = financialEntries.filter(e => e.type === 'BONUS').reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
+  const manualReimbursements = financialEntries.filter(e => e.type === 'REIMBURSEMENT').reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
+  const manualDeductions = financialEntries.filter(e => e.type === 'DEDUCTION').reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
 
   // Employment Type & Multi-Model Basis
   const empType = selectedEmployee?.employment_type || 'FULL_TIME';
@@ -282,6 +483,7 @@ export const PayrollReport = () => {
   let calculationBasis = '';
   let effectiveHourlyRate = numHourlyRate;
   let effectiveDailyRate = selectedEmployee?.daily_wage_rate || 650;
+  let effectiveHalfDaySalary = selectedEmployee?.half_day_salary || Math.round(effectiveDailyRate / 2);
   let absentDays = 0;
   let lossOfPay = 0;
 
@@ -291,15 +493,16 @@ export const PayrollReport = () => {
     calculationBasis = `${totalLoggedHours.toFixed(1)} hrs logged × ₹${effectiveHourlyRate}/hr (Hourly Part-Time Basis)`;
   } else if (empType === 'DAILY_WAGE') {
     effectiveDailyRate = selectedEmployee?.daily_wage_rate || (numBaseSalary > 0 ? Math.round(numBaseSalary / 26) : 650);
-    earnedBasePay = Math.round((presentDays * effectiveDailyRate) + (halfDaysCount * effectiveDailyRate * 0.5));
+    effectiveHalfDaySalary = selectedEmployee?.half_day_salary || Math.round(effectiveDailyRate / 2);
+    earnedBasePay = Math.round((presentDays * effectiveDailyRate) + (halfDaysCount * effectiveHalfDaySalary));
     calculationBasis = halfDaysCount > 0
-      ? `${presentDays} Full Days + ${halfDaysCount} Half-Days (${effectivePresentDays} eff. days) × ₹${effectiveDailyRate}/day (Daily Wage Basis)`
+      ? `${presentDays} Full Days (@₹${effectiveDailyRate}) + ${halfDaysCount} Half-Days (@₹${effectiveHalfDaySalary})`
       : `${presentDays} Days Present × ₹${effectiveDailyRate}/day (Daily Wage Basis)`;
   } else if (empType === 'FIELD_WORKER') {
     earnedBasePay = numBaseSalary;
     calculationBasis = `Field Worker Base Pay: ₹${numBaseSalary.toLocaleString('en-IN')} (Includes designated client project site visits)`;
   } else {
-    // FULL_TIME Office Staff (9 AM - 6 PM)
+    // FULL_TIME Office Staff
     const standardDays = 26;
     const perDayRate = Math.round(numBaseSalary / standardDays);
     absentDays = Math.max(0, Math.round((standardDays - effectivePresentDays - paidLeavesCount) * 10) / 10);
@@ -311,40 +514,61 @@ export const PayrollReport = () => {
   }
 
   const overtimePay = Math.round(numOvertimeHours * (effectiveHourlyRate || 250) * 1.5);
-  const grossPay = Math.round(earnedBasePay + overtimePay + numPerformanceBonus);
-  const totalDeductions = Math.round(numAdvanceDeduction + numStatutoryDeductions);
+  const totalIncentive = Math.round(numPerformanceBonus + manualBonuses);
+  const totalAllowance = Math.round(manualReimbursements);
+  const grossPay = Math.round(earnedBasePay + overtimePay + totalIncentive + totalAllowance);
+  const totalDeductions = Math.round(numAdvanceDeduction + numStatutoryDeductions + manualDeductions);
   const netTakeHome = Math.max(0, grossPay - totalDeductions);
+  const netPayWords = numberToIndianWords(netTakeHome);
 
+  // Disburse Single Employee Salary
   const handleDisburseSalary = async () => {
     if (!selectedEmployee) return;
     setDisbursing(true);
     setSaveSuccess('');
     setSaveError('');
     try {
-      const currentCycle = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      const selectedOption = cycleOptions.find(o => o.value === selectedCycle);
+      const cycleDisplay = selectedOption?.label || selectedCycle;
+
       const payload = {
         employee_id: selectedEmployee.id,
-        cycle: currentCycle,
+        cycle: cycleDisplay,
         amount: netTakeHome,
         base_salary: earnedBasePay,
+        basic_salary: earnedBasePay,
         overtime_pay: overtimePay,
-        performance_bonus: numPerformanceBonus,
+        performance_bonus: totalIncentive,
+        incentive: totalIncentive,
+        allowance: totalAllowance,
+        others_earnings: overtimePay,
         advance_deduction: numAdvanceDeduction,
+        advance_repayment: numAdvanceDeduction,
         statutory_deductions: numStatutoryDeductions,
+        paid_salary: numStatutoryDeductions,
+        other_deductions: manualDeductions,
+        total_earnings: grossPay,
+        total_deductions: totalDeductions,
         net_salary: netTakeHome,
+        net_pay: netTakeHome,
+        net_pay_words: netPayWords,
         employment_type: empType,
         calculation_basis: calculationBasis,
         logged_hours: totalLoggedHours,
         hourly_rate: effectiveHourlyRate,
-        days_present: presentDays
+        hours_salary: effectiveHourlyRate,
+        day_salary: effectiveDailyRate,
+        half_day_salary: effectiveHalfDaySalary,
+        days_present: presentDays,
+        half_days: halfDaysCount,
+        leave_days: leaveDaysCount,
+        working_days: workingDaysCount
       };
       await api.post('/notifications/disburse-salary', payload);
       setPayoutSuccess(true);
-      setSaveSuccess(`Salary of ₹${netTakeHome.toLocaleString('en-IN')}.00 successfully credited to ${selectedEmployee.first_name} ${selectedEmployee.last_name}. Credit notification dispatched.`);
+      setSaveSuccess(`Salary of ₹${netTakeHome.toLocaleString('en-IN')}.00 successfully credited to ${selectedEmployee.first_name} ${selectedEmployee.last_name}. Notification dispatched.`);
       fetchPayoutHistory(selectedEmployee.id);
-      setTimeout(() => {
-        setPayoutSuccess(false);
-      }, 5000);
+      setTimeout(() => setPayoutSuccess(false), 5000);
     } catch (err) {
       setSaveError(err.response?.data?.detail || 'Failed to disburse salary.');
     } finally {
@@ -352,28 +576,162 @@ export const PayrollReport = () => {
     }
   };
 
+  // Batch Disburse All Pending Employees in Cycle
+  const handleBatchDisburse = async () => {
+    if (!window.confirm(`Are you sure you want to execute batch salary disbursement for all pending staff for cycle ${selectedCycle}?`)) {
+      return;
+    }
+    setBatchDisbursing(true);
+    setBatchDisburseSuccess('');
+    try {
+      const res = await api.post(`/payroll/batch-disburse?cycle=${selectedCycle}`);
+      setBatchDisburseSuccess(res.data?.message || 'Batch disbursement completed successfully.');
+      fetchPayrollRegister(selectedCycle);
+      if (selectedEmployee) {
+        fetchPayoutHistory(selectedEmployee.id);
+      }
+      setTimeout(() => setBatchDisburseSuccess(''), 6000);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to execute batch disbursement.');
+    } finally {
+      setBatchDisbursing(false);
+    }
+  };
+
+  // Download Bank NEFT Advice Sheet as CSV
+  const handleDownloadBankAdvice = async () => {
+    try {
+      const res = await api.get(`/payroll/bank-advice?cycle=${selectedCycle}`);
+      const data = res.data || [];
+      if (data.length === 0) {
+        alert("No employee records found for bank advice.");
+        return;
+      }
+      const headers = ["Employee Code", "Employee Name", "Account Holder Name", "Bank Name", "Account Number", "IFSC Code", "UPI Number", "Net Payable (INR)", "Payment Cycle", "Status"];
+      const rows = data.map(d => [
+        d.employee_code,
+        `"${(d.employee_name || '').replace(/"/g, '""')}"`,
+        `"${(d.account_holder_name || '').replace(/"/g, '""')}"`,
+        `"${(d.bank_name || '').replace(/"/g, '""')}"`,
+        `"${(d.account_number || '').replace(/"/g, '""')}"`,
+        `"${(d.ifsc_code || '').replace(/"/g, '""')}"`,
+        `"${(d.upi_number || '').replace(/"/g, '""')}"`,
+        d.net_payable,
+        d.cycle,
+        d.status
+      ]);
+      const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `argus_bank_advice_${selectedCycle}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("Failed to download bank advice", err);
+      alert("Failed to generate bank advice sheet.");
+    }
+  };
+
+  // Filtered attendance records
   const filteredLogs = attendanceRecords.filter(log => {
     if (activeFilter === 'Paid Leaves') return log.status === 'LEAVE';
     if (activeFilter === 'Overtime') return (log.total_hours || 0) > 8;
     return true;
   });
 
+  // Filtered Register Records
+  const filteredRegister = useMemo(() => {
+    if (!registerSearch.trim()) return payrollRegister;
+    const term = registerSearch.toLowerCase();
+    return payrollRegister.filter(r => 
+      (r.employee_name || '').toLowerCase().includes(term) ||
+      (r.employee_code || '').toLowerCase().includes(term) ||
+      (r.department || '').toLowerCase().includes(term)
+    );
+  }, [payrollRegister, registerSearch]);
+
+  const pendingRegisterCount = payrollRegister.filter(r => r.payout_status !== 'PAID').length;
+
+  // Construct active slip object for live preview
+  const livePreviewSlip = useMemo(() => {
+    if (!selectedEmployee) return null;
+    const parts = (selectedCycle || '2026-09').split('-');
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    const daysInMonth = new Date(y, m, 0).getDate();
+
+    const hoursInt = Math.floor(totalLoggedHours);
+    const minsInt = Math.round((totalLoggedHours - hoursInt) * 60);
+    const formattedHrs = `${String(hoursInt).padStart(2, '0')}:${String(minsInt).padStart(2, '0')}`;
+
+    return {
+      id: `PREVIEW-${selectedEmployee.employee_code || 'EMP'}`,
+      employee_name: `${selectedEmployee.first_name || ''} ${selectedEmployee.last_name || ''}`.trim(),
+      employee_code: selectedEmployee.employee_code || 'EMP',
+      aadhar_number: selectedEmployee.aadhar_number || selectedEmployee.employee_code || '—',
+      designation: selectedEmployee.designation || selectedEmployee.department || 'Production',
+      phone: selectedEmployee.phone || '—',
+      cycle: selectedCycle,
+      total_days_of_month: daysInMonth,
+      total_working_hours_formatted: formattedHrs,
+      logged_hours: totalLoggedHours,
+      hours_salary: effectiveHourlyRate,
+      day_salary: effectiveDailyRate,
+      half_day_salary: effectiveHalfDaySalary,
+      working_days: workingDaysCount,
+      leave_days: leaveDaysCount,
+      basic_salary: earnedBasePay,
+      allowance: totalAllowance,
+      incentive: totalIncentive,
+      others_earnings: overtimePay,
+      total_earnings: grossPay,
+      paid_salary: numStatutoryDeductions,
+      advance_repayment: numAdvanceDeduction,
+      other_deductions: manualDeductions,
+      total_deductions: totalDeductions,
+      net_pay: netTakeHome,
+      net_pay_words: netPayWords,
+      status: 'PREVIEW'
+    };
+  }, [
+    selectedEmployee, selectedCycle, totalLoggedHours, effectiveHourlyRate, effectiveDailyRate, 
+    effectiveHalfDaySalary, workingDaysCount, leaveDaysCount, earnedBasePay, totalAllowance, 
+    totalIncentive, overtimePay, grossPay, numStatutoryDeductions, numAdvanceDeduction, 
+    manualDeductions, totalDeductions, netTakeHome, netPayWords
+  ]);
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
-      {/* Top Header */}
+      {/* Top Header with Billing Cycle Selector */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              {isEmployee ? 'My Salary & Payslip Details' : 'Employee Payroll & Attendance Report'}
-            </h1>
-          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+            {isEmployee ? 'My Salary & Payslip Details' : 'Workforce Payroll & Attendance Engine'}
+          </h1>
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
+            Automated biometric reconciliation, multi-model wage calculations, and bank advice
+          </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shadow-2xs">
-            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-            <span>Billing Cycle: Current Month</span>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Billing Cycle Selector Dropdown */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shadow-2xs">
+            <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span className="text-slate-500 hidden sm:inline">Cycle:</span>
+            <select
+              value={selectedCycle}
+              onChange={(e) => setSelectedCycle(e.target.value)}
+              className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer pr-1"
+            >
+              {cycleOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label} ({opt.value})
+                </option>
+              ))}
+            </select>
           </div>
           
           <div className="hidden md:flex items-center gap-2 pl-3 border-l border-slate-200">
@@ -387,6 +745,42 @@ export const PayrollReport = () => {
           </div>
         </div>
       </div>
+
+      {/* Admin Tab Switcher: Individual Ledger vs Master Payroll Register */}
+      {!isEmployee && (
+        <div className="flex flex-wrap items-center gap-2 p-1 bg-slate-100/90 rounded-2xl w-fit border border-slate-200/80">
+          <button
+            type="button"
+            onClick={() => setActiveTab('individual')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'individual'
+                ? 'bg-white text-blue-700 shadow-2xs font-extrabold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <UserCheck className="w-4 h-4" />
+            <span>Employee Salary Ledger (Individual)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('register')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'register'
+                ? 'bg-white text-blue-700 shadow-2xs font-extrabold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>Master Payroll Register (All Staff)</span>
+            {pendingRegisterCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-mono font-extrabold">
+                {pendingRegisterCount}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Save Success / Error Alerts */}
       {saveSuccess && (
@@ -403,6 +797,13 @@ export const PayrollReport = () => {
         </div>
       )}
 
+      {batchDisburseSuccess && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{batchDisburseSuccess}</span>
+        </div>
+      )}
+
       {/* Loading Indicator */}
       {loading && (
         <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-2xs">
@@ -411,662 +812,178 @@ export const PayrollReport = () => {
         </div>
       )}
 
-      {/* No Employees State (Admin Only) */}
-      {!loading && !isEmployee && employees.length === 0 && (
-        <div className="p-6 bg-white border border-slate-200 rounded-2xl text-center space-y-3">
-          <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
-            <UserPlus className="w-6 h-6" />
-          </div>
-          <h3 className="text-base font-bold text-slate-800">
-            No employees enrolled in {organization?.name || 'your organisation'} yet
-          </h3>
-          <p className="text-xs text-slate-500 max-w-md mx-auto">
-            Payroll and attendance calculations generate automatically once employees are added.
-          </p>
-          <Link
-            to="/enrollment"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs"
-          >
-            <UserPlus className="w-4 h-4" />
-            Enroll First Employee
-          </Link>
-        </div>
-      )}
-
-      {selectedEmployee && (
-        <>
-          {/* Employee Search & Selector Card */}
-          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+      {/* ------------------------------------------------------------- */}
+      {/* VIEW MODE 1: MASTER PAYROLL REGISTER (ALL STAFF) */}
+      {/* ------------------------------------------------------------- */}
+      {!loading && !isEmployee && activeTab === 'register' && (
+        <div className="space-y-4">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              {/* Employee Info Header */}
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-700 font-extrabold flex items-center justify-center text-lg border border-blue-200 shadow-2xs shrink-0">
-                  {selectedEmployee.first_name?.[0]}{selectedEmployee.last_name?.[0]}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <h2 className="text-lg font-extrabold text-slate-900">
-                      {selectedEmployee.first_name} {selectedEmployee.last_name}
-                    </h2>
-                    <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-mono font-bold text-[10px] border border-blue-200">
-                      {selectedEmployee.employee_code || 'EMP'}
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono font-bold text-[10px] border border-emerald-200">
-                      Active Workforce
-                    </span>
-                  </div>
-                  <div className="text-xs text-slate-500 font-medium flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span>Department: <span className="font-bold text-slate-800">{selectedEmployee.department || 'Operations'}</span></span>
-                    <span>•</span>
-                    <span>•</span>
-                    <span>Email: <span className="font-bold text-slate-800">{selectedEmployee.email || 'N/A'}</span></span>
-                  </div>
-                </div>
+              <div>
+                <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                  <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+                  Monthly Master Payroll Register — {selectedCycle}
+                </h2>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Full organization salary reconciliation, attendance audit, and one-click batch disbursement
+                </p>
               </div>
 
-              {/* Action Buttons: Export & Print */}
-              <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
-                {!isEmployee && (
-                  <button
-                    type="button"
-                    onClick={() => window.open(api.defaults.baseURL + '/reports/export-csv', '_blank')}
-                    className="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
-                    Export CSV
-                  </button>
-                )}
+              {/* Action Buttons: Batch Disburse, Export CSV/Excel, Bank Advice */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fetchPayrollRegister(selectedCycle)}
+                  disabled={loadingRegister}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${loadingRegister ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
 
                 <button
                   type="button"
-                  onClick={() => window.print()}
-                  className="px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  onClick={handleDownloadBankAdvice}
+                  className="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-800 flex items-center gap-1.5 shadow-2xs cursor-pointer"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  {isEmployee ? 'Print Statement' : 'Download Report'}
+                  <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                  Bank Advice (NEFT)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => window.open(`${api.defaults.baseURL}/reports/export-payroll-csv?cycle=${selectedCycle}`, '_blank')}
+                  className="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-800 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                  Export CSV
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => window.open(`${api.defaults.baseURL}/reports/export-payroll-excel?cycle=${selectedCycle}`, '_blank')}
+                  className="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-800 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-teal-600" />
+                  Export Excel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleBatchDisburse}
+                  disabled={batchDisbursing || pendingRegisterCount === 0}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition-all ${
+                    pendingRegisterCount === 0
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white'
+                  }`}
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {batchDisbursing ? 'Processing Batch...' : `Batch Disburse (${pendingRegisterCount} Pending)`}
                 </button>
               </div>
             </div>
 
-            {/* Employee Search & Select Control Bar - Admin Only */}
-            {!isEmployee && (
-              <div className="pt-3 border-t border-slate-100 flex flex-col md:flex-row items-stretch md:items-center gap-3">
-                {/* Search input */}
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search employee by name, code, or department..."
-                    className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder:text-slate-400"
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-
-                {/* Filtered Dropdown */}
-                <div className="w-full md:w-80">
-                  <select
-                    value={selectedEmployeeId}
-                    onChange={(e) => handleEmployeeSelect(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
-                  >
-                    {filteredEmployees.length > 0 ? (
-                      filteredEmployees.map(emp => (
-                        <option key={emp.id} value={emp.id}>
-                          {emp.first_name} {emp.last_name} ({emp.employee_code || 'EMP'}) — {emp.department || 'General'}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="" disabled>No matching employees found</option>
-                    )}
-                  </select>
-                </div>
-
-                <div className="text-[11px] text-slate-400 font-mono shrink-0">
-                  {filteredEmployees.length} of {employees.length} employees
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 5 KPI Metric Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-            {/* Card 1: Attendance & Leaves */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
-                  ATTENDANCE RECORD
-                </span>
-                <CheckCircle2 className="w-4 h-4 text-blue-600" />
-              </div>
-              <div className="my-2">
-                <div className="text-xl font-black text-slate-900 tracking-tight flex items-baseline flex-wrap gap-1">
-                  <span>{presentDays}</span>
-                  <span className="text-xs font-medium text-slate-500">Days Present</span>
-                  {halfDaysCount > 0 && (
-                    <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-mono font-bold border border-amber-200">
-                      +{halfDaysCount} Half-Day ({effectivePresentDays} eff.)
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="text-[10px] text-slate-500 font-mono border-t border-slate-100 pt-1 flex justify-between">
-                <span className="text-emerald-700 font-bold">Active Roster</span>
-                <span>Hours: {totalLoggedHours.toFixed(1)} hrs</span>
-              </div>
-            </div>
-
-            {/* Card 2: Performance Score */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
-                  PUNCTUALITY BONUS
-                </span>
-                <Award className="w-4 h-4 text-amber-500" />
-              </div>
-              <div className="my-2">
-                <div className="text-xl font-black text-slate-900 tracking-tight font-mono">
-                  ₹{numPerformanceBonus.toLocaleString('en-IN')}
-                </div>
-              </div>
-              <div className="text-[10px] text-slate-500 font-mono border-t border-slate-100 pt-1 flex justify-between">
-                <span className="text-blue-600 font-bold">Incentive</span>
-                <span>Audit Verified</span>
-              </div>
-            </div>
-
-            {/* Card 3: Approved Overtime */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
-                  OVERTIME LOGGED
-                </span>
-                <Clock className="w-4 h-4 text-teal-600" />
-              </div>
-              <div className="my-2">
-                <div className="text-xl font-black text-teal-700 tracking-tight font-mono">
-                  +{numOvertimeHours} <span className="text-xs font-medium text-slate-500">Extra Hours</span>
-                </div>
-              </div>
-              <div className="text-[10px] text-slate-500 font-mono border-t border-slate-100 pt-1 flex justify-between">
-                <span>1.5x Multiplier</span>
-                <span className="text-teal-700 font-bold font-mono">+₹{overtimePay.toLocaleString('en-IN')}</span>
-              </div>
-            </div>
-
-            {/* Card 4: Advance Recovery */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
-                  ADVANCE DEDUCTION
-                </span>
-                <Banknote className="w-4 h-4 text-red-500" />
-              </div>
-              <div className="my-2">
-                <div className="text-xl font-black text-red-600 tracking-tight font-mono">
-                  -₹{numAdvanceDeduction.toLocaleString('en-IN')}
-                </div>
-              </div>
-              <div className="text-[10px] text-slate-500 font-mono border-t border-slate-100 pt-1 flex justify-between">
-                <span>Scheduled Cycle</span>
-                <span className="text-slate-600 font-bold">{isEmployee ? 'Amortized' : 'Editable'}</span>
-              </div>
-            </div>
-
-            {/* Card 5: Total Net Salary */}
-            <div className="bg-[#0052cc] text-white p-4 rounded-2xl shadow-xs flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-200">
-                  TOTAL NET SALARY
-                </span>
-                <span className="px-1.5 py-0.5 rounded bg-white/20 text-white text-[9px] font-bold font-mono">
-                  Ready
-                </span>
-              </div>
-              <div className="my-2">
-                <div className="text-2xl font-black tracking-tight font-mono">
-                  ₹{netTakeHome.toLocaleString('en-IN')}
-                </div>
-              </div>
-              <div className="text-[10px] text-blue-100 font-mono border-t border-white/20 pt-1 flex justify-between">
-                <span>Base + OT - PF - Adv</span>
-                <span className="font-bold text-emerald-300">Direct Deposit</span>
-              </div>
+            {/* Search Input for Register */}
+            <div className="relative pt-2">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-5 pointer-events-none" />
+              <input
+                type="text"
+                value={registerSearch}
+                onChange={(e) => setRegisterSearch(e.target.value)}
+                placeholder="Filter register by staff name, code, or department..."
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder:text-slate-400"
+              />
             </div>
           </div>
 
-          {/* Monthly Salary Calculation Breakdown Grid */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 sm:p-7">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <CreditCard className="w-5 h-5 text-blue-600" />
-                  <h2 className="text-base font-bold text-slate-900">
-                    Monthly Salary Calculation Breakdown
-                  </h2>
-                </div>
-              </div>
-
-              {!isEmployee ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleResetDefaults}
-                    title="Reset to calculated defaults"
-                    className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-                    Reset
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleSavePayrollStructure}
-                    disabled={savingPayroll}
-                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    {savingPayroll ? 'Saving...' : 'Save Settings'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPayoutApproved(true)}
-                    className="px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    {payoutApproved ? 'Payout Authorized' : 'Approve Payout'}
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-slate-200">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    Verified Structure
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Multi-Model Payroll Calculation Formula Banner */}
-            <div className="my-4 p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2.5">
-                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider ${
-                  empType === 'PART_TIME' ? 'bg-blue-100 text-blue-800' :
-                  empType === 'DAILY_WAGE' ? 'bg-amber-100 text-amber-900' :
-                  empType === 'FIELD_WORKER' ? 'bg-purple-100 text-purple-900' :
-                  'bg-emerald-100 text-emerald-800'
-                }`}>
-                  {empType.replace('_', ' ')} BASIS
-                </span>
-                <div>
-                  <div className="font-bold text-slate-800">
-                    Active Calculation Formula: <span className="font-mono text-blue-700">{calculationBasis}</span>
-                  </div>
-                  <div className="text-[10px] text-slate-500">
-                    Calculated Base Earned: <strong className="text-slate-800">₹{earnedBasePay.toLocaleString('en-IN')}.00</strong>
-                    {absentDays > 0 && empType === 'FULL_TIME' && (
-                      <span className="text-red-600 font-medium"> ({absentDays} unpaid absent days prorated deduction)</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="text-right shrink-0">
-                <span className="text-[10px] font-mono text-slate-400 block uppercase">Earned Gross Pay</span>
-                <span className="text-base font-black font-mono text-slate-900">₹{grossPay.toLocaleString('en-IN')}.00</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2 items-start">
-              {/* Left Columns: Earnings & Entitlements + Deductions */}
-              <div className="lg:col-span-8 space-y-6">
-                {/* Section 1: Earnings & Entitlements */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
-                      {isEmployee ? 'EARNINGS & ENTITLEMENTS (READ-ONLY)' : 'EARNINGS & ENTITLEMENTS (EDITABLE)'}
-                    </h3>
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      {isEmployee ? 'Current active cycle calculation' : 'Live calculation enabled'}
-                    </span>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    {/* Base Salary */}
-                    <div className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <div className="text-xs font-bold text-slate-900">Base Monthly Salary (₹)</div>
-                        <div className="text-[10px] text-slate-500 font-mono">Standard monthly compensation for 160.0 hours quota</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono font-bold text-slate-500">₹</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="500"
-                          disabled={isEmployee}
-                          value={baseSalary}
-                          onChange={(e) => setBaseSalary(e.target.value)}
-                          className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-slate-900 text-right ${
-                            isEmployee ? 'bg-slate-100 border-slate-200 cursor-not-allowed' : 'bg-white border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
-                          }`}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Hourly Base Rate */}
-                    <div className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <div className="text-xs font-bold text-slate-900">Standard Hourly Rate (₹/hr)</div>
-                        <div className="text-[10px] text-slate-500 font-mono">Used to compute overtime at 1.5x multiplier</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono font-bold text-slate-500">₹</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="10"
-                          disabled={isEmployee}
-                          value={hourlyRate}
-                          onChange={(e) => setHourlyRate(e.target.value)}
-                          className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-slate-900 text-right ${
-                            isEmployee ? 'bg-slate-100 border-slate-200 cursor-not-allowed' : 'bg-white border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
-                          }`}
-                        />
-                        <span className="text-[10px] font-mono text-slate-500">/hr</span>
-                      </div>
-                    </div>
-
-                    {/* Approved Overtime */}
-                    <div className="p-3.5 bg-emerald-50/50 border border-emerald-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <div className="text-xs font-bold text-emerald-900">Approved Overtime Hours</div>
-                        <div className="text-[10px] text-emerald-700 font-mono">
-                          1.5x Multiplier = ₹{Math.round(numHourlyRate * 1.5)}/hr • Total: ₹{overtimePay.toLocaleString('en-IN')}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          disabled={isEmployee}
-                          value={overtimeHours}
-                          onChange={(e) => setOvertimeHours(e.target.value)}
-                          className={`w-24 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-emerald-900 text-right ${
-                            isEmployee ? 'bg-white/80 border-emerald-200 cursor-not-allowed' : 'bg-white border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500'
-                          }`}
-                        />
-                        <span className="text-[10px] font-mono text-emerald-700">hrs</span>
-                        <span className="text-xs font-mono font-bold text-emerald-800 ml-2">
-                          +₹{overtimePay.toLocaleString('en-IN')}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Performance Bonus */}
-                    <div className="p-3.5 bg-blue-50/50 border border-blue-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <div className="text-xs font-bold text-blue-900">Performance &amp; Punctuality Bonus</div>
-                        <div className="text-[10px] text-blue-700 font-mono">Special attendance or milestone reward</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono font-bold text-blue-600">₹</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="100"
-                          disabled={isEmployee}
-                          value={performanceBonus}
-                          onChange={(e) => setPerformanceBonus(e.target.value)}
-                          className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-blue-900 text-right ${
-                            isEmployee ? 'bg-white/80 border-blue-200 cursor-not-allowed' : 'bg-white border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
-                          }`}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section 2: Deductions & Recoveries */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
-                      {isEmployee ? 'DEDUCTIONS & RECOVERIES (READ-ONLY)' : 'DEDUCTIONS & RECOVERIES (EDITABLE)'}
-                    </h3>
-                    <span className="text-[10px] text-slate-400 font-mono">Deducted from gross pay</span>
-                  </div>
-
-                  <div className="space-y-3">
-                    {/* Advance Salary Deduction */}
-                    <div className="p-3.5 bg-red-50/40 border border-red-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <div className="text-xs font-bold text-red-900">Advance Salary Installment Recovery</div>
-                        <div className="text-[10px] text-red-700 font-mono">Auto-scheduled or custom repayment for this billing cycle</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono font-bold text-red-600">-₹</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="500"
-                          disabled={isEmployee}
-                          value={advanceDeduction}
-                          onChange={(e) => setAdvanceDeduction(e.target.value)}
-                          className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-red-900 text-right ${
-                            isEmployee ? 'bg-white/80 border-red-200 cursor-not-allowed' : 'bg-white border-red-300 focus:outline-none focus:ring-2 focus:ring-red-500'
-                          }`}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Statutory Deductions */}
-                    <div className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <div className="text-xs font-bold text-slate-800">Statutory Deductions (PF &amp; Taxes)</div>
-                        <div className="text-[10px] text-slate-500 font-mono">Provident Fund, Professional Tax &amp; TDS estimate</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono font-bold text-red-600">-₹</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="100"
-                          disabled={isEmployee}
-                          value={statutoryDeductions}
-                          onChange={(e) => setStatutoryDeductions(e.target.value)}
-                          className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-slate-900 text-right ${
-                            isEmployee ? 'bg-slate-100 border-slate-200 cursor-not-allowed' : 'bg-white border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
-                          }`}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Column: PAYROLL SUMMARY TICKET */}
-              <div className="lg:col-span-4 bg-slate-50 rounded-2xl border border-slate-200 p-5 space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                  <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-slate-600">
-                    PAYROLL SUMMARY TICKET
-                  </span>
-                  <span className="text-[10px] font-mono text-slate-400">{selectedEmployee.employee_code || 'EMP'}</span>
-                </div>
-
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between text-slate-600">
-                    <span>Gross Base Pay:</span>
-                    <span className="font-mono font-bold text-slate-800">₹{numBaseSalary.toLocaleString('en-IN')}.00</span>
-                  </div>
-                  <div className="flex justify-between text-emerald-700">
-                    <span>Overtime (+{numOvertimeHours} hrs):</span>
-                    <span className="font-mono font-bold">+₹{overtimePay.toLocaleString('en-IN')}.00</span>
-                  </div>
-                  <div className="flex justify-between text-blue-700">
-                    <span>Performance Incentive:</span>
-                    <span className="font-mono font-bold">+₹{numPerformanceBonus.toLocaleString('en-IN')}.00</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-2">
-                    <span>Total Gross Payable:</span>
-                    <span className="font-mono">₹{grossPay.toLocaleString('en-IN')}.00</span>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-200 space-y-1.5">
-                    <div className="flex justify-between text-red-600">
-                      <span>Advance Salary Recovery:</span>
-                      <span className="font-mono font-bold">-₹{numAdvanceDeduction.toLocaleString('en-IN')}.00</span>
-                    </div>
-                    <div className="flex justify-between text-red-600">
-                      <span>Taxes &amp; PF Deductions:</span>
-                      <span className="font-mono font-bold">-₹{numStatutoryDeductions.toLocaleString('en-IN')}.00</span>
-                    </div>
-                    <div className="flex justify-between font-bold text-slate-700">
-                      <span>Total Deductions:</span>
-                      <span className="font-mono text-red-600">-₹{totalDeductions.toLocaleString('en-IN')}.00</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Net Take-Home Highlight Card */}
-                <div className="p-4 bg-white border-2 border-blue-500/80 rounded-xl shadow-xs text-center space-y-3">
-                  <div>
-                    <div className="text-[10px] font-mono uppercase font-bold text-slate-400">
-                      Net Take-Home
-                    </div>
-                    <div className="text-2xl font-black text-slate-900 mt-1 font-mono">
-                      ₹{netTakeHome.toLocaleString('en-IN')}.00
-                    </div>
-                    <div className="text-[10px] text-emerald-600 font-bold mt-0.5 flex items-center justify-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" />
-                      {isEmployee ? 'Calculated for Active Period' : 'Ready for Disbursement'}
-                    </div>
-                  </div>
-
-                  {!isEmployee ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={handleDisburseSalary}
-                        disabled={disbursing || payoutSuccess}
-                        className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                          payoutSuccess
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white active:scale-95 disabled:opacity-75'
-                        }`}
-                      >
-                        {payoutSuccess ? (
-                          <>
-                            <CheckCircle2 className="w-4 h-4" />
-                            Salary Credited &amp; Notified
-                          </>
-                        ) : (
-                          <>
-                            <Send className="w-4 h-4" />
-                            {disbursing ? 'Processing Credit...' : 'Disburse & Credit Salary'}
-                          </>
-                        )}
-                      </button>
-
-                    </>
-                  ) : (
-                    <>
-                      <div className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center justify-center gap-2">
-                        <Banknote className="w-4 h-4 text-emerald-600" />
-                        <span>Estimated Current Payout</span>
-                      </div>
-
-                      <div className="text-[10px] text-slate-400 font-medium flex items-center justify-center gap-1">
-                        <Clock className="w-3 h-3 text-blue-500" />
-                        Direct deposit upon monthly payroll settlement
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Daily Attendance Log */}
+          {/* Master Register Table */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="p-5 sm:p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-base font-bold text-slate-900">
-                  Daily Attendance Log for {selectedEmployee.first_name} {selectedEmployee.last_name}
-                </h2>
-              </div>
-
-              <div className="inline-flex rounded-lg p-0.5 bg-slate-100 text-xs font-semibold text-slate-600">
-                {['All', 'Overtime'].map((filter) => (
-                  <button
-                    key={filter}
-                    type="button"
-                    onClick={() => setActiveFilter(filter)}
-                    className={`px-3 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
-                      activeFilter === filter ? 'bg-white text-slate-900 shadow-2xs' : 'hover:text-slate-900'
-                    }`}
-                  >
-                    {filter}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <div className="overflow-x-auto">
-              {filteredLogs.length > 0 ? (
-                <table className="w-full text-left text-xs text-slate-600 border-collapse min-w-[760px]">
+              {loadingRegister ? (
+                <div className="p-12 text-center">
+                  <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                  <div className="text-xs font-bold text-slate-700">Computing workforce payroll for {selectedCycle}...</div>
+                </div>
+              ) : filteredRegister.length > 0 ? (
+                <table className="w-full text-left text-xs text-slate-600 border-collapse min-w-[980px]">
                   <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
-                      <th className="py-3 px-4">DATE</th>
-                      <th className="py-3 px-4">CHECK-IN</th>
-                      <th className="py-3 px-4">CHECK-OUT</th>
-                      <th className="py-3 px-4">HOURS LOGGED</th>
-                      <th className="py-3 px-4">ATTENDANCE STATUS</th>
-                      <th className="py-3 px-4">VERIFICATION MODE</th>
+                    <tr className="border-b border-slate-200 bg-slate-50/75 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
+                      <th className="py-3 px-4">EMPLOYEE</th>
+                      <th className="py-3 px-4">DEPT / MODEL</th>
+                      <th className="py-3 px-4 text-center">DAYS (WORK/LEAVE)</th>
+                      <th className="py-3 px-4 text-center">HOURS / OT</th>
+                      <th className="py-3 px-4 text-right">BASIC SALARY</th>
+                      <th className="py-3 px-4 text-right">ALLOWANCE</th>
+                      <th className="py-3 px-4 text-right">INCENTIVE</th>
+                      <th className="py-3 px-4 text-right">DEDUCTIONS</th>
+                      <th className="py-3 px-4 text-right font-bold text-slate-900">NET PAY</th>
+                      <th className="py-3 px-4 text-center">STATUS</th>
+                      <th className="py-3 px-4 text-right">ACTION</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredLogs.map((log, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="py-3.5 px-4 font-bold text-slate-900 whitespace-nowrap">
-                          {log.date}
+                    {filteredRegister.map((row) => (
+                      <tr key={row.employee_id} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <div className="font-extrabold text-slate-900">{row.employee_name}</div>
+                          <div className="text-[10px] font-mono text-slate-400">{row.employee_code}</div>
                         </td>
-                        <td className="py-3.5 px-4 font-mono font-bold text-slate-800">
-                          {log.check_in_time || (log.check_in ? strTime(log.check_in) : '--:--')}
-                        </td>
-                        <td className="py-3.5 px-4 font-mono font-bold text-slate-800">
-                          {log.check_out_time || (log.check_out ? strTime(log.check_out) : '--:--')}
-                        </td>
-                        <td className="py-3.5 px-4 font-bold text-slate-900">
-                          {log.total_hours || 0} hrs
-                        </td>
-                        <td className="py-3.5 px-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono font-bold text-[10px] border ${
-                            log.status === 'HALF_DAY' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                            log.status === 'LATE' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                            log.status === 'ABSENT' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                            'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${
-                              log.status === 'HALF_DAY' ? 'bg-amber-500' :
-                              log.status === 'LATE' ? 'bg-orange-500' :
-                              log.status === 'ABSENT' ? 'bg-rose-500' :
-                              'bg-emerald-500'
-                            }`} />
-                            {log.status === 'HALF_DAY' ? 'HALF-DAY (0.5d)' : (log.status || 'PRESENT')}
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <div className="font-bold text-slate-800">{row.department}</div>
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-slate-100 text-slate-600">
+                            {row.employment_type}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-slate-700 text-[11px] font-mono">
-                          {log.verification_mode || 'FACE_KIOSK'}
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <span className="font-bold text-slate-900">{row.working_days}</span>
+                          <span className="text-slate-400"> / </span>
+                          <span className="text-amber-700 font-bold">{row.leave_days}</span>
+                          <div className="text-[10px] text-slate-400 font-mono">Pres: {row.days_present} (0.5d: {row.half_days})</div>
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <span className="font-mono font-bold text-slate-800">{row.total_logged_hours}h</span>
+                          {row.overtime_hours > 0 && (
+                            <div className="text-[10px] font-mono font-bold text-teal-600">+{row.overtime_hours}h OT</div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
+                          ₹{row.basic_salary?.toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-slate-700 whitespace-nowrap">
+                          ₹{row.allowance?.toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-blue-700 whitespace-nowrap">
+                          ₹{row.incentive?.toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-red-600 whitespace-nowrap">
+                          -₹{row.total_deductions?.toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-black text-sm text-slate-900 whitespace-nowrap">
+                          ₹{row.net_pay?.toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono font-bold text-[10px] border ${
+                            row.payout_status === 'PAID'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 border-amber-200'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${row.payout_status === 'PAID' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                            {row.payout_status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedSlip(row);
+                              setSlipModalOpen(true);
+                            }}
+                            className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                          >
+                            <FileText className="w-3 h-3" />
+                            Payslip
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -1078,349 +995,1274 @@ export const PayrollReport = () => {
                     <Inbox className="w-6 h-6" />
                   </div>
                   <h3 className="text-sm font-bold text-slate-800 mb-1">
-                    No attendance logs recorded for this employee yet
+                    No records found in register for {selectedCycle}
                   </h3>
                   <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    When this employee punches in via Kiosk or Manual Entry, their shift records will appear here.
+                    Ensure employees are active and attendance logs have been synced for this billing cycle.
                   </p>
                 </div>
               )}
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Salary Payout History & Historical Payslips */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="p-5 sm:p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-bold text-slate-900">
-                    {isEmployee ? 'My Salary Payout History & Official Payslips' : `Disbursed Salary History — ${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
-                  </h2>
-                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-mono font-bold text-[10px] border border-blue-200">
-                    {payoutHistory.length} records
-                  </span>
-                </div>
+      {/* ------------------------------------------------------------- */}
+      {/* VIEW MODE 2: INDIVIDUAL EMPLOYEE SALARY LEDGER */}
+      {/* ------------------------------------------------------------- */}
+      {!loading && (isEmployee || activeTab === 'individual') && (
+        <>
+          {/* No Employees State (Admin Only) */}
+          {!isEmployee && employees.length === 0 && (
+            <div className="p-6 bg-white border border-slate-200 rounded-2xl text-center space-y-3">
+              <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                <UserPlus className="w-6 h-6" />
               </div>
-
-              {selectedEmployee && (
-                <div className="text-xs text-slate-500 font-mono">
-                  Employee Ref: <span className="font-bold text-slate-800">{selectedEmployee.employee_code || 'EMP'}</span>
-                </div>
-              )}
+              <h3 className="text-base font-bold text-slate-800">
+                No employees enrolled in {organization?.name || 'your organisation'} yet
+              </h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Payroll and attendance calculations generate automatically once employees are added.
+              </p>
+              <Link
+                to="/enrollment"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs"
+              >
+                <UserPlus className="w-4 h-4" />
+                Enroll First Employee
+              </Link>
             </div>
+          )}
 
-            <div className="overflow-x-auto">
-              {payoutHistory.length > 0 ? (
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50/75 text-[11px] font-mono uppercase text-slate-500 font-bold">
-                      <th className="py-3 px-4">Payout ID / Date</th>
-                      <th className="py-3 px-4">Billing Cycle</th>
-                      <th className="py-3 px-4">Gross Earnings</th>
-                      <th className="py-3 px-4">Deductions</th>
-                      <th className="py-3 px-4">Net Credited Pay</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4 text-right">Official Payslip</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {payoutHistory.map((payout) => {
-                      const gross = Number(payout.base_salary || 0) + Number(payout.overtime_pay || 0) + Number(payout.bonus || 0);
-                      const deds = Number(payout.advance_deduction || 0) + Number(payout.statutory_deductions || 0);
-                      const net = Number(payout.net_salary != null ? payout.net_salary : (payout.amount || 0));
-                      const payDate = payout.disbursed_at || payout.created_at;
-
-                      return (
-                        <tr key={payout.id} className="hover:bg-slate-50/60 transition-colors">
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <div className="font-mono font-bold text-slate-900">{payout.id}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">
-                              {payDate ? new Date(payDate).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
-                            </div>
-                          </td>
-                          <td className="py-3.5 px-4 font-bold text-slate-800 whitespace-nowrap">
-                            {payout.cycle || 'Monthly Settlement'}
-                          </td>
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <span className="font-mono font-bold text-slate-800">₹{gross.toLocaleString('en-IN')}.00</span>
-                            <div className="text-[10px] text-emerald-600 font-mono">Base: ₹{(payout.base_salary || 0).toLocaleString('en-IN')}</div>
-                          </td>
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <span className="font-mono font-bold text-red-600">-₹{deds.toLocaleString('en-IN')}.00</span>
-                            {Number(payout.advance_deduction || 0) > 0 && (
-                              <div className="text-[10px] text-red-500 font-mono">Adv: -₹{(payout.advance_deduction || 0).toLocaleString('en-IN')}</div>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-4 whitespace-nowrap font-mono font-bold text-emerald-700 text-sm">
-                            ₹{net.toLocaleString('en-IN')}.00
-                          </td>
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-mono font-bold text-[10px] border border-emerald-200">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              {payout.status || 'PAID'}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedSlip(payout);
-                                setSlipModalOpen(true);
-                              }}
-                              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-                            >
-                              <FileText className="w-3.5 h-3.5" />
-                              View Payslip
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="py-12 px-4 text-center">
-                  <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
-                    <FileText className="w-6 h-6" />
+          {selectedEmployee && (
+            <>
+              {/* Employee Search & Selector Card */}
+              <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  {/* Employee Info Header */}
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-700 font-extrabold flex items-center justify-center text-lg border border-blue-200 shadow-2xs shrink-0">
+                      {selectedEmployee.first_name?.[0]}{selectedEmployee.last_name?.[0]}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h2 className="text-lg font-extrabold text-slate-900">
+                          {selectedEmployee.first_name} {selectedEmployee.last_name}
+                        </h2>
+                        <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-mono font-bold text-[10px] border border-blue-200">
+                          {selectedEmployee.employee_code || 'EMP'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono font-bold text-[10px] border border-emerald-200">
+                          Active Workforce
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500 font-medium flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span>Department: <span className="font-bold text-slate-800">{selectedEmployee.department || 'Operations'}</span></span>
+                        <span>•</span>
+                        <span>Designation: <span className="font-bold text-slate-800">{selectedEmployee.designation || 'Staff'}</span></span>
+                        <span>•</span>
+                        <span>Email: <span className="font-bold text-slate-800">{selectedEmployee.email || 'N/A'}</span></span>
+                      </div>
+                    </div>
                   </div>
-                  <h3 className="text-sm font-bold text-slate-800 mb-1">
-                    No historical salary disbursements on record
-                  </h3>
-                </div>
-              )}
-            </div>
-          </div>
 
-          {/* Official Printable Payslip Modal */}
-          {slipModalOpen && selectedSlip && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-in fade-in">
-              <div className="bg-white w-full max-w-2xl rounded-xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col">
-                {/* Modal Header Bar */}
-                <div className="p-3 sm:p-4 bg-slate-900 text-white flex items-center justify-between shrink-0 print:hidden">
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-blue-400" />
-                    <span className="text-xs font-bold font-mono tracking-wider uppercase truncate">Official Salary Statement &amp; Payslip</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => window.print()}
-                      className="px-2.5 sm:px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Print / PDF</span>
-                      <span className="sm:hidden">Print</span>
-                    </button>
+                  {/* Action Buttons: Preview Slip & Exports */}
+                  <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
                     <button
                       type="button"
                       onClick={() => {
-                        setSlipModalOpen(false);
-                        setSelectedSlip(null);
+                        setSelectedSlip(livePreviewSlip);
+                        setSlipModalOpen(true);
                       }}
-                      className="p-1 text-slate-400 hover:text-white rounded-lg cursor-pointer shrink-0"
+                      className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
                     >
-                      <X className="w-5 h-5" />
+                      <FileText className="w-3.5 h-3.5" />
+                      Preview Payslip
+                    </button>
+
+                    {!isEmployee && (
+                      <button
+                        type="button"
+                        onClick={() => window.open(`${api.defaults.baseURL}/reports/export-payroll-csv?cycle=${selectedCycle}`, '_blank')}
+                        className="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
+                        Export CSV
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSlip(livePreviewSlip);
+                        setSlipModalOpen(true);
+                      }}
+                      className="px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      {isEmployee ? 'Print Statement' : 'Generate Payslip'}
                     </button>
                   </div>
                 </div>
 
-                {/* Printable Payslip Body (Scrollable on mobile) */}
-                <div className="p-4 sm:p-8 space-y-5 sm:space-y-6 text-slate-800 bg-white overflow-y-auto flex-1">
-                  {/* Header: Company & Title */}
-                  <div className="flex items-start justify-between border-b-2 border-slate-900 pb-5">
-                    <div>
-                      <h2 className="text-xl font-black text-slate-900 tracking-tight uppercase">
-                        {organization?.name || 'Argus Technologies'}
+                {/* Employee Search & Select Control Bar - Admin Only */}
+                {!isEmployee && (
+                  <div className="pt-3 border-t border-slate-100 flex flex-col md:flex-row items-stretch md:items-center gap-3">
+                    <div className="relative flex-1">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search employee by name, code, or department..."
+                        className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder:text-slate-400"
+                      />
+                      {searchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchQuery('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="w-full md:w-80">
+                      <select
+                        value={selectedEmployeeId}
+                        onChange={(e) => handleEmployeeSelect(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
+                      >
+                        {filteredEmployees.length > 0 ? (
+                          filteredEmployees.map(emp => (
+                            <option key={emp.id} value={emp.id}>
+                              {emp.first_name} {emp.last_name} ({emp.employee_code || 'EMP'}) — {emp.department || 'General'}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="" disabled>No matching employees found</option>
+                        )}
+                      </select>
+                    </div>
+
+                    <div className="text-[11px] text-slate-400 font-mono shrink-0">
+                      {filteredEmployees.length} of {employees.length} employees
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 5 KPI Metric Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+                {/* Card 1: Attendance */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
+                      ATTENDANCE RECORD
+                    </span>
+                    <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div className="my-2">
+                    <div className="text-xl font-black text-slate-900 tracking-tight flex items-baseline flex-wrap gap-1">
+                      <span>{presentDays}</span>
+                      <span className="text-xs font-medium text-slate-500">Days Present</span>
+                      {halfDaysCount > 0 && (
+                        <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-mono font-bold border border-amber-200">
+                          +{halfDaysCount} Half-Day
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-mono border-t border-slate-100 pt-1 flex justify-between">
+                    <span className="text-emerald-700 font-bold">Working: {workingDaysCount}d</span>
+                    <span>Logged: {totalLoggedHours.toFixed(1)}h</span>
+                  </div>
+                </div>
+
+                {/* Card 2: Performance Bonus & Allowance */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
+                      INCENTIVES &amp; ALLOWANCE
+                    </span>
+                    <Award className="w-4 h-4 text-amber-500" />
+                  </div>
+                  <div className="my-2">
+                    <div className="text-xl font-black text-slate-900 tracking-tight font-mono">
+                      ₹{(totalIncentive + totalAllowance).toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-mono border-t border-slate-100 pt-1 flex justify-between">
+                    <span className="text-blue-600 font-bold">Inc: ₹{totalIncentive}</span>
+                    <span className="text-indigo-600 font-bold">Allow: ₹{totalAllowance}</span>
+                  </div>
+                </div>
+
+                {/* Card 3: Approved Overtime */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
+                      OVERTIME LOGGED
+                    </span>
+                    <Clock className="w-4 h-4 text-teal-600" />
+                  </div>
+                  <div className="my-2">
+                    <div className="text-xl font-black text-teal-700 tracking-tight font-mono">
+                      +{numOvertimeHours} <span className="text-xs font-medium text-slate-500">Extra Hours</span>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-mono border-t border-slate-100 pt-1 flex justify-between">
+                    <span>1.5x Multiplier</span>
+                    <span className="text-teal-700 font-bold font-mono">+₹{overtimePay.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+
+                {/* Card 4: Advance & Deductions */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
+                      TOTAL DEDUCTIONS
+                    </span>
+                    <Banknote className="w-4 h-4 text-red-500" />
+                  </div>
+                  <div className="my-2">
+                    <div className="text-xl font-black text-red-600 tracking-tight font-mono">
+                      -₹{totalDeductions.toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-mono border-t border-slate-100 pt-1 flex justify-between">
+                    <span>Adv: -₹{numAdvanceDeduction}</span>
+                    <span>PF: -₹{numStatutoryDeductions}</span>
+                  </div>
+                </div>
+
+                {/* Card 5: Total Net Salary */}
+                <div className="bg-[#0052cc] text-white p-4 rounded-2xl shadow-xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-200">
+                      TOTAL NET PAY
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-white/20 text-white text-[9px] font-bold font-mono">
+                      {selectedCycle}
+                    </span>
+                  </div>
+                  <div className="my-2">
+                    <div className="text-2xl font-black tracking-tight font-mono">
+                      ₹{netTakeHome.toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-blue-100 font-mono border-t border-white/20 pt-1 flex justify-between">
+                    <span>Gross: ₹{grossPay.toLocaleString('en-IN')}</span>
+                    <span className="font-bold text-emerald-300">Direct Deposit</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Monthly Salary Calculation Breakdown Grid */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 sm:p-7">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <CreditCard className="w-5 h-5 text-blue-600" />
+                      <h2 className="text-base font-bold text-slate-900">
+                        Monthly Salary Calculation Breakdown ({selectedCycle})
                       </h2>
-                      <p className="text-xs text-slate-500 font-medium mt-0.5">
-                        Automated Biometric Attendance &amp; Workforce Payroll Division
-                      </p>
-                      <p className="text-[11px] text-slate-400 font-mono mt-1">
-                        Registration / Org ID: {organization?.id || 'ARGUS-SYS-01'}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-900 font-mono font-bold text-xs uppercase border border-slate-200">
-                        CONFIDENTIAL PAYSLIP
-                      </span>
-                      <div className="text-[11px] font-mono text-slate-500 mt-2">
-                        Slip Ref: <span className="font-bold text-slate-800">{selectedSlip.id}</span>
-                      </div>
-                      <div className="text-[11px] font-mono text-slate-500">
-                        Cycle: <span className="font-bold text-slate-800">{selectedSlip.cycle || 'Monthly'}</span>
-                      </div>
                     </div>
                   </div>
 
-                  {/* Employee & Payout Metadata Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-                    <div>
-                      <div className="text-[10px] uppercase font-mono font-bold text-slate-400">Employee Name</div>
-                      <div className="font-bold text-slate-900 mt-0.5">
-                        {selectedSlip.employee_name || `${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase font-mono font-bold text-slate-400">Employee Code</div>
-                      <div className="font-mono font-bold text-slate-900 mt-0.5">
-                        {selectedSlip.employee_code || selectedEmployee.employee_code || 'EMP'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase font-mono font-bold text-slate-400">Employment Model</div>
-                      <div className="font-bold text-blue-700 mt-0.5">
-                        {(selectedSlip.employment_type || selectedEmployee?.employment_type || 'FULL_TIME').replace('_', ' ')}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase font-mono font-bold text-slate-400">Disbursed On</div>
-                      <div className="font-mono font-bold text-slate-900 mt-0.5">
-                        {selectedSlip.disbursed_at 
-                          ? new Date(selectedSlip.disbursed_at).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' })
-                          : 'Authorized'}
-                      </div>
-                    </div>
-                  </div>
+                  {!isEmployee ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleResetDefaults}
+                        title="Reset to calculated defaults"
+                        className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                        Reset
+                      </button>
 
-                  {/* Itemized Calculation Basis Callout in Payslip */}
-                  {(selectedSlip.calculation_basis || calculationBasis) && (
-                    <div className="px-3.5 py-2.5 bg-blue-50/70 border border-blue-200 rounded-xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                      <div className="text-slate-700">
-                        <span className="font-bold text-blue-950">Calculation Formula: </span>
-                        <span className="font-mono font-semibold text-blue-800">{selectedSlip.calculation_basis || calculationBasis}</span>
-                      </div>
-                      <span className="text-[10px] font-mono font-bold uppercase text-blue-600 bg-white px-2 py-0.5 rounded border border-blue-200 self-start sm:self-auto">
-                        System Verified
+                      <button
+                        type="button"
+                        onClick={handleSavePayrollStructure}
+                        disabled={savingPayroll}
+                        className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        {savingPayroll ? 'Saving...' : 'Save Settings'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setPayoutApproved(true)}
+                        className="px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        {payoutApproved ? 'Payout Authorized' : 'Approve Payout'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-slate-200">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        Verified Structure
                       </span>
                     </div>
                   )}
+                </div>
 
-                  {/* Two Column Table: Earnings vs Deductions */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-                    {/* Earnings Section */}
-                    <div className="border border-slate-200 rounded-xl overflow-hidden">
-                      <div className="bg-slate-100 p-2.5 font-bold font-mono text-slate-700 uppercase tracking-wider text-[11px] border-b border-slate-200 flex justify-between">
-                        <span>EARNINGS &amp; INCENTIVES</span>
-                        <span>AMOUNT (₹)</span>
-                      </div>
-                      <div className="divide-y divide-slate-100 p-1">
-                        <div className="flex justify-between py-2 px-3">
-                          <div>
-                            <span className="text-slate-800 font-semibold block">Earned Base / Standard Wages:</span>
-                            {(selectedSlip.calculation_basis || calculationBasis) && (
-                              <span className="text-[10px] text-slate-400 font-mono block">
-                                {selectedSlip.calculation_basis || calculationBasis}
-                              </span>
-                            )}
-                          </div>
-                          <span className="font-mono font-bold text-slate-800">
-                            ₹{(Number(selectedSlip.base_salary != null ? selectedSlip.base_salary : earnedBasePay) || 0).toLocaleString('en-IN')}.00
-                          </span>
-                        </div>
-                        <div className="flex justify-between py-2 px-3 text-emerald-700">
-                          <span>Overtime Compensation:</span>
-                          <span className="font-mono font-bold">
-                            +₹{(Number(selectedSlip.overtime_pay) || 0).toLocaleString('en-IN')}.00
-                          </span>
-                        </div>
-                        <div className="flex justify-between py-2 px-3 text-blue-700">
-                          <span>Performance &amp; Bonus:</span>
-                          <span className="font-mono font-bold">
-                            +₹{(Number(selectedSlip.bonus) || 0).toLocaleString('en-IN')}.00
-                          </span>
-                        </div>
-                      </div>
-                      <div className="bg-slate-50 p-2.5 border-t border-slate-200 font-bold flex justify-between text-slate-900">
-                        <span>Total Gross Earnings:</span>
-                        <span className="font-mono">
-                          ₹{((Number(selectedSlip.base_salary != null ? selectedSlip.base_salary : earnedBasePay) || 0) + (Number(selectedSlip.overtime_pay) || 0) + (Number(selectedSlip.bonus) || 0)).toLocaleString('en-IN')}.00
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Deductions Section */}
-                    <div className="border border-slate-200 rounded-xl overflow-hidden">
-                      <div className="bg-slate-100 p-2.5 font-bold font-mono text-slate-700 uppercase tracking-wider text-[11px] border-b border-slate-200 flex justify-between">
-                        <span>DEDUCTIONS &amp; RECOVERIES</span>
-                        <span>AMOUNT (₹)</span>
-                      </div>
-                      <div className="divide-y divide-slate-100 p-1">
-                        <div className="flex justify-between py-2 px-3 text-red-600">
-                          <span>Advance Salary Recovery:</span>
-                          <span className="font-mono font-bold">
-                            -₹{(Number(selectedSlip.advance_deduction) || 0).toLocaleString('en-IN')}.00
-                          </span>
-                        </div>
-                        <div className="flex justify-between py-2 px-3 text-red-600">
-                          <span>Provident Fund &amp; Taxes:</span>
-                          <span className="font-mono font-bold">
-                            -₹{(Number(selectedSlip.statutory_deductions) || 0).toLocaleString('en-IN')}.00
-                          </span>
-                        </div>
-                      </div>
-                      <div className="bg-slate-50 p-2.5 border-t border-slate-200 font-bold flex justify-between text-slate-900">
-                        <span>Total Deductions:</span>
-                        <span className="font-mono text-red-600">
-                          -₹{((Number(selectedSlip.advance_deduction) || 0) + (Number(selectedSlip.statutory_deductions) || 0)).toLocaleString('en-IN')}.00
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Net Payable Highlight Banner */}
-                  <div className="p-4 bg-emerald-50 border-2 border-emerald-500 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-emerald-900">
+                {/* Multi-Model Payroll Calculation Formula Banner */}
+                <div className="my-4 p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider ${
+                      empType === 'PART_TIME' ? 'bg-blue-100 text-blue-800' :
+                      empType === 'DAILY_WAGE' ? 'bg-amber-100 text-amber-900' :
+                      empType === 'FIELD_WORKER' ? 'bg-purple-100 text-purple-900' :
+                      'bg-emerald-100 text-emerald-800'
+                    }`}>
+                      {empType.replace('_', ' ')} BASIS
+                    </span>
                     <div>
-                      <div className="text-[11px] uppercase font-mono font-bold text-emerald-700">NET SALARY DISBURSED TO BANK</div>
-                      <div className="text-xs text-emerald-800 font-medium">Direct credit to verified employee salary account</div>
-                    </div>
-                    <div className="text-2xl sm:text-3xl font-black font-mono text-emerald-700">
-                      ₹{(Number(selectedSlip.net_salary != null ? selectedSlip.net_salary : selectedSlip.amount) || 0).toLocaleString('en-IN')}.00
+                      <div className="font-bold text-slate-800">
+                        Active Calculation Formula: <span className="font-mono text-blue-700">{calculationBasis}</span>
+                      </div>
+                      <div className="text-[10px] text-slate-500">
+                        Calculated Base Earned: <strong className="text-slate-800">₹{earnedBasePay.toLocaleString('en-IN')}.00</strong>
+                        {absentDays > 0 && empType === 'FULL_TIME' && (
+                          <span className="text-red-600 font-medium"> ({absentDays} unpaid absent days prorated deduction)</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-
-                  {/* Bottom Verification & Sign-off Footer */}
-                  <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-[11px] text-slate-500">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1 font-semibold text-slate-700">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                        Digitally Verified by {selectedSlip.disbursed_by || 'Payroll Administrator'}
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-mono">
-                        This document is a system generated payslip powered by Argus Biometrics and does not require a physical seal.
-                      </div>
-                    </div>
-                    <div className="text-right sm:text-right w-full sm:w-auto">
-                      <span className="inline-block border-b border-dashed border-slate-400 w-36 mb-1"></span>
-                      <div className="text-[10px] uppercase font-mono font-bold text-slate-500">Authorized Signature</div>
-                    </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-[10px] font-mono text-slate-400 block uppercase">Earned Gross Pay</span>
+                    <span className="text-base font-black font-mono text-slate-900">₹{grossPay.toLocaleString('en-IN')}.00</span>
                   </div>
                 </div>
 
-                {/* Modal Bottom Actions (Print and Close) */}
-                <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 print:hidden">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSlipModalOpen(false);
-                      setSelectedSlip(null);
-                    }}
-                    className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
-                  >
-                    Close
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => window.print()}
-                    className="px-4 py-2 bg-[#0052cc] hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
-                  >
-                    <Printer className="w-4 h-4" />
-                    Print Official Statement
-                  </button>
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2 items-start">
+                  {/* Left Columns: Earnings & Deductions Inputs */}
+                  <div className="lg:col-span-8 space-y-6">
+                    {/* Section 1: Earnings & Entitlements */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
+                          {isEmployee ? 'EARNINGS & ENTITLEMENTS (READ-ONLY)' : 'EARNINGS & ENTITLEMENTS (EDITABLE)'}
+                        </h3>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {isEmployee ? 'Current active cycle calculation' : 'Live calculation enabled'}
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        {/* Base Salary */}
+                        <div className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-bold text-slate-900">Base Monthly Salary (₹)</div>
+                            <div className="text-[10px] text-slate-500 font-mono">Standard monthly compensation for 160.0 hours quota</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono font-bold text-slate-500">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="500"
+                              disabled={isEmployee}
+                              value={baseSalary}
+                              onChange={(e) => setBaseSalary(e.target.value)}
+                              className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-slate-900 text-right ${
+                                isEmployee ? 'bg-slate-100 border-slate-200 cursor-not-allowed' : 'bg-white border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                              }`}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Hourly Base Rate */}
+                        <div className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-bold text-slate-900">Standard Hourly Rate (₹/hr)</div>
+                            <div className="text-[10px] text-slate-500 font-mono">Used to compute overtime at 1.5x multiplier</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono font-bold text-slate-500">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="10"
+                              disabled={isEmployee}
+                              value={hourlyRate}
+                              onChange={(e) => setHourlyRate(e.target.value)}
+                              className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-slate-900 text-right ${
+                                isEmployee ? 'bg-slate-100 border-slate-200 cursor-not-allowed' : 'bg-white border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                              }`}
+                            />
+                            <span className="text-[10px] font-mono text-slate-500">/hr</span>
+                          </div>
+                        </div>
+
+                        {/* Approved Overtime */}
+                        <div className="p-3.5 bg-emerald-50/50 border border-emerald-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-bold text-emerald-900">Approved Overtime Hours</div>
+                            <div className="text-[10px] text-emerald-700 font-mono">
+                              1.5x Multiplier = ₹{Math.round(numHourlyRate * 1.5)}/hr • Total: ₹{overtimePay.toLocaleString('en-IN')}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              disabled={isEmployee}
+                              value={overtimeHours}
+                              onChange={(e) => setOvertimeHours(e.target.value)}
+                              className={`w-24 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-emerald-900 text-right ${
+                                isEmployee ? 'bg-white/80 border-emerald-200 cursor-not-allowed' : 'bg-white border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500'
+                              }`}
+                            />
+                            <span className="text-[10px] font-mono text-emerald-700">hrs</span>
+                            <span className="text-xs font-mono font-bold text-emerald-800 ml-2">
+                              +₹{overtimePay.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Performance Bonus & Incentives */}
+                        <div className="p-3.5 bg-blue-50/50 border border-blue-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-bold text-blue-900">Performance &amp; Punctuality Incentive</div>
+                            <div className="text-[10px] text-blue-700 font-mono">
+                              Auto: ₹{numPerformanceBonus} {manualBonuses > 0 && `• Manual: +₹${manualBonuses}`} • Total: ₹{totalIncentive}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono font-bold text-blue-600">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="100"
+                              disabled={isEmployee}
+                              value={performanceBonus}
+                              onChange={(e) => setPerformanceBonus(e.target.value)}
+                              className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-blue-900 text-right ${
+                                isEmployee ? 'bg-white/80 border-blue-200 cursor-not-allowed' : 'bg-white border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                              }`}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Allowances & Reimbursements */}
+                        <div className="p-3.5 bg-teal-50/50 border border-teal-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-bold text-teal-900">Allowances &amp; Reimbursements</div>
+                            <div className="text-[10px] text-teal-700 font-mono">Summed from travel/food/site expenses in Manual Adjustments</div>
+                          </div>
+                          <div className="flex items-center gap-2 font-mono font-bold text-teal-800 text-xs">
+                            +₹{totalAllowance.toLocaleString('en-IN')}.00
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section 2: Deductions & Recoveries */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
+                          {isEmployee ? 'DEDUCTIONS & RECOVERIES (READ-ONLY)' : 'DEDUCTIONS & RECOVERIES (EDITABLE)'}
+                        </h3>
+                        <span className="text-[10px] text-slate-400 font-mono">Deducted from gross pay</span>
+                      </div>
+
+                      <div className="space-y-3">
+                        {/* Advance Salary Deduction */}
+                        <div className="p-3.5 bg-red-50/40 border border-red-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-bold text-red-900">Advance Salary Installment Recovery</div>
+                            <div className="text-[10px] text-red-700 font-mono">Auto-scheduled amortization for {selectedCycle}</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono font-bold text-red-600">-₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="500"
+                              disabled={isEmployee}
+                              value={advanceDeduction}
+                              onChange={(e) => setAdvanceDeduction(e.target.value)}
+                              className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-red-900 text-right ${
+                                isEmployee ? 'bg-white/80 border-red-200 cursor-not-allowed' : 'bg-white border-red-300 focus:outline-none focus:ring-2 focus:ring-red-500'
+                              }`}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Statutory Deductions */}
+                        <div className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-bold text-slate-800">Paid Salary (PF &amp; Taxes)</div>
+                            <div className="text-[10px] text-slate-500 font-mono">Provident Fund, Professional Tax &amp; TDS estimate</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono font-bold text-red-600">-₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="100"
+                              disabled={isEmployee}
+                              value={statutoryDeductions}
+                              onChange={(e) => setStatutoryDeductions(e.target.value)}
+                              className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-slate-900 text-right ${
+                                isEmployee ? 'bg-slate-100 border-slate-200 cursor-not-allowed' : 'bg-white border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                              }`}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Other Manual Deductions */}
+                        {manualDeductions > 0 && (
+                          <div className="p-3.5 bg-red-50/40 border border-red-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <div className="text-xs font-bold text-red-900">Other Deductions (Penalties / Disciplinary)</div>
+                              <div className="text-[10px] text-red-700 font-mono">Configured via Manual Adjustments table below</div>
+                            </div>
+                            <div className="flex items-center gap-2 font-mono font-bold text-red-600 text-xs">
+                              -₹{manualDeductions.toLocaleString('en-IN')}.00
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Section 3: Manual Adjustments for Money (Admin Only) */}
+                    {!isEmployee && (
+                      <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                          <div>
+                            <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                              <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                              Manual Money Adjustments ({selectedCycle})
+                            </h3>
+                            <p className="text-[10px] text-slate-500">
+                              Add bonuses, deductions, or expense reimbursements for this employee
+                            </p>
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-400">
+                            {financialEntries.length} entries
+                          </span>
+                        </div>
+
+                        {/* Add Adjustment Form */}
+                        <form onSubmit={handleAddFinancialEntry} className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                          <div className="sm:col-span-3">
+                            <label className="text-[10px] font-bold text-slate-600 block mb-1">Type</label>
+                            <select
+                              value={newFinType}
+                              onChange={(e) => setNewFinType(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
+                            >
+                              <option value="BONUS">Bonus (Incentive)</option>
+                              <option value="REIMBURSEMENT">Reimbursement (Allowance)</option>
+                              <option value="DEDUCTION">Deduction (Penalty)</option>
+                            </select>
+                          </div>
+
+                          <div className="sm:col-span-3">
+                            <label className="text-[10px] font-bold text-slate-600 block mb-1">Amount (₹)</label>
+                            <input
+                              type="number"
+                              min="1"
+                              step="10"
+                              value={newFinAmount}
+                              onChange={(e) => setNewFinAmount(e.target.value)}
+                              placeholder="e.g. 1500"
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-4">
+                            <label className="text-[10px] font-bold text-slate-600 block mb-1">Reason / Description</label>
+                            <input
+                              type="text"
+                              value={newFinReason}
+                              onChange={(e) => setNewFinReason(e.target.value)}
+                              placeholder="e.g. Client visit travel allowance"
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-2">
+                            <button
+                              type="submit"
+                              disabled={addingFinEntry}
+                              className="w-full py-1.5 px-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg text-xs font-bold shadow-2xs flex items-center justify-center gap-1 cursor-pointer transition-all"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              Add
+                            </button>
+                          </div>
+                        </form>
+
+                        {/* Adjustments Table */}
+                        {financialEntries.length > 0 ? (
+                          <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-mono uppercase text-slate-500">
+                                  <th className="py-2 px-3">Type</th>
+                                  <th className="py-2 px-3">Description</th>
+                                  <th className="py-2 px-3 text-right">Amount (₹)</th>
+                                  <th className="py-2 px-3 text-right">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {financialEntries.map(entry => (
+                                  <tr key={entry.id} className="hover:bg-slate-50/50">
+                                    <td className="py-2 px-3 whitespace-nowrap">
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                                        entry.type === 'BONUS' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                        entry.type === 'REIMBURSEMENT' ? 'bg-teal-50 text-teal-700 border border-teal-200' :
+                                        'bg-red-50 text-red-700 border border-red-200'
+                                      }`}>
+                                        {entry.type}
+                                      </span>
+                                    </td>
+                                    <td className="py-2 px-3 font-medium text-slate-800">
+                                      {entry.reason || 'Manual Adjustment'}
+                                    </td>
+                                    <td className={`py-2 px-3 font-mono font-bold text-right ${
+                                      entry.type === 'DEDUCTION' ? 'text-red-600' : 'text-emerald-700'
+                                    }`}>
+                                      {entry.type === 'DEDUCTION' ? '-' : '+'}₹{Number(entry.amount).toLocaleString('en-IN')}
+                                    </td>
+                                    <td className="py-2 px-3 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteFinancialEntry(entry.id)}
+                                        className="p-1 text-slate-400 hover:text-red-600 rounded cursor-pointer"
+                                        title="Delete entry"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="text-center py-2 text-[11px] text-slate-400 font-medium">
+                            No manual financial adjustments logged for {selectedCycle}.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Column: PAYROLL SUMMARY TICKET */}
+                  <div className="lg:col-span-4 bg-slate-50 rounded-2xl border border-slate-200 p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                      <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-slate-600">
+                        PAYROLL SUMMARY TICKET
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400">{selectedEmployee.employee_code || 'EMP'}</span>
+                    </div>
+
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between text-slate-600">
+                        <span>Gross Base Pay:</span>
+                        <span className="font-mono font-bold text-slate-800">₹{numBaseSalary.toLocaleString('en-IN')}.00</span>
+                      </div>
+                      <div className="flex justify-between text-emerald-700">
+                        <span>Overtime (+{numOvertimeHours} hrs):</span>
+                        <span className="font-mono font-bold">+₹{overtimePay.toLocaleString('en-IN')}.00</span>
+                      </div>
+                      <div className="flex justify-between text-blue-700">
+                        <span>Performance Incentive:</span>
+                        <span className="font-mono font-bold">+₹{totalIncentive.toLocaleString('en-IN')}.00</span>
+                      </div>
+                      <div className="flex justify-between text-teal-700">
+                        <span>Allowances &amp; Reimb.:</span>
+                        <span className="font-mono font-bold">+₹{totalAllowance.toLocaleString('en-IN')}.00</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-2">
+                        <span>Total Gross Payable:</span>
+                        <span className="font-mono">₹{grossPay.toLocaleString('en-IN')}.00</span>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                        <div className="flex justify-between text-red-600">
+                          <span>Advance Salary Recovery:</span>
+                          <span className="font-mono font-bold">-₹{numAdvanceDeduction.toLocaleString('en-IN')}.00</span>
+                        </div>
+                        <div className="flex justify-between text-red-600">
+                          <span>Paid Salary (PF &amp; Taxes):</span>
+                          <span className="font-mono font-bold">-₹{numStatutoryDeductions.toLocaleString('en-IN')}.00</span>
+                        </div>
+                        {manualDeductions > 0 && (
+                          <div className="flex justify-between text-red-600">
+                            <span>Other Deductions:</span>
+                            <span className="font-mono font-bold">-₹{manualDeductions.toLocaleString('en-IN')}.00</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between font-bold text-slate-700">
+                          <span>Total Deductions:</span>
+                          <span className="font-mono text-red-600">-₹{totalDeductions.toLocaleString('en-IN')}.00</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Net Take-Home Highlight Card */}
+                    <div className="p-4 bg-white border-2 border-blue-500/80 rounded-xl shadow-xs text-center space-y-3">
+                      <div>
+                        <div className="text-[10px] font-mono uppercase font-bold text-slate-400">
+                          Net Take-Home Pay
+                        </div>
+                        <div className="text-2xl font-black text-slate-900 mt-1 font-mono">
+                          ₹{netTakeHome.toLocaleString('en-IN')}.00
+                        </div>
+                        <div className="text-[10px] text-emerald-600 font-bold mt-0.5 flex items-center justify-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          {isEmployee ? `Calculated for ${selectedCycle}` : 'Ready for Disbursement'}
+                        </div>
+                      </div>
+
+                      {!isEmployee ? (
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={handleDisburseSalary}
+                            disabled={disbursing || payoutSuccess}
+                            className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                              payoutSuccess
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white active:scale-95 disabled:opacity-75'
+                            }`}
+                          >
+                            {payoutSuccess ? (
+                              <>
+                                <CheckCircle2 className="w-4 h-4" />
+                                Salary Credited &amp; Notified
+                              </>
+                            ) : (
+                              <>
+                                <Send className="w-4 h-4" />
+                                {disbursing ? 'Processing Credit...' : 'Disburse & Credit Salary'}
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedSlip(livePreviewSlip);
+                              setSlipModalOpen(true);
+                            }}
+                            className="w-full py-2 px-3 rounded-xl text-xs font-bold bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-blue-600" />
+                            Preview Official Payslip
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center justify-center gap-2">
+                            <Banknote className="w-4 h-4 text-emerald-600" />
+                            <span>Estimated Current Payout</span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedSlip(livePreviewSlip);
+                              setSlipModalOpen(true);
+                            }}
+                            className="w-full py-2 px-3 rounded-xl text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-blue-600" />
+                            View Current Payslip
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+
+              {/* Daily Attendance Log */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <div className="p-5 sm:p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900">
+                      Daily Attendance Log — {selectedEmployee.first_name} {selectedEmployee.last_name} ({selectedCycle})
+                    </h2>
+                  </div>
+
+                  <div className="inline-flex rounded-lg p-0.5 bg-slate-100 text-xs font-semibold text-slate-600">
+                    {['All', 'Overtime'].map((filter) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        onClick={() => setActiveFilter(filter)}
+                        className={`px-3 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
+                          activeFilter === filter ? 'bg-white text-slate-900 shadow-2xs' : 'hover:text-slate-900'
+                        }`}
+                      >
+                        {filter}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  {filteredLogs.length > 0 ? (
+                    <table className="w-full text-left text-xs text-slate-600 border-collapse min-w-[760px]">
+                      <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
+                          <th className="py-3 px-4">DATE</th>
+                          <th className="py-3 px-4">CHECK-IN</th>
+                          <th className="py-3 px-4">CHECK-OUT</th>
+                          <th className="py-3 px-4">HOURS LOGGED</th>
+                          <th className="py-3 px-4">ATTENDANCE STATUS</th>
+                          <th className="py-3 px-4">VERIFICATION MODE</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredLogs.map((log, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
+                            <td className="py-3.5 px-4 font-bold text-slate-900 whitespace-nowrap">
+                              {log.date}
+                            </td>
+                            <td className="py-3.5 px-4 font-mono font-bold text-slate-800">
+                              {log.check_in_time || (log.check_in ? strTime(log.check_in) : '--:--')}
+                            </td>
+                            <td className="py-3.5 px-4 font-mono font-bold text-slate-800">
+                              {log.check_out_time || (log.check_out ? strTime(log.check_out) : '--:--')}
+                            </td>
+                            <td className="py-3.5 px-4 font-bold text-slate-900">
+                              {log.total_hours || 0} hrs
+                            </td>
+                            <td className="py-3.5 px-4 whitespace-nowrap">
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono font-bold text-[10px] border ${
+                                log.status === 'HALF_DAY' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                log.status === 'LATE' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                log.status === 'ABSENT' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${
+                                  log.status === 'HALF_DAY' ? 'bg-amber-500' :
+                                  log.status === 'LATE' ? 'bg-orange-500' :
+                                  log.status === 'ABSENT' ? 'bg-rose-500' :
+                                  'bg-emerald-500'
+                                }`} />
+                                {log.status === 'HALF_DAY' ? 'HALF-DAY (0.5d)' : (log.status || 'PRESENT')}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-slate-700 text-[11px] font-mono">
+                              {log.verification_mode || 'FACE_KIOSK'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="py-12 px-4 text-center">
+                      <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                        <Inbox className="w-6 h-6" />
+                      </div>
+                      <h3 className="text-sm font-bold text-slate-800 mb-1">
+                        No attendance logs recorded for this employee in {selectedCycle}
+                      </h3>
+                      <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                        When this employee punches in via Kiosk or Manual Entry, their shift records will appear here.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Salary Payout History & Historical Payslips */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <div className="p-5 sm:p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-bold text-slate-900">
+                        {isEmployee ? 'My Salary Payout History & Official Payslips' : `Disbursed Salary History — ${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
+                      </h2>
+                      <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-mono font-bold text-[10px] border border-blue-200">
+                        {payoutHistory.length} records
+                      </span>
+                    </div>
+                  </div>
+
+                  {selectedEmployee && (
+                    <div className="text-xs text-slate-500 font-mono">
+                      Employee Ref: <span className="font-bold text-slate-800">{selectedEmployee.employee_code || 'EMP'}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="overflow-x-auto">
+                  {payoutHistory.length > 0 ? (
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50/75 text-[11px] font-mono uppercase text-slate-500 font-bold">
+                          <th className="py-3 px-4">Payout ID / Date</th>
+                          <th className="py-3 px-4">Billing Cycle</th>
+                          <th className="py-3 px-4">Gross Earnings</th>
+                          <th className="py-3 px-4">Deductions</th>
+                          <th className="py-3 px-4">Net Credited Pay</th>
+                          <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4 text-right">Official Payslip</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {payoutHistory.map((payout) => {
+                          const gross = Number(payout.base_salary || payout.basic_salary || 0) + 
+                                        Number(payout.overtime_pay || payout.others_earnings || 0) + 
+                                        Number(payout.bonus || payout.incentive || 0) + 
+                                        Number(payout.allowance || 0);
+                          const deds = Number(payout.advance_deduction || payout.advance_repayment || 0) + 
+                                       Number(payout.statutory_deductions || payout.paid_salary || 0) + 
+                                       Number(payout.other_deductions || 0);
+                          const net = Number(payout.net_pay != null ? payout.net_pay : (payout.net_salary != null ? payout.net_salary : payout.amount));
+                          const payDate = payout.disbursed_at || payout.created_at;
+
+                          return (
+                            <tr key={payout.id} className="hover:bg-slate-50/60 transition-colors">
+                              <td className="py-3.5 px-4 whitespace-nowrap">
+                                <div className="font-mono font-bold text-slate-900">{payout.id}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">
+                                  {payDate ? new Date(payDate).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
+                                </div>
+                              </td>
+                              <td className="py-3.5 px-4 font-bold text-slate-800 whitespace-nowrap">
+                                {payout.cycle || 'Monthly Settlement'}
+                              </td>
+                              <td className="py-3.5 px-4 whitespace-nowrap">
+                                <span className="font-mono font-bold text-slate-800">₹{gross.toLocaleString('en-IN')}.00</span>
+                                <div className="text-[10px] text-emerald-600 font-mono">Base: ₹{(payout.basic_salary || payout.base_salary || 0).toLocaleString('en-IN')}</div>
+                              </td>
+                              <td className="py-3.5 px-4 whitespace-nowrap">
+                                <span className="font-mono font-bold text-red-600">-₹{deds.toLocaleString('en-IN')}.00</span>
+                                {Number(payout.advance_deduction || payout.advance_repayment || 0) > 0 && (
+                                  <div className="text-[10px] text-red-500 font-mono">Adv: -₹{(payout.advance_deduction || payout.advance_repayment || 0).toLocaleString('en-IN')}</div>
+                                )}
+                              </td>
+                              <td className="py-3.5 px-4 whitespace-nowrap font-mono font-bold text-emerald-700 text-sm">
+                                ₹{net.toLocaleString('en-IN')}.00
+                              </td>
+                              <td className="py-3.5 px-4 whitespace-nowrap">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-mono font-bold text-[10px] border border-emerald-200">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  {payout.status || 'PAID'}
+                                </span>
+                              </td>
+                              <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedSlip(payout);
+                                    setSlipModalOpen(true);
+                                  }}
+                                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                  View Payslip
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="py-12 px-4 text-center">
+                      <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                        <FileText className="w-6 h-6" />
+                      </div>
+                      <h3 className="text-sm font-bold text-slate-800 mb-1">
+                        No historical salary disbursements on record
+                      </h3>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
           )}
         </>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* OFFICIAL PRINTABLE PAYSLIP MODAL (FAITHFUL TO REFERENCE IMAGE) */}
+      {/* ------------------------------------------------------------- */}
+      {slipModalOpen && selectedSlip && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-white w-full max-w-3xl rounded-xl shadow-2xl border border-slate-300 overflow-hidden my-auto max-h-[95vh] flex flex-col">
+            {/* Modal Actions Bar (hidden on print) */}
+            <div className="p-3 bg-slate-900 text-white flex items-center justify-between shrink-0 print:hidden">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-blue-400" />
+                <span className="text-xs font-bold font-mono tracking-wider uppercase">Official Monthly Payslip</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-3 py-1 bg-[#0070ba] hover:bg-[#005da3] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-3 py-1 bg-[#0070ba] hover:bg-[#005da3] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSlipModalOpen(false);
+                    setSelectedSlip(null);
+                  }}
+                  className="p-1 text-slate-400 hover:text-white rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Sheet Body (Strictly matching reference image layout) */}
+            <div className="p-4 sm:p-8 bg-white overflow-y-auto flex-1 font-sans text-slate-900 text-xs">
+              {/* Company Header */}
+              <div className="text-center space-y-0.5 mb-3">
+                <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#002b80] uppercase">
+                  {organization?.name || 'ARGUS TECHNOLOGIES'}
+                </h1>
+                <p className="text-[11px] sm:text-xs text-[#3b5998] font-medium">
+                  SF NO.515, Bharathiyar Road, Maniyakaranpalayam, Ganapathy (PO), Coimbatore - 641 006.
+                </p>
+                <h2 className="text-sm font-bold text-slate-900 pt-1">
+                  Monthly Payslip
+                </h2>
+              </div>
+
+              {/* Solid Blue PAYSLIP Title Bar */}
+              <div className="bg-[#0070ba] text-white font-extrabold text-center py-1.5 tracking-wider text-sm uppercase shadow-2xs">
+                PAYSLIP
+              </div>
+
+              {/* Two-Column Metadata Table */}
+              <div className="border border-slate-300 divide-y divide-slate-300 text-xs">
+                {/* Row 1 */}
+                <div className="grid grid-cols-12 divide-x divide-slate-300">
+                  <div className="col-span-3 p-2 bg-slate-50/70 font-semibold text-slate-700">Employee Name</div>
+                  <div className="col-span-3 p-2 font-bold text-slate-900">
+                    {selectedSlip.employee_name || `${selectedEmployee?.first_name || ''} ${selectedEmployee?.last_name || ''}`.trim()}
+                  </div>
+                  <div className="col-span-3 p-2 bg-slate-50/70 font-semibold text-slate-700">Hours Salary</div>
+                  <div className="col-span-3 p-2 font-mono font-bold text-slate-900">
+                    ₹{selectedSlip.hours_salary != null ? selectedSlip.hours_salary : (selectedSlip.hourly_rate != null ? selectedSlip.hourly_rate : effectiveHourlyRate)}
+                  </div>
+                </div>
+
+                {/* Row 2 */}
+                <div className="grid grid-cols-12 divide-x divide-slate-300">
+                  <div className="col-span-3 p-2 bg-slate-50/70 font-semibold text-slate-700">Employee ID</div>
+                  <div className="col-span-3 p-2 font-mono font-bold text-slate-900">
+                    {selectedSlip.aadhar_number || selectedEmployee?.aadhar_number || selectedSlip.employee_code || selectedEmployee?.employee_code || 'EMP'}
+                  </div>
+                  <div className="col-span-3 p-2 bg-slate-50/70 font-semibold text-slate-700">Day Salary</div>
+                  <div className="col-span-3 p-2 font-mono font-bold text-slate-900">
+                    ₹{selectedSlip.day_salary != null ? selectedSlip.day_salary : effectiveDailyRate}
+                  </div>
+                </div>
+
+                {/* Row 3 */}
+                <div className="grid grid-cols-12 divide-x divide-slate-300">
+                  <div className="col-span-3 p-2 bg-slate-50/70 font-semibold text-slate-700">Designation</div>
+                  <div className="col-span-3 p-2 font-bold text-slate-900">
+                    {selectedSlip.designation || selectedEmployee?.designation || selectedEmployee?.department || 'Production'}
+                  </div>
+                  <div className="col-span-3 p-2 bg-slate-50/70 font-semibold text-slate-700">Half Day Salary</div>
+                  <div className="col-span-3 p-2 font-mono font-bold text-slate-900">
+                    ₹{selectedSlip.half_day_salary != null ? selectedSlip.half_day_salary : effectiveHalfDaySalary}
+                  </div>
+                </div>
+
+                {/* Row 4 */}
+                <div className="grid grid-cols-12 divide-x divide-slate-300">
+                  <div className="col-span-3 p-2 bg-slate-50/70 font-semibold text-slate-700">Phone Number</div>
+                  <div className="col-span-3 p-2 font-mono font-bold text-slate-900">
+                    {selectedSlip.phone || selectedEmployee?.phone || '—'}
+                  </div>
+                  <div className="col-span-3 p-2 bg-slate-50/70 font-semibold text-slate-700">Working Days</div>
+                  <div className="col-span-3 p-2 font-bold text-slate-900">
+                    {selectedSlip.working_days != null ? selectedSlip.working_days : workingDaysCount}
+                  </div>
+                </div>
+
+                {/* Row 5 */}
+                <div className="grid grid-cols-12 divide-x divide-slate-300">
+                  <div className="col-span-3 p-2 bg-slate-50/70 font-semibold text-slate-700">Year &amp; Month</div>
+                  <div className="col-span-3 p-2 font-mono font-bold text-slate-900">
+                    {selectedSlip.cycle_code || selectedSlip.cycle || selectedCycle}
+                  </div>
+                  <div className="col-span-3 p-2 bg-slate-50/70 font-semibold text-slate-700">Leave Days</div>
+                  <div className="col-span-3 p-2 font-bold text-slate-900">
+                    {selectedSlip.leave_days != null ? selectedSlip.leave_days : leaveDaysCount}
+                  </div>
+                </div>
+
+                {/* Row 6 */}
+                <div className="grid grid-cols-12 divide-x divide-slate-300">
+                  <div className="col-span-3 p-2 bg-slate-50/70 font-semibold text-slate-700">Total Working Hours</div>
+                  <div className="col-span-3 p-2 font-mono font-bold text-slate-900">
+                    {selectedSlip.total_working_hours_formatted || (selectedSlip.logged_hours != null ? `${Math.floor(selectedSlip.logged_hours)}:${String(Math.round((selectedSlip.logged_hours % 1) * 60)).padStart(2, '0')}` : `${Math.floor(totalLoggedHours)}:${String(Math.round((totalLoggedHours % 1) * 60)).padStart(2, '0')}`)}
+                  </div>
+                  <div className="col-span-3 p-2 bg-slate-50/70 font-semibold text-slate-700">Total Days of this Month</div>
+                  <div className="col-span-3 p-2 font-bold text-slate-900">
+                    {selectedSlip.total_days_of_month || 30}
+                  </div>
+                </div>
+              </div>
+
+              {/* EARNINGS vs DEDUCTION Table */}
+              <div className="border-x border-b border-slate-300 divide-y divide-slate-300 text-xs">
+                {/* Headers */}
+                <div className="grid grid-cols-12 divide-x divide-slate-300 bg-[#003870] text-white font-extrabold text-center uppercase tracking-wider text-[11px]">
+                  <div className="col-span-6 py-2">EARNINGS</div>
+                  <div className="col-span-6 py-2">DEDUCTION</div>
+                </div>
+
+                {/* Row 1 */}
+                <div className="grid grid-cols-12 divide-x divide-slate-300">
+                  <div className="col-span-4 p-2 font-medium text-slate-700">Basic Salary</div>
+                  <div className="col-span-2 p-2 font-mono font-bold text-slate-900 text-right">
+                    ₹{selectedSlip.basic_salary != null ? selectedSlip.basic_salary : (selectedSlip.base_salary != null ? selectedSlip.base_salary : earnedBasePay)}
+                  </div>
+                  <div className="col-span-4 p-2 font-medium text-slate-700">Paid Salary</div>
+                  <div className="col-span-2 p-2 font-mono font-bold text-slate-900 text-right">
+                    ₹{selectedSlip.paid_salary != null ? selectedSlip.paid_salary : (selectedSlip.statutory_deductions != null ? selectedSlip.statutory_deductions : numStatutoryDeductions)}
+                  </div>
+                </div>
+
+                {/* Row 2 */}
+                <div className="grid grid-cols-12 divide-x divide-slate-300">
+                  <div className="col-span-4 p-2 font-medium text-slate-700">Allowance</div>
+                  <div className="col-span-2 p-2 font-mono font-bold text-slate-900 text-right">
+                    ₹{selectedSlip.allowance != null ? selectedSlip.allowance : totalAllowance}
+                  </div>
+                  <div className="col-span-4 p-2 font-medium text-slate-700">Advance Repayment</div>
+                  <div className="col-span-2 p-2 font-mono font-bold text-slate-900 text-right">
+                    ₹{selectedSlip.advance_repayment != null ? selectedSlip.advance_repayment : (selectedSlip.advance_deduction != null ? selectedSlip.advance_deduction : numAdvanceDeduction)}
+                  </div>
+                </div>
+
+                {/* Row 3 */}
+                <div className="grid grid-cols-12 divide-x divide-slate-300">
+                  <div className="col-span-4 p-2 font-medium text-slate-700">Incentive</div>
+                  <div className="col-span-2 p-2 font-mono font-bold text-slate-900 text-right">
+                    ₹{selectedSlip.incentive != null ? selectedSlip.incentive : (selectedSlip.bonus != null ? selectedSlip.bonus : totalIncentive)}
+                  </div>
+                  <div className="col-span-4 p-2 font-medium text-slate-700">Other Deductions</div>
+                  <div className="col-span-2 p-2 font-mono font-bold text-slate-900 text-right">
+                    ₹{selectedSlip.other_deductions != null ? selectedSlip.other_deductions : manualDeductions}
+                  </div>
+                </div>
+
+                {/* Row 4 */}
+                <div className="grid grid-cols-12 divide-x divide-slate-300">
+                  <div className="col-span-4 p-2 font-medium text-slate-700">Others Earnings</div>
+                  <div className="col-span-2 p-2 font-mono font-bold text-slate-900 text-right">
+                    ₹{selectedSlip.others_earnings != null ? selectedSlip.others_earnings : (selectedSlip.overtime_pay != null ? selectedSlip.overtime_pay : overtimePay)}
+                  </div>
+                  <div className="col-span-4 p-2 bg-slate-50/30"></div>
+                  <div className="col-span-2 p-2 bg-slate-50/30"></div>
+                </div>
+
+                {/* Summary Row 1: TOTAL EARNINGS */}
+                <div className="grid grid-cols-12 divide-x divide-slate-300 bg-slate-50/80">
+                  <div className="col-span-6 p-2 font-extrabold text-slate-900 uppercase">
+                    TOTAL EARNINGS
+                  </div>
+                  <div className="col-span-6 p-2 font-mono font-extrabold text-slate-900 text-left pl-3">
+                    ₹{selectedSlip.total_earnings != null ? selectedSlip.total_earnings : grossPay}
+                  </div>
+                </div>
+
+                {/* Summary Row 2: TOTAL DEDUCTION */}
+                <div className="grid grid-cols-12 divide-x divide-slate-300 bg-slate-50/80">
+                  <div className="col-span-6 p-2 font-extrabold text-slate-900 uppercase">
+                    TOTAL DEDUCTION
+                  </div>
+                  <div className="col-span-6 p-2 font-mono font-extrabold text-slate-900 text-left pl-3">
+                    ₹{selectedSlip.total_deductions != null ? selectedSlip.total_deductions : totalDeductions}
+                  </div>
+                </div>
+              </div>
+
+              {/* Large NET PAY Box */}
+              <div className="border-x border-b border-slate-300 p-3 text-center bg-slate-50/40">
+                <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-mono">
+                  NET PAY : ₹{selectedSlip.net_pay != null ? selectedSlip.net_pay : (selectedSlip.net_salary != null ? selectedSlip.net_salary : (selectedSlip.amount != null ? selectedSlip.amount : netTakeHome))}
+                </div>
+              </div>
+
+              {/* Pale Yellow NET PAY IN WORDS Box */}
+              <div className="border-x border-b border-[#e2d8b3] bg-[#fffbf0] p-3 text-center">
+                <div className="text-xs sm:text-sm font-bold text-[#003870] font-sans">
+                  NET PAY IN WORDS: {selectedSlip.net_pay_words || numberToIndianWords(selectedSlip.net_pay != null ? selectedSlip.net_pay : (selectedSlip.net_salary != null ? selectedSlip.net_salary : (selectedSlip.amount != null ? selectedSlip.amount : netTakeHome)))}
+                </div>
+              </div>
+
+              {/* Auto-Generation & Legal Subtext */}
+              <div className="border-x border-b border-slate-300 p-2 text-center text-[10px] text-slate-500 italic space-y-0.5 bg-white">
+                <div>** Net Pay = Total Earnings - Total Deduction</div>
+                <div>"Payslip is auto-generated and valid without the need for a signature."</div>
+              </div>
+
+              {/* Dark Slate/Blue Footer Bar */}
+              <div className="bg-[#38536e] text-white text-center py-2 text-[11px] font-bold tracking-wide">
+                ** This document has been automatically generated by ARGUS **
+              </div>
+
+              {/* Bottom Action Buttons (Hidden during printing) */}
+              <div className="flex justify-center gap-3 pt-5 print:hidden">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-5 py-2 bg-[#0070ba] hover:bg-[#005da3] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Print
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-5 py-2 bg-[#0070ba] hover:bg-[#005da3] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSlipModalOpen(false);
+                    setSelectedSlip(null);
+                  }}
+                  className="px-5 py-2 bg-[#0070ba] hover:bg-[#005da3] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Back
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

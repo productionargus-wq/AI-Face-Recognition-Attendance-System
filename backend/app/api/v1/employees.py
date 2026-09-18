@@ -385,6 +385,8 @@ async def delete_employee(
     await store.delete_many("advances", {"employee_id": employee_id})
     await store.delete_many("manual_overrides", {"employee_id": employee_id})
     await store.delete_many("leaves", {"employee_id": employee_id})
+    await store.delete_many("salary_payouts", {"employee_id": employee_id})
+    await store.delete_many("financial_entries", {"employee_id": employee_id})
 
     # 4. Record audit log
     audit = AuditLog(

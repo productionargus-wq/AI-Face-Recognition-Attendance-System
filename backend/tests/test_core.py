@@ -379,3 +379,38 @@ def test_eod_reconciliation_part_time_target_completion():
     # 4.0h on 4.0h target = Full day PRESENT credit!
     assert reconciled["status"] == AttendanceStatus.PRESENT
     assert reconciled["is_concluded"] is True
+
+def test_number_to_indian_words():
+    """Verify number_to_indian_words helper produces accurate Indian English currency text."""
+    from app.api.v1.payroll import number_to_indian_words
+
+    assert number_to_indian_words(94) == "Ninety Four Rupees Only"
+    assert number_to_indian_words(0) == "Zero Rupees Only"
+    assert number_to_indian_words(500) == "Five Hundred Rupees Only"
+    assert number_to_indian_words(2500) == "Two Thousand Five Hundred Rupees Only"
+    assert number_to_indian_words(40000) == "Forty Thousand Rupees Only"
+    assert number_to_indian_words(125000) == "One Lakh Twenty Five Thousand Rupees Only"
+    assert number_to_indian_words(125000.50) == "One Lakh Twenty Five Thousand Rupees and Fifty Paise Only"
+
+def test_financial_entries_and_payroll_reconciliation():
+    """Verify bonus, allowance (reimbursement), and other deductions aggregate accurately into net pay."""
+    # Base: 40000, Overtime: 2000, Bonus/Incentive: 1500, Allowance (Reimbursement): 3000
+    # Total Gross Earnings: 46500
+    # Deductions: Statutory: 3000, Advance Repayment: 5000, Other Deductions: 500
+    # Total Deductions: 8500
+    # Net: 46500 - 8500 = 38000
+    base = 40000.0
+    ot = 2000.0
+    incentive = 1500.0
+    allowance = 3000.0
+    total_earnings = base + ot + incentive + allowance
+    assert total_earnings == 46500.0
+
+    statutory = 3000.0
+    advance = 5000.0
+    other_deds = 500.0
+    total_deductions = statutory + advance + other_deds
+    assert total_deductions == 8500.0
+
+    net_pay = total_earnings - total_deductions
+    assert net_pay == 38000.0

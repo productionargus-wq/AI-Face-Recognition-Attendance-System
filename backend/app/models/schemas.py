@@ -246,3 +246,64 @@ class AuditLog(BaseModel):
     details: Dict[str, Any] = {}
     ip_address: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+# ----------------- FINANCIAL ENTRIES (MANUAL ADJUSTMENTS) -----------------
+class FinancialEntryCreate(BaseModel):
+    employee_id: str
+    type: str  # BONUS | DEDUCTION | REIMBURSEMENT
+    amount: float
+    cycle: str  # "YYYY-MM"
+    reason: Optional[str] = ""
+
+class FinancialEntry(BaseModel):
+    id: str = Field(default_factory=generate_uuid)
+    organization_id: str
+    employee_id: str
+    type: str  # BONUS | DEDUCTION | REIMBURSEMENT
+    amount: float
+    cycle: str  # "YYYY-MM"
+    reason: str = ""
+    created_by: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# ----------------- PAYROLL COMPUTATION -----------------
+class PayrollComputeResult(BaseModel):
+    employee_id: str
+    employee_name: str
+    employee_code: str
+    department: str
+    designation: str = "Staff"
+    phone: Optional[str] = None
+    employment_type: str
+    cycle: str
+    # Attendance summary
+    total_days_of_month: int = 30
+    total_working_days: int = 26
+    days_present: int = 0
+    half_days: int = 0
+    paid_leaves: int = 0
+    leave_days: int = 0
+    lop_days: float = 0
+    total_logged_hours: float = 0.0
+    overtime_hours: float = 0.0
+    # Rate info
+    hours_salary: float = 0.0
+    day_salary: float = 0.0
+    half_day_salary: float = 0.0
+    # Earnings
+    basic_salary: float = 0.0
+    allowance: float = 0.0  # Reimbursements
+    incentive: float = 0.0  # Bonuses
+    others_earnings: float = 0.0  # Overtime + misc
+    total_earnings: float = 0.0
+    # Deductions
+    paid_salary: float = 0.0  # Statutory deductions
+    advance_repayment: float = 0.0
+    other_deductions: float = 0.0  # Manual deductions
+    total_deductions: float = 0.0
+    # Final Net
+    net_pay: float = 0.0
+    net_pay_words: str = ""
+    calculation_basis: str = ""
+    payout_status: str = "PENDING"
+

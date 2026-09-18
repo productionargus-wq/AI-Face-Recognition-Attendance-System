@@ -1187,4 +1187,128 @@ async def export_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
     response.headers["Content-Disposition"] = "attachment; filename=argus_attendance_report.xlsx"
-    return response 
+    return response
+
+@reports_router.get("/export-payroll-csv")
+async def export_payroll_csv(
+    cycle: Optional[str] = None,
+    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+):
+    from app.api.v1.payroll import compute_single_employee_payroll
+    org_id = auth_ctx["org_id"]
+    if not cycle:
+        now = datetime.now(IST_TZ)
+        cycle = f"{now.year:04d}-{now.month:02d}"
+
+    employees = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
+    rows = []
+    for emp in employees:
+        comp = await compute_single_employee_payroll(org_id, emp, cycle)
+        rows.append({
+            "Employee Code": comp["employee_code"],
+            "Employee Name": comp["employee_name"],
+            "Department": comp["department"],
+            "Designation": comp["designation"],
+            "Employment Type": comp["employment_type"],
+            "Cycle": comp.get("cycle_display") or cycle,
+            "Working Days": comp["working_days"],
+            "Days Present": comp["days_present"],
+            "Half Days": comp["half_days"],
+            "Leave Days": comp["leave_days"],
+            "Logged Hours": comp["total_logged_hours"],
+            "Overtime Hours": comp["overtime_hours"],
+            "Basic Salary": comp["basic_salary"],
+            "Allowance": comp["allowance"],
+            "Incentive": comp["incentive"],
+            "Others Earnings": comp["others_earnings"],
+            "Total Earnings": comp["total_earnings"],
+            "Paid Salary (PF/Taxes)": comp["paid_salary"],
+            "Advance Repayment": comp["advance_repayment"],
+            "Other Deductions": comp["other_deductions"],
+            "Total Deductions": comp["total_deductions"],
+            "Net Pay (INR)": comp["net_pay"],
+            "Net Pay In Words": comp["net_pay_words"],
+            "Payout Status": comp["payout_status"]
+        })
+
+    df = pd.DataFrame(rows)
+    stream = io.StringIO()
+    df.to_csv(stream, index=False)
+    
+    response = StreamingResponse(iter([stream.getvalue()]), media_type="text/csv")
+    response.headers["Content-Disposition"] = f"attachment; filename=argus_payroll_{cycle}.csv"
+    return response
+
+@reports_router.get("/export-payroll-excel")
+async def export_payroll_excel(
+    cycle: Optional[str] = None,
+    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+):
+    from app.api.v1.payroll import compute_single_employee_payroll
+    org_id = auth_ctx["org_id"]
+    if not cycle:
+        now = datetime.now(IST_TZ)
+        cycle = f"{now.year:04d}-{now.month:02d}"
+
+    employees = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
+    register_rows = []
+    bank_rows = []
+
+    for emp in employees:
+        comp = await compute_single_employee_payroll(org_id, emp, cycle)
+        b = comp.get("banking", {})
+        register_rows.append({
+            "Employee Code": comp["employee_code"],
+            "Employee Name": comp["employee_name"],
+            "Department": comp["department"],
+            "Designation": comp["designation"],
+            "Employment Type": comp["employment_type"],
+            "Cycle": comp.get("cycle_display") or cycle,
+            "Working Days": comp["working_days"],
+            "Days Present": comp["days_present"],
+            "Half Days": comp["half_days"],
+            "Leave Days": comp["leave_days"],
+            "Logged Hours": comp["total_logged_hours"],
+            "Overtime Hours": comp["overtime_hours"],
+            "Basic Salary": comp["basic_salary"],
+            "Allowance": comp["allowance"],
+            "Incentive": comp["incentive"],
+            "Others Earnings": comp["others_earnings"],
+            "Total Earnings": comp["total_earnings"],
+            "Paid Salary (PF/Taxes)": comp["paid_salary"],
+            "Advance Repayment": comp["advance_repayment"],
+            "Other Deductions": comp["other_deductions"],
+            "Total Deductions": comp["total_deductions"],
+            "Net Pay (INR)": comp["net_pay"],
+            "Net Pay In Words": comp["net_pay_words"],
+            "Payout Status": comp["payout_status"]
+        })
+        bank_rows.append({
+            "Employee Code": comp["employee_code"],
+            "Employee Name": comp["employee_name"],
+            "Account Holder Name": b.get("account_holder_name") or comp["employee_name"],
+            "Bank Name": b.get("bank_name") or "—",
+            "Account Number": b.get("account_number") or "—",
+            "IFSC Code": b.get("ifsc_code") or "—",
+            "UPI Number": b.get("upi_number") or "—",
+            "Net Payable (INR)": comp["net_pay"],
+            "Cycle": comp.get("cycle_display") or cycle,
+            "Payout Status": comp["payout_status"]
+        })
+
+    df_reg = pd.DataFrame(register_rows)
+    df_bank = pd.DataFrame(bank_rows)
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_reg.to_excel(writer, index=False, sheet_name='Payroll Register')
+        df_bank.to_excel(writer, index=False, sheet_name='Bank NEFT Advice')
+    output.seek(0)
+
+    response = StreamingResponse(
+        output, 
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response.headers["Content-Disposition"] = f"attachment; filename=argus_payroll_{cycle}.xlsx"
+    return response
+
