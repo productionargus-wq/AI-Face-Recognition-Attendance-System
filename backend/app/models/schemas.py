@@ -94,22 +94,32 @@ class ShiftType:
     FLEXIBLE = "FLEXIBLE"
 
 class EmployeeCreate(BaseModel):
-    employee_code: str
+    employee_code: Optional[str] = None
     first_name: str
-    last_name: str
-    email: EmailStr
-    department: str
+    last_name: Optional[str] = ""
+    email: Optional[EmailStr] = None
+    department: Optional[str] = "Operations"
     designation: str
     phone: Optional[str] = None
+    hourly_rate: Optional[float] = 250.0
+    daily_wage_rate: Optional[float] = 600.0
+    half_day_salary: Optional[float] = None
+    aadhar_number: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    joining_date: Optional[str] = None
+    account_holder_name: Optional[str] = None
+    upi_number: Optional[str] = None
+    bank_name: Optional[str] = None
+    account_number: Optional[str] = None
+    ifsc_code: Optional[str] = None
+    shift_hours: Optional[str] = "08:00"
     employment_type: Optional[str] = EmploymentType.FULL_TIME
     shift_type: Optional[str] = ShiftType.FIXED
     target_daily_hours: Optional[float] = 8.5
-    daily_wage_rate: Optional[float] = 600.0
     assigned_shift: Optional[str] = "General Shift (09:00 AM – 05:30 PM • 8.5h)"
     shift_start: Optional[str] = "09:00"
     shift_end: Optional[str] = "17:30"
     base_salary: Optional[float] = 40000.0
-    hourly_rate: Optional[float] = 250.0
     statutory_deductions: Optional[float] = 3000.0
     permissions: Optional[List[str]] = None
 
@@ -118,20 +128,30 @@ class Employee(BaseModel):
     organization_id: str
     employee_code: str
     first_name: str
-    last_name: str
-    email: EmailStr
-    department: str
+    last_name: Optional[str] = ""
+    email: Optional[EmailStr] = None
+    department: Optional[str] = "Operations"
     designation: str
     phone: Optional[str] = None
+    hourly_rate: Optional[float] = 250.0
+    daily_wage_rate: Optional[float] = 600.0
+    half_day_salary: Optional[float] = None
+    aadhar_number: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    joining_date: Optional[str] = None
+    account_holder_name: Optional[str] = None
+    upi_number: Optional[str] = None
+    bank_name: Optional[str] = None
+    account_number: Optional[str] = None
+    ifsc_code: Optional[str] = None
+    shift_hours: Optional[str] = "08:00"
     employment_type: Optional[str] = EmploymentType.FULL_TIME
     shift_type: Optional[str] = ShiftType.FIXED
     target_daily_hours: Optional[float] = 8.5
-    daily_wage_rate: Optional[float] = 600.0
     assigned_shift: Optional[str] = "General Shift (09:00 AM – 05:30 PM • 8.5h)"
     shift_start: Optional[str] = "09:00"
     shift_end: Optional[str] = "17:30"
     base_salary: Optional[float] = 40000.0
-    hourly_rate: Optional[float] = 250.0
     statutory_deductions: Optional[float] = 3000.0
     permissions: Optional[List[str]] = None
     consent_given: bool = False

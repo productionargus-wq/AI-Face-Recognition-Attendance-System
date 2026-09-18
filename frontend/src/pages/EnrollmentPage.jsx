@@ -41,12 +41,27 @@ export const EnrollmentPage = () => {
     last_name: '',
     employee_code: '',
     email: '',
-    department: '',
-    designation: '',
+    department: 'Operations',
+    designation: 'Staff',
     phone: '',
+    hourly_rate: 250,
+    daily_wage_rate: 600,
+    half_day_salary: 300,
+    aadhar_number: '',
+    emergency_contact: '',
+    joining_date: '',
+    account_holder_name: '',
+    upi_number: '',
+    bank_name: '',
+    account_number: '',
+    ifsc_code: '',
+    shift_hours: '08:00',
     assigned_shift: 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
     shift_start: '09:00',
-    shift_end: '17:30'
+    shift_end: '17:30',
+    base_salary: 40000,
+    statutory_deductions: 3000,
+    permissions: DEFAULT_PERMISSIONS
   });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
@@ -152,11 +167,22 @@ export const EnrollmentPage = () => {
       department: emp.department || 'Operations',
       designation: emp.designation || 'Staff',
       phone: emp.phone || '',
+      hourly_rate: emp.hourly_rate != null ? emp.hourly_rate : 250,
+      daily_wage_rate: emp.daily_wage_rate != null ? emp.daily_wage_rate : 600,
+      half_day_salary: emp.half_day_salary != null ? emp.half_day_salary : ((emp.daily_wage_rate || 600) / 2),
+      aadhar_number: emp.aadhar_number || '',
+      emergency_contact: emp.emergency_contact || '',
+      joining_date: emp.joining_date || '',
+      account_holder_name: emp.account_holder_name || '',
+      upi_number: emp.upi_number || '',
+      bank_name: emp.bank_name || '',
+      account_number: emp.account_number || '',
+      ifsc_code: emp.ifsc_code || '',
+      shift_hours: emp.shift_hours || '08:00',
       assigned_shift: emp.assigned_shift || 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
       shift_start: emp.shift_start || '09:00',
       shift_end: emp.shift_end || '17:30',
       base_salary: emp.base_salary != null ? emp.base_salary : 40000,
-      hourly_rate: emp.hourly_rate != null ? emp.hourly_rate : 250,
       statutory_deductions: emp.statutory_deductions != null ? emp.statutory_deductions : 3000,
       permissions: emp.permissions || DEFAULT_PERMISSIONS
     });
@@ -231,7 +257,7 @@ export const EnrollmentPage = () => {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base sm:text-lg font-black tracking-tight text-slate-900 uppercase font-mono">
-                BIOMETRIC ENROLLMENT & DIRECTORY
+                EMPLOYEE ENROLLMENT &amp; DETAILS
               </h1>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-200">
                 {employees.length} REGISTERED
@@ -369,7 +395,12 @@ export const EnrollmentPage = () => {
                         </div>
                         <div>
                           <div className="font-bold text-slate-900 text-xs">{fullName}</div>
-                          <div className="text-[10px] font-mono text-blue-600 font-bold">{emp.employee_code}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-mono text-blue-600 font-bold">{emp.employee_code}</span>
+                            {emp.aadhar_number && (
+                              <span className="text-[9px] font-mono text-slate-400">UID: {emp.aadhar_number}</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -409,6 +440,11 @@ export const EnrollmentPage = () => {
                           <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
                             <Phone className="w-2.5 h-2.5 text-slate-400" />
                             <span>{emp.phone}</span>
+                          </div>
+                        )}
+                        {emp.emergency_contact && (
+                          <div className="text-[9px] text-amber-600 font-mono">
+                            SOS: {emp.emergency_contact}
                           </div>
                         )}
                       </div>
@@ -606,6 +642,186 @@ export const EnrollmentPage = () => {
                   onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
                   className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+
+              {/* Salary Structure (Matching Image) */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                <label className="block text-xs font-bold text-slate-800">
+                  Salary Structure (₹)
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                      Hourly Salary *
+                    </label>
+                    <input
+                      type="number"
+                      step="10"
+                      min="0"
+                      value={editFormData.hourly_rate}
+                      onChange={(e) => setEditFormData({ ...editFormData, hourly_rate: parseFloat(e.target.value) || 0 })}
+                      className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                      Day Salary *
+                    </label>
+                    <input
+                      type="number"
+                      step="50"
+                      min="0"
+                      value={editFormData.daily_wage_rate}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        setEditFormData({ 
+                          ...editFormData, 
+                          daily_wage_rate: val,
+                          half_day_salary: Math.round(val / 2)
+                        });
+                      }}
+                      className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                      Half Day Salary *
+                    </label>
+                    <input
+                      type="number"
+                      step="25"
+                      min="0"
+                      value={editFormData.half_day_salary}
+                      onChange={(e) => setEditFormData({ ...editFormData, half_day_salary: parseFloat(e.target.value) || 0 })}
+                      className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Contact, Identity & Shift Hours */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Emergency Contact
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.emergency_contact}
+                    onChange={(e) => setEditFormData({ ...editFormData, emergency_contact: e.target.value })}
+                    className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Number"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Aadhar Number
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.aadhar_number}
+                    onChange={(e) => setEditFormData({ ...editFormData, aadhar_number: e.target.value })}
+                    className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                    placeholder="12-digit number"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Joining Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editFormData.joining_date}
+                    onChange={(e) => setEditFormData({ ...editFormData, joining_date: e.target.value })}
+                    className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                    Shift Hours
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.shift_hours}
+                    onChange={(e) => setEditFormData({ ...editFormData, shift_hours: e.target.value })}
+                    className="w-full text-xs font-mono font-medium text-slate-900 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Example 08:00"
+                  />
+                </div>
+              </div>
+
+              {/* Banking & UPI Details */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                <label className="block text-xs font-bold text-slate-800">
+                  Banking &amp; UPI Details
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                      Account Holder Name
+                    </label>
+                    <input
+                      type="text"
+                      value={editFormData.account_holder_name}
+                      onChange={(e) => setEditFormData({ ...editFormData, account_holder_name: e.target.value })}
+                      className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      placeholder="Account Holder Name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                      UPI Number / ID
+                    </label>
+                    <input
+                      type="text"
+                      value={editFormData.upi_number}
+                      onChange={(e) => setEditFormData({ ...editFormData, upi_number: e.target.value })}
+                      className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      placeholder="UPI Number"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                      Bank Name
+                    </label>
+                    <input
+                      type="text"
+                      value={editFormData.bank_name}
+                      onChange={(e) => setEditFormData({ ...editFormData, bank_name: e.target.value })}
+                      className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      placeholder="Bank Name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                      Account Number
+                    </label>
+                    <input
+                      type="text"
+                      value={editFormData.account_number}
+                      onChange={(e) => setEditFormData({ ...editFormData, account_number: e.target.value })}
+                      className="w-full text-xs font-mono font-medium text-slate-900 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      placeholder="Account Number"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                      IFSC Code
+                    </label>
+                    <input
+                      type="text"
+                      value={editFormData.ifsc_code}
+                      onChange={(e) => setEditFormData({ ...editFormData, ifsc_code: e.target.value.toUpperCase() })}
+                      className="w-full text-xs font-mono font-medium text-slate-900 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      placeholder="IFSC Code"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-2">

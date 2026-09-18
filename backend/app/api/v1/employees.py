@@ -28,6 +28,16 @@ class EmployeeUpdate(BaseModel):
     shift_type: Optional[str] = None
     target_daily_hours: Optional[float] = None
     daily_wage_rate: Optional[float] = None
+    half_day_salary: Optional[float] = None
+    aadhar_number: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    joining_date: Optional[str] = None
+    account_holder_name: Optional[str] = None
+    upi_number: Optional[str] = None
+    bank_name: Optional[str] = None
+    account_number: Optional[str] = None
+    ifsc_code: Optional[str] = None
+    shift_hours: Optional[str] = None
     assigned_shift: Optional[str] = None
     shift_start: Optional[str] = None
     shift_end: Optional[str] = None
@@ -130,10 +140,24 @@ async def create_employee(
     """Add new employee to the organization."""
     org_id = auth_ctx["org_id"]
 
+    # Auto-generate employee code if missing
+    emp_code = (payload.employee_code or "").strip()
+    if not emp_code:
+        count = await store.count("employees", {"organization_id": org_id})
+        emp_code = f"ARG-{count + 101}"
+
+    # Split name if full name provided in first_name and last_name is empty
+    first_name = (payload.first_name or "").strip()
+    last_name = (payload.last_name or "").strip()
+    if " " in first_name and not last_name:
+        parts = first_name.split(" ", 1)
+        first_name = parts[0].strip()
+        last_name = parts[1].strip()
+
     # Check unique employee_code within organization
     existing = await store.find_one("employees", {
         "organization_id": org_id, 
-        "employee_code": payload.employee_code
+        "employee_code": emp_code
     })
     if existing:
         if existing.get("is_active") is False:
@@ -148,58 +172,73 @@ async def create_employee(
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Employee code '{payload.employee_code}' already exists in your organization."
+                detail=f"Employee code '{emp_code}' already exists in your organization."
             )
 
     # Check unique email within organization
-    if payload.email:
+    target_email = payload.email
+    if target_email:
         existing_email_emp = await store.find_one("employees", {
             "organization_id": org_id,
-            "email": payload.email
+            "email": target_email
         })
         if existing_email_emp:
             if existing_email_emp.get("is_active") is False:
                 await store.delete_many("employees", {"id": existing_email_emp["id"], "organization_id": org_id})
                 await store.delete_many("users", {"employee_id": existing_email_emp["id"], "organization_id": org_id})
-                await store.delete_many("users", {"email": payload.email, "organization_id": org_id})
+                await store.delete_many("users", {"email": target_email, "organization_id": org_id})
             else:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"An employee with email '{payload.email}' already exists in your organization."
+                    detail=f"An employee with email '{target_email}' already exists in your organization."
                 )
 
     default_perms = payload.permissions if payload.permissions is not None else ["/admin", "/kiosk", "/leave-apply", "/advance-money", "/payroll"]
 
+    daily_wage = payload.daily_wage_rate if payload.daily_wage_rate is not None else 600.0
+    half_day_sal = payload.half_day_salary if payload.half_day_salary is not None else round(daily_wage / 2.0, 2)
+
     emp_dict = Employee(
         organization_id=org_id,
-        employee_code=payload.employee_code,
-        first_name=payload.first_name,
-        last_name=payload.last_name,
-        email=payload.email,
-        department=payload.department,
+        employee_code=emp_code,
+        first_name=first_name,
+        last_name=last_name,
+        email=target_email,
+        department=payload.department or "Operations",
         designation=payload.designation,
         phone=payload.phone,
+        hourly_rate=payload.hourly_rate if payload.hourly_rate is not None else 250.0,
+        daily_wage_rate=daily_wage,
+        half_day_salary=half_day_sal,
+        aadhar_number=payload.aadhar_number,
+        emergency_contact=payload.emergency_contact,
+        joining_date=payload.joining_date,
+        account_holder_name=payload.account_holder_name,
+        upi_number=payload.upi_number,
+        bank_name=payload.bank_name,
+        account_number=payload.account_number,
+        ifsc_code=payload.ifsc_code,
+        shift_hours=payload.shift_hours or "08:00",
         employment_type=payload.employment_type or "FULL_TIME",
         shift_type=payload.shift_type or "FIXED",
         target_daily_hours=payload.target_daily_hours if payload.target_daily_hours is not None else (4.0 if payload.employment_type == "PART_TIME" else 8.5),
-        daily_wage_rate=payload.daily_wage_rate if payload.daily_wage_rate is not None else 600.0,
         assigned_shift=payload.assigned_shift or "General Shift (09:00 AM – 05:30 PM • 8.5h)",
         shift_start=payload.shift_start or "09:00",
         shift_end=payload.shift_end or "17:30",
         base_salary=payload.base_salary if payload.base_salary is not None else 40000.0,
-        hourly_rate=payload.hourly_rate if payload.hourly_rate is not None else 250.0,
         statutory_deductions=payload.statutory_deductions if payload.statutory_deductions is not None else 3000.0,
         permissions=default_perms
     ).dict()
     await store.insert_one("employees", emp_dict)
 
     # Automatically create an employee user portal login
-    existing_user = await store.find_one("users", {"email": payload.email})
+    login_email = target_email or f"{emp_code.lower()}@argus.internal"
+    existing_user = await store.find_one("users", {"email": login_email})
     if not existing_user:
         user_dict = User(
             organization_id=org_id,
-            name=f"{payload.first_name} {payload.last_name}",
-            email=payload.email,
+            name=f"{first_name} {last_name}".strip(),
+            email=login_email,
             hashed_password=get_password_hash("Argus@123"), # Default temp password
             role=UserRole.EMPLOYEE,
             employee_id=emp_dict["id"],
@@ -408,6 +447,26 @@ async def update_employee(
         update_fields["target_daily_hours"] = float(payload.target_daily_hours)
     if payload.daily_wage_rate is not None:
         update_fields["daily_wage_rate"] = float(payload.daily_wage_rate)
+    if payload.half_day_salary is not None:
+        update_fields["half_day_salary"] = float(payload.half_day_salary)
+    if payload.aadhar_number is not None:
+        update_fields["aadhar_number"] = payload.aadhar_number.strip()
+    if payload.emergency_contact is not None:
+        update_fields["emergency_contact"] = payload.emergency_contact.strip()
+    if payload.joining_date is not None:
+        update_fields["joining_date"] = payload.joining_date.strip()
+    if payload.account_holder_name is not None:
+        update_fields["account_holder_name"] = payload.account_holder_name.strip()
+    if payload.upi_number is not None:
+        update_fields["upi_number"] = payload.upi_number.strip()
+    if payload.bank_name is not None:
+        update_fields["bank_name"] = payload.bank_name.strip()
+    if payload.account_number is not None:
+        update_fields["account_number"] = payload.account_number.strip()
+    if payload.ifsc_code is not None:
+        update_fields["ifsc_code"] = payload.ifsc_code.strip()
+    if payload.shift_hours is not None:
+        update_fields["shift_hours"] = payload.shift_hours.strip()
     if payload.assigned_shift is not None:
         update_fields["assigned_shift"] = payload.assigned_shift.strip()
     if payload.shift_start is not None:

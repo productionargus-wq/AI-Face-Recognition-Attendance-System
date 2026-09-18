@@ -93,13 +93,13 @@ export const AppLayout = ({ children }) => {
       id: '/admin'
     },
     {
-      name: 'Attendance Capture',
+      name: 'Attendance Capture & Reports',
       path: '/kiosk',
       icon: ScanFace,
       id: '/kiosk'
     },
     {
-      name: 'Biometric Enrollment',
+      name: 'Employee Enrollment & Details',
       path: '/enrollment',
       icon: Fingerprint,
       id: '/enrollment'

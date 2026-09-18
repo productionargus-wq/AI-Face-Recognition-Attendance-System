@@ -4,8 +4,8 @@ import { X, Camera, CheckCircle2, AlertCircle, RefreshCw, ShieldCheck, Sparkles 
 
 export const ALL_PERMISSIONS = [
   { id: '/admin', label: 'Employee Dashboard', desc: 'Self-service attendance & logs' },
-  { id: '/kiosk', label: 'Attendance Capture', desc: 'Kiosk facial recognition' },
-  { id: '/enrollment', label: 'Biometric Enrollment', desc: 'Face registration & roster' },
+  { id: '/kiosk', label: 'Attendance Capture & Reports', desc: 'Kiosk facial recognition' },
+  { id: '/enrollment', label: 'Employee Enrollment & Details', desc: 'Face registration & roster' },
   { id: '/manual-entry', label: 'Manual Entry', desc: 'Duty shifts & override logs' },
   { id: '/advance-money', label: 'Advance Money', desc: 'Salary advance & repayment' },
   { id: '/leave-apply', label: 'Leave Apply', desc: 'Leave applications & tracking' },
@@ -16,29 +16,68 @@ export const ALL_PERMISSIONS = [
 
 export const DEFAULT_PERMISSIONS = ['/admin', '/kiosk', '/leave-apply', '/advance-money', '/payroll', '/geofence'];
 
+const INITIAL_FORM_DATA = {
+  employee_code: '',
+  first_name: '',
+  last_name: '',
+  employee_name: '',
+  email: '',
+  department: 'Operations',
+  designation: '',
+  phone: '',
+  hourly_rate: 250,
+  daily_wage_rate: 600,
+  half_day_salary: 300,
+  aadhar_number: '',
+  emergency_contact: '',
+  joining_date: '',
+  account_holder_name: '',
+  upi_number: '',
+  bank_name: '',
+  account_number: '',
+  ifsc_code: '',
+  shift_hours: '08:00',
+  employment_type: 'FULL_TIME',
+  shift_type: 'FIXED',
+  target_daily_hours: 8.5,
+  assigned_shift: 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
+  shift_start: '09:00',
+  shift_end: '17:30',
+  base_salary: 40000,
+  statutory_deductions: 3000,
+  permissions: DEFAULT_PERMISSIONS
+};
+
 export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
   const [step, setStep] = useState(1);
   
-  const [formData, setFormData] = useState({
-    employee_code: '',
-    first_name: '',
-    last_name: '',
-    email: '',
-    department: 'Engineering',
-    designation: '',
-    phone: '',
-    employment_type: 'FULL_TIME',
-    shift_type: 'FIXED',
-    target_daily_hours: 8.5,
-    daily_wage_rate: 600,
-    assigned_shift: 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
-    shift_start: '09:00',
-    shift_end: '17:30',
-    base_salary: 40000,
-    hourly_rate: 250,
-    statutory_deductions: 3000,
-    permissions: DEFAULT_PERMISSIONS
-  });
+  const [formData, setFormData] = useState(INITIAL_FORM_DATA);
+
+  const handleNameChange = (nameVal) => {
+    const parts = nameVal.trimStart().split(' ');
+    const firstName = parts[0] || '';
+    const lastName = parts.slice(1).join(' ') || '';
+    setFormData(prev => ({
+      ...prev,
+      employee_name: nameVal,
+      first_name: firstName,
+      last_name: lastName
+    }));
+  };
+
+  const handleDailyWageChange = (val) => {
+    const num = parseFloat(val) || 0;
+    setFormData(prev => ({
+      ...prev,
+      daily_wage_rate: num,
+      half_day_salary: Math.round(num / 2)
+    }));
+  };
+
+  const handleResetForm = () => {
+    setFormData(INITIAL_FORM_DATA);
+    setError('');
+  };
 
   const handleEmploymentTypeChange = (type) => {
     if (type === 'PART_TIME') {
@@ -199,7 +238,13 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
     e.preventDefault();
     setError('');
     try {
-      const res = await api.post('/employees/', formData);
+      const payload = { ...formData };
+      if (!payload.first_name && payload.employee_name) {
+        const parts = payload.employee_name.trim().split(' ');
+        payload.first_name = parts[0];
+        payload.last_name = parts.slice(1).join(' ');
+      }
+      const res = await api.post('/employees/', payload);
       setCreatedEmployee(res.data);
       setStep(2);
     } catch (err) {
@@ -269,7 +314,7 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl max-w-lg w-full p-4 sm:p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200 relative my-auto max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-3xl max-w-3xl w-full p-4 sm:p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200 relative my-auto max-h-[90vh] overflow-y-auto">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 sm:top-5 sm:right-5 p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors"
@@ -292,7 +337,7 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
             }`}>3</span>
           </div>
           <h3 className="text-base sm:text-lg font-bold text-slate-900">
-            {step === 1 && 'Step 1: Employee Information'}
+            {step === 1 && 'Employee Detail Entry'}
             {step === 2 && 'Step 2: Biometric Consent'}
             {step === 3 && 'Step 3: Face Vector Capture (3 Samples)'}
           </h3>
@@ -313,405 +358,397 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
         )}
 
         {step === 1 && (
-          <form onSubmit={handleInfoSubmit} className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <form onSubmit={handleInfoSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Row 1: Employee Name*, Designation*, Mobile Number* */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Employee Code / ID</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Employee Name<span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="ARG-104"
+                  placeholder="Name"
+                  value={formData.employee_name}
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Designation<span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Type/Select Designation"
+                  value={formData.designation}
+                  onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Mobile Number<span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="Number"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Row 2: Hourly Salary*, Day Salary*, Half Day Salary* */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Hourly Salary<span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="10"
+                  min="0"
+                  required
+                  placeholder="Amount"
+                  value={formData.hourly_rate}
+                  onChange={(e) => setFormData({ ...formData, hourly_rate: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Day Salary<span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="50"
+                  min="0"
+                  required
+                  placeholder="Amount"
+                  value={formData.daily_wage_rate}
+                  onChange={(e) => handleDailyWageChange(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Half Day Salary<span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="25"
+                  min="0"
+                  required
+                  placeholder="Amount"
+                  value={formData.half_day_salary}
+                  onChange={(e) => setFormData({ ...formData, half_day_salary: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Row 3: Email ID, Aadhar Number, Emergency Contact */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Email ID</label>
+                <input
+                  type="email"
+                  placeholder="Email ID"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Aadhar Number</label>
+                <input
+                  type="text"
+                  placeholder="Number"
+                  maxLength={12}
+                  value={formData.aadhar_number}
+                  onChange={(e) => setFormData({ ...formData, aadhar_number: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Emergency Contact</label>
+                <input
+                  type="tel"
+                  placeholder="Number"
+                  value={formData.emergency_contact}
+                  onChange={(e) => setFormData({ ...formData, emergency_contact: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Row 4: Joining Date, Account Holder Name, UPI Number */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Joining Date</label>
+                <input
+                  type="date"
+                  value={formData.joining_date}
+                  onChange={(e) => setFormData({ ...formData, joining_date: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Account Holder Name</label>
+                <input
+                  type="text"
+                  placeholder="Account Holder Name"
+                  value={formData.account_holder_name}
+                  onChange={(e) => setFormData({ ...formData, account_holder_name: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">UPI Number</label>
+                <input
+                  type="text"
+                  placeholder="UPI Number"
+                  value={formData.upi_number}
+                  onChange={(e) => setFormData({ ...formData, upi_number: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Row 5: Bank Name, Account Number, IFSC Code */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Bank Name</label>
+                <input
+                  type="text"
+                  placeholder="Bank Name"
+                  value={formData.bank_name}
+                  onChange={(e) => setFormData({ ...formData, bank_name: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Account Number</label>
+                <input
+                  type="text"
+                  placeholder="Account Number"
+                  value={formData.account_number}
+                  onChange={(e) => setFormData({ ...formData, account_number: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">IFSC Code</label>
+                <input
+                  type="text"
+                  placeholder="IFSC Code"
+                  value={formData.ifsc_code}
+                  onChange={(e) => setFormData({ ...formData, ifsc_code: e.target.value.toUpperCase() })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+              </div>
+
+              {/* Row 6: Shift Hours, Optional ID, Optional Dept */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Shift Hours</label>
+                <input
+                  type="text"
+                  placeholder="Example 08:00"
+                  value={formData.shift_hours}
+                  onChange={(e) => setFormData({ ...formData, shift_hours: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Employee Code / ID (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="Auto-assigned (ARG-104)"
                   value={formData.employee_code}
                   onChange={(e) => setFormData({ ...formData, employee_code: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                 />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
                 <input
                   type="text"
-                  required
-                  placeholder="Engineering"
+                  placeholder="Operations"
                   value={formData.department}
                   onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">First Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Sarah"
-                  value={formData.first_name}
-                  onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Last Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Jenkins"
-                  value={formData.last_name}
-                  onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Work Email</label>
-              <input
-                type="email"
-                required
-                placeholder="sarah.j@company.com"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Designation</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Product Designer"
-                  value={formData.designation}
-                  onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Phone (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="+91 98765 43210"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            {/* Employment Type & Worker Model */}
-            <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-xl space-y-2.5">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-bold text-slate-800">
-                  Employment Type & Worker Model
-                </label>
-                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold">
-                  {formData.employment_type.replace('_', ' ')}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleEmploymentTypeChange('FULL_TIME')}
-                  className={`px-2.5 py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
-                    formData.employment_type === 'FULL_TIME'
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  Full-Time
-                  <span className="block text-[10px] font-normal opacity-80">8.5h Standard</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleEmploymentTypeChange('PART_TIME')}
-                  className={`px-2.5 py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
-                    formData.employment_type === 'PART_TIME'
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  Part-Time
-                  <span className="block text-[10px] font-normal opacity-80">{formData.target_daily_hours || 4.0}h Target</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleEmploymentTypeChange('DAILY_WAGE')}
-                  className={`px-2.5 py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
-                    formData.employment_type === 'DAILY_WAGE'
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  Daily Wage
-                  <span className="block text-[10px] font-normal opacity-80">Coolie / Flexible</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleEmploymentTypeChange('FIELD_WORKER')}
-                  className={`px-2.5 py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
-                    formData.employment_type === 'FIELD_WORKER'
-                      ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  Field Worker
-                  <span className="block text-[10px] font-normal opacity-80">Client Sites / GPS</span>
-                </button>
-              </div>
-
-              {formData.employment_type === 'PART_TIME' && (
-                <div className="p-2.5 bg-white border border-blue-200 rounded-lg flex items-center justify-between gap-3">
-                  <div>
-                    <span className="block text-[11px] font-bold text-slate-800">Part-Time Daily Target Hours</span>
-                    <span className="text-[10px] text-slate-500">Completing this duration counts as 100% full attendance credit (no late/half-day penalties).</span>
+            {/* Collapsible Advanced Shift & Worker Model Config */}
+            <details className="border border-slate-200 rounded-xl p-3 bg-slate-50/50 text-xs">
+              <summary className="font-bold text-slate-700 cursor-pointer flex items-center justify-between select-none">
+                <span>Advanced Worker Model, Shifts &amp; Permissions</span>
+                <span className="text-[11px] font-normal text-blue-600">Configure Details ▾</span>
+              </summary>
+              <div className="pt-3 space-y-3">
+                {/* Employment Type & Worker Model */}
+                <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-800">
+                      Employment Type &amp; Worker Model
+                    </label>
+                    <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold">
+                      {formData.employment_type.replace('_', ' ')}
+                    </span>
                   </div>
-                  <div className="w-24">
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="1"
-                      max="12"
-                      value={formData.target_daily_hours}
-                      onChange={(e) => setFormData({ ...formData, target_daily_hours: parseFloat(e.target.value) || 4.0 })}
-                      className="w-full px-2 py-1 border border-slate-300 rounded text-xs font-mono font-bold text-slate-800 text-right focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {formData.employment_type === 'DAILY_WAGE' && (
-                <div className="p-2.5 bg-white border border-amber-200 rounded-lg flex items-center justify-between gap-3">
-                  <div>
-                    <span className="block text-[11px] font-bold text-amber-900">Flexible Daily Wage Mode Active</span>
-                    <span className="text-[10px] text-amber-700">Workers can punch in at random hours without LATE penalties. Pay calculated per logged hours & daily rate.</span>
-                  </div>
-                  <div className="w-28">
-                    <label className="block text-[9px] uppercase font-bold text-slate-500">Wage (₹/day)</label>
-                    <input
-                      type="number"
-                      step="50"
-                      min="0"
-                      value={formData.daily_wage_rate}
-                      onChange={(e) => setFormData({ ...formData, daily_wage_rate: parseFloat(e.target.value) || 600 })}
-                      className="w-full px-2 py-1 border border-slate-300 rounded text-xs font-mono font-bold text-slate-800 text-right focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {formData.employment_type === 'FIELD_WORKER' && (
-                <div className="p-2.5 bg-white border border-purple-200 rounded-lg flex items-center justify-between gap-3">
-                  <div>
-                    <span className="block text-[11px] font-bold text-purple-900">Field Worker Anti-Fraud Tracking Active</span>
-                    <span className="text-[10px] text-purple-700">Punches are verified against authorized client project sites with facial biometrics and GPS perimeter check.</span>
-                  </div>
-                  <div className="w-28">
-                    <label className="block text-[9px] uppercase font-bold text-slate-500">Base Pay (₹)</label>
-                    <input
-                      type="number"
-                      step="1000"
-                      min="0"
-                      value={formData.base_salary}
-                      onChange={(e) => setFormData({ ...formData, base_salary: parseFloat(e.target.value) || 35000 })}
-                      className="w-full px-2 py-1 border border-slate-300 rounded text-xs font-mono font-bold text-slate-800 text-right focus:ring-2 focus:ring-purple-500"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-xs font-semibold text-slate-700">
-                Assigned Shift / Working Schedule
-              </label>
-              <select
-                value={
-                  [
-                    'General Shift (09:00 AM – 05:30 PM • 8.5h)',
-                    'Morning Shift (06:00 AM – 02:30 PM • 8.5h)',
-                    'Evening Shift (02:00 PM – 10:30 PM • 8.5h)',
-                    'Night Shift (09:00 PM – 05:30 AM • 8.5h)',
-                    'Standard Shift (10:00 AM – 07:00 PM • 9.0h)',
-                    'Flexible Schedule (8.0h)'
-                  ].includes(formData.assigned_shift) ? formData.assigned_shift : 'CUSTOM'
-                }
-                onChange={(e) => {
-                  if (e.target.value === 'CUSTOM') {
-                    handleCustomTimingChange(formData.shift_start, formData.shift_end);
-                  } else {
-                    handleShiftChange(e.target.value);
-                  }
-                }}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer font-medium"
-              >
-                <option value="General Shift (09:00 AM – 05:30 PM • 8.5h)">General Shift (09:00 AM – 05:30 PM • 8.5h)</option>
-                <option value="Morning Shift (06:00 AM – 02:30 PM • 8.5h)">Morning Shift (06:00 AM – 02:30 PM • 8.5h)</option>
-                <option value="Evening Shift (02:00 PM – 10:30 PM • 8.5h)">Evening Shift (02:00 PM – 10:30 PM • 8.5h)</option>
-                <option value="Night Shift (09:00 PM – 05:30 AM • 8.5h)">Night Shift (09:00 PM – 05:30 AM • 8.5h)</option>
-                <option value="Standard Shift (10:00 AM – 07:00 PM • 9.0h)">Standard Shift (10:00 AM – 07:00 PM • 9.0h)</option>
-                <option value="Flexible Schedule (8.0h)">Flexible Schedule (8.0h)</option>
-                <option value="CUSTOM">Custom Shift (Explicit timings below)</option>
-              </select>
-
-              {/* Explicit Shift Timing Pickers */}
-              <div className="grid grid-cols-2 gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                <div>
-                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
-                    Shift Start Time
-                  </label>
-                  <input
-                    type="time"
-                    required
-                    value={formData.shift_start}
-                    onChange={(e) => handleCustomTimingChange(e.target.value, undefined)}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
-                    Shift End Time
-                  </label>
-                  <input
-                    type="time"
-                    required
-                    value={formData.shift_end}
-                    onChange={(e) => handleCustomTimingChange(undefined, e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Compensation & Salary Structure */}
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-800">
-                  Compensation & Salary Structure
-                </label>
-                <p className="text-[11px] text-slate-500">
-                  Assign base compensation, overtime rates, and statutory tax deductions for payroll.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                <div>
-                  <label className="block text-[10px] uppercase font-bold text-slate-600 mb-1">
-                    Base Salary (₹/mo)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="500"
-                    value={formData.base_salary}
-                    onChange={(e) => setFormData({ ...formData, base_salary: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="40000"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] uppercase font-bold text-slate-600 mb-1">
-                    OT Rate (₹/hr)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="25"
-                    value={formData.hourly_rate}
-                    onChange={(e) => setFormData({ ...formData, hourly_rate: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="250"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] uppercase font-bold text-slate-600 mb-1">
-                    PF / Tax Ded. (₹)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="100"
-                    value={formData.statutory_deductions}
-                    onChange={(e) => setFormData({ ...formData, statutory_deductions: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="3000"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* User Access & Permissions */}
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <label className="block text-xs font-bold text-slate-800">
-                    User Access & Permissions
-                  </label>
-                  <p className="text-[11px] text-slate-500">
-                    Check the sidebar tabs this employee is permitted to view in their UI.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 text-[10px] font-bold">
-                  <button
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, permissions: ALL_PERMISSIONS.map(p => p.id) }))}
-                    className="text-blue-600 hover:underline cursor-pointer"
-                  >
-                    Select All
-                  </button>
-                  <span className="text-slate-300">•</span>
-                  <button
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, permissions: DEFAULT_PERMISSIONS }))}
-                    className="text-slate-500 hover:underline cursor-pointer"
-                  >
-                    Reset
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                {ALL_PERMISSIONS.map((perm) => {
-                  const isChecked = (formData.permissions || []).includes(perm.id);
-                  return (
-                    <label
-                      key={perm.id}
-                      className={`flex items-start gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
-                        isChecked 
-                          ? 'bg-blue-50/60 border-blue-200 text-slate-900' 
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleEmploymentTypeChange('FULL_TIME')}
+                      className={`px-2.5 py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                        formData.employment_type === 'FULL_TIME'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                       }`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={(e) => {
-                          const current = formData.permissions || [];
-                          if (e.target.checked) {
-                            setFormData(prev => ({ ...prev, permissions: [...current, perm.id] }));
-                          } else {
-                            setFormData(prev => ({ ...prev, permissions: current.filter(p => p !== perm.id) }));
-                          }
-                        }}
-                        className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-semibold">{perm.label}</div>
-                        <div className="text-[10px] text-slate-400 truncate">{perm.desc}</div>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
+                      Full-Time
+                      <span className="block text-[10px] font-normal opacity-80">8.5h Standard</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEmploymentTypeChange('PART_TIME')}
+                      className={`px-2.5 py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                        formData.employment_type === 'PART_TIME'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      Part-Time
+                      <span className="block text-[10px] font-normal opacity-80">{formData.target_daily_hours || 4.0}h Target</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEmploymentTypeChange('DAILY_WAGE')}
+                      className={`px-2.5 py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                        formData.employment_type === 'DAILY_WAGE'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      Daily Wage
+                      <span className="block text-[10px] font-normal opacity-80">Coolie / Flexible</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEmploymentTypeChange('FIELD_WORKER')}
+                      className={`px-2.5 py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                        formData.employment_type === 'FIELD_WORKER'
+                          ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      Field Worker
+                      <span className="block text-[10px] font-normal opacity-80">Client Sites / GPS</span>
+                    </button>
+                  </div>
+                </div>
 
-            <button
-              type="submit"
-              className="w-full py-2.5 mt-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl transition-colors cursor-pointer"
-            >
-              Continue to Biometric Consent
-            </button>
+                {/* Explicit Shift Timing Pickers */}
+                <div className="grid grid-cols-2 gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                      Shift Start Time
+                    </label>
+                    <input
+                      type="time"
+                      value={formData.shift_start}
+                      onChange={(e) => handleCustomTimingChange(e.target.value, undefined)}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase mb-1">
+                      Shift End Time
+                    </label>
+                    <input
+                      type="time"
+                      value={formData.shift_end}
+                      onChange={(e) => handleCustomTimingChange(undefined, e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* User Access & Permissions */}
+                <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-800">
+                      User Access &amp; Permissions
+                    </label>
+                    <div className="flex items-center gap-2 text-[10px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, permissions: ALL_PERMISSIONS.map(p => p.id) }))}
+                        className="text-blue-600 hover:underline cursor-pointer"
+                      >
+                        Select All
+                      </button>
+                      <span className="text-slate-300">•</span>
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, permissions: DEFAULT_PERMISSIONS }))}
+                        className="text-slate-500 hover:underline cursor-pointer"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    {ALL_PERMISSIONS.map((perm) => {
+                      const isChecked = (formData.permissions || []).includes(perm.id);
+                      return (
+                        <label
+                          key={perm.id}
+                          className={`flex items-start gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                            isChecked 
+                              ? 'bg-blue-50/60 border-blue-200 text-slate-900' 
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              const current = formData.permissions || [];
+                              if (e.target.checked) {
+                                setFormData(prev => ({ ...prev, permissions: [...current, perm.id] }));
+                              } else {
+                                setFormData(prev => ({ ...prev, permissions: current.filter(p => p !== perm.id) }));
+                              }
+                            }}
+                            className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="font-semibold">{perm.label}</div>
+                            <div className="text-[10px] text-slate-400 truncate">{perm.desc}</div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            {/* Buttons: Submit & Reset */}
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="submit"
+                className="py-2.5 px-7 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm rounded-xl transition-colors cursor-pointer shadow-sm"
+              >
+                Submit
+              </button>
+              <button
+                type="button"
+                onClick={handleResetForm}
+                className="py-2.5 px-7 bg-slate-600 hover:bg-slate-700 text-white font-bold text-xs sm:text-sm rounded-xl transition-colors cursor-pointer shadow-sm"
+              >
+                Reset
+              </button>
+            </div>
           </form>
         )}
 
