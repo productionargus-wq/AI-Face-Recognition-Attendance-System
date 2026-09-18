@@ -156,13 +156,15 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
         earned_base_pay = base_salary
         calculation_basis = f"Field Worker Base Pay: ₹{base_salary:,.2f}"
     else:
-        # FULL_TIME Office Staff
+        # FULL_TIME Office Staff: Full monthly base salary by default
+        # Deduct LOP for explicit unexcused absences and half-days
         per_day_rate = round(base_salary / standard_working_days, 2)
-        lop_days = max(0.0, round(standard_working_days - effective_present_days - paid_leaves, 1))
+        explicit_absents = len([r for r in cycle_records if r.get("status") == "ABSENT"])
+        lop_days = round(explicit_absents + (half_days * 0.5), 1)
         loss_of_pay = round(lop_days * per_day_rate, 2)
         earned_base_pay = max(0.0, round(base_salary - loss_of_pay, 2))
         calculation_basis = (
-            f"Fixed Monthly ₹{base_salary:,.2f} (26 days base; -{lop_days} LOP days @ ₹{per_day_rate}/day)"
+            f"Fixed Monthly ₹{base_salary:,.2f} (26 days base; -{lop_days} absent/half-day LOP @ ₹{per_day_rate}/day)"
             if lop_days > 0 else f"Fixed Monthly ₹{base_salary:,.2f} (100% attendance credit)"
         )
 
@@ -206,8 +208,8 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
         advance_repayment += min(balance, installment)
     advance_repayment = round(advance_repayment, 2)
 
-    # 8. Deductions
-    paid_salary = statutory_deductions  # Statutory PF & Taxes
+    # 8. Deductions: Statutory PF/taxes capped at gross earnings so net cannot be negative
+    paid_salary = min(statutory_deductions, total_earnings) if total_earnings > 0 else 0.0
     other_deductions = round(manual_deduction, 2)
     total_deductions = round(paid_salary + advance_repayment + other_deductions, 2)
 

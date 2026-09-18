@@ -502,14 +502,16 @@ export const PayrollReport = () => {
     earnedBasePay = numBaseSalary;
     calculationBasis = `Field Worker Base Pay: ₹${numBaseSalary.toLocaleString('en-IN')} (Includes designated client project site visits)`;
   } else {
-    // FULL_TIME Office Staff
+    // FULL_TIME Office Staff: Full monthly base salary by default
+    // Deduct LOP only for recorded unexcused absences and half-days
     const standardDays = 26;
     const perDayRate = Math.round(numBaseSalary / standardDays);
-    absentDays = Math.max(0, Math.round((standardDays - effectivePresentDays - paidLeavesCount) * 10) / 10);
+    const explicitAbsentDays = attendanceRecords.filter(r => r.status === 'ABSENT').length;
+    absentDays = Math.round((explicitAbsentDays + (halfDaysCount * 0.5)) * 10) / 10;
     lossOfPay = Math.round(absentDays * perDayRate);
     earnedBasePay = Math.max(0, numBaseSalary - lossOfPay);
     calculationBasis = absentDays > 0 
-      ? `Fixed Monthly ₹${numBaseSalary.toLocaleString('en-IN')} (26 days base; -${absentDays} unpaid absent/half days @ ₹${perDayRate}/day)`
+      ? `Fixed Monthly ₹${numBaseSalary.toLocaleString('en-IN')} (26 days base; -${absentDays} absent/half-day LOP @ ₹${perDayRate}/day)`
       : `Fixed Monthly ₹${numBaseSalary.toLocaleString('en-IN')} (100% full attendance credit)`;
   }
 
@@ -517,7 +519,8 @@ export const PayrollReport = () => {
   const totalIncentive = Math.round(numPerformanceBonus + manualBonuses);
   const totalAllowance = Math.round(manualReimbursements);
   const grossPay = Math.round(earnedBasePay + overtimePay + totalIncentive + totalAllowance);
-  const totalDeductions = Math.round(numAdvanceDeduction + numStatutoryDeductions + manualDeductions);
+  const effectiveStatutory = Math.min(numStatutoryDeductions, grossPay);
+  const totalDeductions = Math.round(numAdvanceDeduction + effectiveStatutory + manualDeductions);
   const netTakeHome = Math.max(0, grossPay - totalDeductions);
   const netPayWords = numberToIndianWords(netTakeHome);
 
@@ -1670,8 +1673,18 @@ export const PayrollReport = () => {
 
                     <div className="space-y-2 text-xs">
                       <div className="flex justify-between text-slate-600">
-                        <span>Gross Base Pay:</span>
+                        <span>Contract Monthly Base:</span>
                         <span className="font-mono font-bold text-slate-800">₹{numBaseSalary.toLocaleString('en-IN')}.00</span>
+                      </div>
+                      {lossOfPay > 0 && (
+                        <div className="flex justify-between text-red-600">
+                          <span>Attendance LOP (-{absentDays}d):</span>
+                          <span className="font-mono font-bold">-₹{lossOfPay.toLocaleString('en-IN')}.00</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-slate-800 font-semibold border-t border-slate-100 pt-1">
+                        <span>Earned Base Pay:</span>
+                        <span className="font-mono font-bold">₹{earnedBasePay.toLocaleString('en-IN')}.00</span>
                       </div>
                       <div className="flex justify-between text-emerald-700">
                         <span>Overtime (+{numOvertimeHours} hrs):</span>
@@ -1697,7 +1710,7 @@ export const PayrollReport = () => {
                         </div>
                         <div className="flex justify-between text-red-600">
                           <span>Paid Salary (PF &amp; Taxes):</span>
-                          <span className="font-mono font-bold">-₹{numStatutoryDeductions.toLocaleString('en-IN')}.00</span>
+                          <span className="font-mono font-bold">-₹{effectiveStatutory.toLocaleString('en-IN')}.00</span>
                         </div>
                         {manualDeductions > 0 && (
                           <div className="flex justify-between text-red-600">
