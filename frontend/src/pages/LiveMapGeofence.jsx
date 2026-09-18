@@ -406,10 +406,10 @@ export const LiveMapGeofence = () => {
 
       const distText = isFieldVisit
         ? (p.distance_meters !== null && p.distance_meters !== undefined 
-            ? `${Math.round(p.distance_meters)}m from ${p.client_site_name || 'Client Site'}` 
+            ? `${Math.round(p.distance_meters)} meters far from ${p.client_site_name || 'Client Site'}` 
             : 'Distance N/A')
         : (p.distance_meters !== null && p.distance_meters !== undefined 
-            ? `${Math.round(p.distance_meters)}m from HQ` 
+            ? `${Math.round(p.distance_meters)} meters far from ${editorForm.office_name || data?.geofence?.office_name || 'Headquarters'}` 
             : 'Distance N/A');
 
       const statusBadge = isFieldVisit
@@ -1112,6 +1112,16 @@ export const LiveMapGeofence = () => {
                             {isFieldVisit && (
                               <div className="text-[10px] font-bold text-purple-700 truncate mt-0.5">
                                 Site: {p.client_site_name || 'Designated Site'}
+                              </div>
+                            )}
+                            {p.distance_meters !== null && p.distance_meters !== undefined && (
+                              <div className={`text-[10px] font-bold mt-0.5 flex items-center gap-1 ${
+                                isInside ? 'text-emerald-700' : 'text-rose-600'
+                              }`}>
+                                <MapPin className="w-3 h-3 shrink-0" />
+                                <span className="truncate">
+                                  {Math.round(p.distance_meters)} meters far from {p.client_site_name || editorForm.office_name || data?.geofence?.office_name || 'site'}
+                                </span>
                               </div>
                             )}
                             <div className="text-[10px] font-mono text-blue-600 font-semibold mt-0.5">

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
-import { Calendar, Clock, CheckCircle2, ShieldCheck, UserCheck, Award, AlertTriangle, LogOut, ChevronRight, X, Briefcase, Camera, MapPin, Loader2 } from 'lucide-react';
+import { Calendar, Clock, CheckCircle2, ShieldCheck, UserCheck, Award, AlertTriangle, LogOut, ChevronRight, X, Briefcase, Camera, MapPin, Loader2, Utensils } from 'lucide-react';
 
 export const EmployeePortal = () => {
   const { user, organization } = useAuth();
@@ -220,6 +220,47 @@ export const EmployeePortal = () => {
             </button>
           </div>
         </div>
+      ) : todayRecord && (punchCount === 2 || todayRecord.break_status === 'ON_LUNCH_BREAK') ? (
+        <div className="p-4 sm:p-5 rounded-2xl border bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-blue-500/10 border-amber-300 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <Utensils className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500 text-white">
+                  On Lunch Break
+                </span>
+                <span className="text-xs text-slate-500 font-mono">Punch #2 Logged ({todayRecord?.last_punch_time || 'Lunch Out'})</span>
+              </div>
+              <p className="text-sm font-bold text-slate-900 mt-1">
+                Enjoy your break! Morning session confirmed: <span className="text-emerald-700 font-mono font-bold">{todayRecord?.total_hours || 0} hrs</span>.
+              </p>
+              <p className="text-xs text-slate-600">
+                Break duration is excluded from working hours. Please punch in (Punch #3) when you return to begin your afternoon work session.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              onClick={() => navigate('/kiosk')}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Resume Work (Punch In)</span>
+            </button>
+            {todayRecord.punches?.length > 0 && (
+              <button
+                onClick={() => setSelectedPunches(todayRecord)}
+                className="px-3.5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer"
+              >
+                <span>Timeline</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
       ) : todayRecord ? (
         <div className="p-3.5 rounded-2xl border bg-slate-50 border-slate-200 flex items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2 text-slate-700">
@@ -231,7 +272,7 @@ export const EmployeePortal = () => {
           {todayRecord.punches?.length > 0 && (
             <button
               onClick={() => setSelectedPunches(todayRecord)}
-              className="text-blue-600 font-bold hover:underline flex items-center gap-1"
+              className="text-blue-600 font-bold hover:underline flex items-center gap-1 cursor-pointer"
             >
               View Punch Timeline <ChevronRight className="w-3.5 h-3.5" />
             </button>
@@ -307,6 +348,10 @@ export const EmployeePortal = () => {
                           <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px] animate-pulse">
                             Clocked In
                           </span>
+                        ) : (rec.break_status === 'ON_LUNCH_BREAK' || (count === 2 && rec.date === todayStr)) ? (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px]">
+                            On Lunch Break
+                          </span>
                         ) : rec.check_out_time || (rec.check_out ? new Date(rec.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—')}
                       </td>
                       <td className="p-3 whitespace-nowrap">
@@ -325,10 +370,11 @@ export const EmployeePortal = () => {
                       <td className="p-3 font-semibold text-slate-700 whitespace-nowrap">{rec.total_hours || 0} hrs</td>
                       <td className="p-3 whitespace-nowrap">
                         <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                          rec.status === 'HALF_DAY' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
                           rec.status === 'PRESENT' ? 'bg-emerald-100 text-emerald-800' :
-                          rec.status === 'LATE' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
+                          rec.status === 'LATE' ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'
                         }`}>
-                          {rec.shift_status || rec.status}
+                          {rec.status === 'HALF_DAY' ? 'HALF-DAY (0.5d)' : (rec.shift_status || rec.status)}
                         </span>
                       </td>
                     </tr>
@@ -349,13 +395,13 @@ export const EmployeePortal = () => {
                 <h3 className="text-sm font-bold text-slate-900">
                   Punch Timeline Breakdown • {selectedPunches.date}
                 </h3>
-                <p className="text-xs text-slate-500">
-                  Alternating multi-punch session logs & durations
+                <p className="text-xs text-slate-500 font-mono">
+                  Total Confirmed Worked Time: {selectedPunches.total_hours || 0} hrs
                 </p>
               </div>
               <button
                 onClick={() => setSelectedPunches(null)}
-                className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -364,22 +410,30 @@ export const EmployeePortal = () => {
             <div className="p-5 max-h-[60vh] overflow-y-auto space-y-3">
               {selectedPunches.punches && selectedPunches.punches.length > 0 ? (
                 <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-                  {selectedPunches.punches.map((p, idx) => (
-                    <div key={idx} className="relative flex items-start justify-between gap-3 text-xs">
-                      <div className={`absolute -left-6 top-0.5 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[9px] font-bold text-white shadow-xs ${
-                        p.action === 'CHECK_IN' ? 'bg-emerald-600' : 'bg-blue-600'
-                      }`}>
-                        {p.punch_number || idx + 1}
-                      </div>
-                      <div>
-                        <div className="font-bold text-slate-900 flex items-center gap-2">
-                          <span>{p.action === 'CHECK_IN' ? 'PUNCH IN (Session Start)' : 'PUNCH OUT (Session End)'}</span>
-                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold ${
-                            p.action === 'CHECK_IN' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'
-                          }`}>
-                            {p.action}
-                          </span>
+                  {selectedPunches.punches.map((p, idx) => {
+                    const pNum = p.punch_number || idx + 1;
+                    const pLabel = pNum === 1 ? 'Morning Check-In (Session 1 Start)' :
+                                   pNum === 2 ? 'Lunch Break Check-Out (Session 1 End)' :
+                                   pNum === 3 ? 'Lunch Return Check-In (Session 2 Start)' :
+                                   pNum === 4 ? 'Evening Check-Out (Shift Concluded)' :
+                                   p.action === 'CHECK_IN' ? 'Session Start (Punch In)' : 'Session End (Punch Out)';
+
+                    return (
+                      <div key={idx} className="relative flex items-start justify-between gap-3 text-xs">
+                        <div className={`absolute -left-6 top-0.5 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[9px] font-bold text-white shadow-xs ${
+                          p.action === 'CHECK_IN' ? 'bg-emerald-600' : 'bg-blue-600'
+                        }`}>
+                          {pNum}
                         </div>
+                        <div>
+                          <div className="font-bold text-slate-900 flex items-center gap-2">
+                            <span>{pLabel}</span>
+                            <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold ${
+                              p.action === 'CHECK_IN' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'
+                            }`}>
+                              {p.action}
+                            </span>
+                          </div>
                         <div className="text-slate-500 text-[11px] font-mono mt-0.5">
                           {p.time || (p.timestamp ? new Date(p.timestamp).toLocaleTimeString() : '—')}
                         </div>
@@ -403,7 +457,8 @@ export const EmployeePortal = () => {
                         )}
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
                 </div>
               ) : (
                 <div className="text-center py-6 text-slate-400 text-xs">

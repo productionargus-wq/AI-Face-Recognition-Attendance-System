@@ -176,10 +176,12 @@ export const PayrollReport = () => {
     const hRate = selectedEmployee.hourly_rate != null ? Number(selectedEmployee.hourly_rate) : 250;
     const statDed = selectedEmployee.statutory_deductions != null ? Number(selectedEmployee.statutory_deductions) : 3000;
 
-    const presentDaysCount = attendanceRecords.filter(r => r.status === 'PRESENT').length;
+    const presentDaysCount = attendanceRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE').length;
+    const halfDaysCount = attendanceRecords.filter(r => r.status === 'HALF_DAY').length;
+    const effectivePresentDays = presentDaysCount + (0.5 * halfDaysCount);
     const totalHours = attendanceRecords.reduce((acc, curr) => acc + (Number(curr.total_hours) || 0), 0);
-    const autoOT = Math.max(0, totalHours > 0 ? Math.round((totalHours - (presentDaysCount * 8)) * 10) / 10 : 0);
-    const autoBonus = presentDaysCount >= 20 ? 2500 : 0;
+    const autoOT = Math.max(0, totalHours > 0 ? Math.round((totalHours - (effectivePresentDays * 8)) * 10) / 10 : 0);
+    const autoBonus = effectivePresentDays >= 20 ? 2500 : 0;
 
     const empAdvances = advances.filter(a => a.employee_id === selectedEmployee.id);
     const autoAdvance = empAdvances.reduce((acc, curr) => acc + (Number(curr.next_deduction || curr.nextDeduction) || 0), 0);
@@ -214,10 +216,12 @@ export const PayrollReport = () => {
     const hRate = selectedEmployee.hourly_rate != null ? Number(selectedEmployee.hourly_rate) : 250;
     const statDed = selectedEmployee.statutory_deductions != null ? Number(selectedEmployee.statutory_deductions) : 3000;
 
-    const presentDaysCount = attendanceRecords.filter(r => r.status === 'PRESENT').length;
+    const presentDaysCount = attendanceRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE').length;
+    const halfDaysCount = attendanceRecords.filter(r => r.status === 'HALF_DAY').length;
+    const effectivePresentDays = presentDaysCount + (0.5 * halfDaysCount);
     const totalHours = attendanceRecords.reduce((acc, curr) => acc + (Number(curr.total_hours) || 0), 0);
-    const autoOT = Math.max(0, totalHours > 0 ? Math.round((totalHours - (presentDaysCount * 8)) * 10) / 10 : 0);
-    const autoBonus = presentDaysCount >= 20 ? 2500 : 0;
+    const autoOT = Math.max(0, totalHours > 0 ? Math.round((totalHours - (effectivePresentDays * 8)) * 10) / 10 : 0);
+    const autoBonus = effectivePresentDays >= 20 ? 2500 : 0;
 
     const empAdvances = advances.filter(a => a.employee_id === selectedEmployee.id);
     const autoAdvance = empAdvances.reduce((acc, curr) => acc + (Number(curr.next_deduction || curr.nextDeduction) || 0), 0);
@@ -256,7 +260,9 @@ export const PayrollReport = () => {
   };
 
   // Attendance stats
-  const presentDays = attendanceRecords.filter(r => r.status === 'PRESENT').length;
+  const presentDays = attendanceRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE').length;
+  const halfDaysCount = attendanceRecords.filter(r => r.status === 'HALF_DAY').length;
+  const effectivePresentDays = presentDays + (0.5 * halfDaysCount);
   const totalLoggedHours = attendanceRecords.reduce((acc, curr) => acc + (Number(curr.total_hours) || 0), 0);
   const paidLeavesCount = attendanceRecords.filter(r => r.status === 'LEAVE').length;
 
@@ -285,8 +291,10 @@ export const PayrollReport = () => {
     calculationBasis = `${totalLoggedHours.toFixed(1)} hrs logged × ₹${effectiveHourlyRate}/hr (Hourly Part-Time Basis)`;
   } else if (empType === 'DAILY_WAGE') {
     effectiveDailyRate = selectedEmployee?.daily_wage_rate || (numBaseSalary > 0 ? Math.round(numBaseSalary / 26) : 650);
-    earnedBasePay = Math.round(presentDays * effectiveDailyRate);
-    calculationBasis = `${presentDays} Days Present × ₹${effectiveDailyRate}/day (Daily Wage Basis)`;
+    earnedBasePay = Math.round((presentDays * effectiveDailyRate) + (halfDaysCount * effectiveDailyRate * 0.5));
+    calculationBasis = halfDaysCount > 0
+      ? `${presentDays} Full Days + ${halfDaysCount} Half-Days (${effectivePresentDays} eff. days) × ₹${effectiveDailyRate}/day (Daily Wage Basis)`
+      : `${presentDays} Days Present × ₹${effectiveDailyRate}/day (Daily Wage Basis)`;
   } else if (empType === 'FIELD_WORKER') {
     earnedBasePay = numBaseSalary;
     calculationBasis = `Field Worker Base Pay: ₹${numBaseSalary.toLocaleString('en-IN')} (Includes designated client project site visits)`;
@@ -294,11 +302,11 @@ export const PayrollReport = () => {
     // FULL_TIME Office Staff (9 AM - 6 PM)
     const standardDays = 26;
     const perDayRate = Math.round(numBaseSalary / standardDays);
-    absentDays = Math.max(0, standardDays - presentDays - paidLeavesCount);
+    absentDays = Math.max(0, Math.round((standardDays - effectivePresentDays - paidLeavesCount) * 10) / 10);
     lossOfPay = Math.round(absentDays * perDayRate);
     earnedBasePay = Math.max(0, numBaseSalary - lossOfPay);
     calculationBasis = absentDays > 0 
-      ? `Fixed Monthly ₹${numBaseSalary.toLocaleString('en-IN')} (26 days base; -${absentDays} unpaid absent days @ ₹${perDayRate}/day)`
+      ? `Fixed Monthly ₹${numBaseSalary.toLocaleString('en-IN')} (26 days base; -${absentDays} unpaid absent/half days @ ₹${perDayRate}/day)`
       : `Fixed Monthly ₹${numBaseSalary.toLocaleString('en-IN')} (100% full attendance credit)`;
   }
 
@@ -541,8 +549,14 @@ export const PayrollReport = () => {
                 <CheckCircle2 className="w-4 h-4 text-blue-600" />
               </div>
               <div className="my-2">
-                <div className="text-xl font-black text-slate-900 tracking-tight">
-                  {presentDays} <span className="text-xs font-medium text-slate-500">Punches Logged</span>
+                <div className="text-xl font-black text-slate-900 tracking-tight flex items-baseline flex-wrap gap-1">
+                  <span>{presentDays}</span>
+                  <span className="text-xs font-medium text-slate-500">Days Present</span>
+                  {halfDaysCount > 0 && (
+                    <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-mono font-bold border border-amber-200">
+                      +{halfDaysCount} Half-Day ({effectivePresentDays} eff.)
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="text-[10px] text-slate-500 font-mono border-t border-slate-100 pt-1 flex justify-between">
@@ -1036,9 +1050,19 @@ export const PayrollReport = () => {
                           {log.total_hours || 0} hrs
                         </td>
                         <td className="py-3.5 px-4 whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-mono font-bold text-[10px] border border-emerald-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            {log.status || 'PRESENT'}
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono font-bold text-[10px] border ${
+                            log.status === 'HALF_DAY' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                            log.status === 'LATE' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                            log.status === 'ABSENT' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                            'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              log.status === 'HALF_DAY' ? 'bg-amber-500' :
+                              log.status === 'LATE' ? 'bg-orange-500' :
+                              log.status === 'ABSENT' ? 'bg-rose-500' :
+                              'bg-emerald-500'
+                            }`} />
+                            {log.status === 'HALF_DAY' ? 'HALF-DAY (0.5d)' : (log.status || 'PRESENT')}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-slate-700 text-[11px] font-mono">

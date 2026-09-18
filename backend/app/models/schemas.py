@@ -199,6 +199,7 @@ class Attendance(BaseModel):
     client_site_name: Optional[str] = None
     site_visit_verified: Optional[bool] = None
     notes: Optional[str] = None
+    break_status: Optional[str] = "WORKING"
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 # ----------------- KIOSK TERMINALS -----------------

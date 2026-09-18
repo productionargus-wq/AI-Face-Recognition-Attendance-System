@@ -66,6 +66,117 @@ def calculate_punches_total_hours(punches: List[Dict[str, Any]]) -> float:
         return 0.01
     return round(hours, 2)
 
+def reconcile_attendance_status(
+    record: Dict[str, Any],
+    org_work_hours: Optional[Dict[str, Any]] = None,
+    emp: Optional[Dict[str, Any]] = None,
+    current_time_iso: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Evaluates cumulative work hours and determines accurate attendance status:
+    - Avoids premature HALF_DAY during active workday / mid-day break (Punch #2).
+    - If employee completed regular shift target (>= 7.5h or part-time target) -> PRESENT (or LATE if arrival was late).
+    - If employee completed >= half_day_hours (default 4.5h) but < target -> HALF_DAY.
+    - If employee completed < half_day_hours and shift concluded -> HALF_DAY (per org threshold).
+    - Accurately tags break_status: 'WORKING', 'ON_LUNCH_BREAK', 'ON_BREAK', or 'SHIFT_ENDED'.
+    """
+    cfg = org_work_hours or {}
+    half_day_threshold = float(cfg.get("half_day_hours") or 4.5)
+    default_full_target = 7.5
+
+    emp_type = ((emp.get("employment_type") if emp else None) or record.get("employment_type") or "FULL_TIME").upper()
+
+    if emp_type == "PART_TIME":
+        target_hours = float((emp.get("target_daily_hours") if emp else None) or record.get("target_daily_hours") or 4.0)
+        half_day_threshold = round(target_hours * 0.5, 2)
+    else:
+        target_hours = default_full_target
+
+    total_hours = float(record.get("total_hours") or 0.0)
+    is_currently_in = bool(record.get("is_currently_in", False))
+    punch_count = int(record.get("punch_count") or len(record.get("punches") or []))
+
+    # Parse current or simulated time
+    if current_time_iso:
+        try:
+            now_dt = datetime.fromisoformat(current_time_iso.replace("Z", "+00:00"))
+        except Exception:
+            now_dt = datetime.now(IST_TZ)
+    else:
+        now_dt = datetime.now(IST_TZ)
+
+    record_date = record.get("date")
+    today_str = now_dt.strftime("%Y-%m-%d")
+    is_past_day = bool(record_date and record_date < today_str)
+
+    # Shift end boundary
+    shift_end_str = (emp.get("shift_end") if emp else None) or cfg.get("end_time", "18:00")
+    try:
+        end_parts = shift_end_str.split(":")
+        shift_end_time = datetime.min.time().replace(hour=int(end_parts[0]), minute=int(end_parts[1]))
+    except Exception:
+        shift_end_time = datetime.min.time().replace(hour=18, minute=0)
+
+    # Is shift concluded?
+    # Shift is concluded if:
+    # 1. It is a past date
+    # 2. Punch count >= 4 and employee is not currently clocked in (evening check-out done)
+    # 3. Employee is clocked out and current time is past shift end
+    is_concluded = (
+        is_past_day or
+        (punch_count >= 4 and not is_currently_in) or
+        (not is_currently_in and now_dt.time() >= shift_end_time)
+    )
+
+    existing_status = record.get("status", AttendanceStatus.PRESENT)
+    existing_shift_status = record.get("shift_status", "ON-TIME")
+    was_late = (existing_status == AttendanceStatus.LATE or "LATE" in str(existing_shift_status).upper())
+
+    # Determine break / presence state
+    if is_currently_in:
+        break_status = "WORKING"
+    elif is_concluded:
+        break_status = "SHIFT_ENDED"
+    elif punch_count == 2:
+        break_status = "ON_LUNCH_BREAK"
+    elif punch_count > 0:
+        break_status = "ON_BREAK"
+    else:
+        break_status = "NOT_STARTED"
+
+    # Evaluate Status
+    if is_currently_in:
+        # Currently working - preserve presence
+        status = AttendanceStatus.LATE if was_late else AttendanceStatus.PRESENT
+        shift_status = "LATE" if was_late else ("ON-TIME" if existing_shift_status != "FLEXIBLE" else "FLEXIBLE")
+    elif not is_concluded:
+        # Active workday immunity window (e.g. Lunch break between Punch 2 and 3)
+        # NEVER downgrade to HALF_DAY mid-day!
+        status = AttendanceStatus.LATE if was_late else AttendanceStatus.PRESENT
+        shift_status = "LATE" if was_late else ("ON-TIME" if existing_shift_status != "FLEXIBLE" else "FLEXIBLE")
+    else:
+        # Shift has concluded: Evaluate cumulative worked hours
+        if total_hours >= target_hours:
+            status = AttendanceStatus.LATE if was_late else AttendanceStatus.PRESENT
+            shift_status = "LATE" if was_late else ("ON-TIME" if existing_shift_status != "FLEXIBLE" else "FLEXIBLE")
+        elif total_hours >= half_day_threshold:
+            status = AttendanceStatus.HALF_DAY
+            shift_status = "LATE & HALF-DAY" if was_late else "HALF-DAY"
+        elif total_hours > 0:
+            status = AttendanceStatus.HALF_DAY
+            shift_status = f"HALF-DAY ({total_hours}h)"
+        else:
+            status = AttendanceStatus.ABSENT
+            shift_status = "ABSENT"
+
+    return {
+        "status": status,
+        "shift_status": shift_status,
+        "break_status": break_status,
+        "is_concluded": is_concluded,
+        "total_hours": total_hours
+    }
+
 # ----------------- ATTENDANCE ENDPOINTS -----------------
 
 class KioskPunchPayload(BaseModel):
@@ -301,6 +412,7 @@ async def kiosk_punch(payload: KioskPunchPayload):
             "punches": all_punches,
             "last_punch_time": time_str,
             "last_punch_action": punch_action,
+            "break_status": "WORKING" if new_is_currently_in else "NOT_STARTED",
             "status": record_status,
             "shift_status": shift_status,
             "verification_mode": "FACE_KIOSK",
@@ -334,6 +446,24 @@ async def kiosk_punch(payload: KioskPunchPayload):
             update_fields["longitude"] = payload.longitude
             update_fields["geofence_status"] = geofence_status
             update_fields["distance_meters"] = distance_meters
+
+        # Reconcile status to handle lunch break immunity vs EOD half-day
+        cand_record = {
+            **existing_record,
+            **update_fields,
+            "total_hours": total_hours,
+            "punch_count": punch_num,
+            "is_currently_in": new_is_currently_in
+        }
+        reconciled = reconcile_attendance_status(
+            cand_record,
+            org.get("work_hours") if org else None,
+            matched_emp,
+            current_time_iso=now_utc.isoformat()
+        )
+        update_fields["status"] = reconciled["status"]
+        update_fields["shift_status"] = reconciled["shift_status"]
+        update_fields["break_status"] = reconciled["break_status"]
 
         await store.update_one("attendance", {"id": existing_record["id"]}, update_fields)
         existing_record.update(update_fields)
@@ -520,6 +650,7 @@ async def field_visit_punch(
             "client_site_id": site["id"],
             "client_site_name": site["site_name"],
             "site_visit_verified": is_on_site,
+            "break_status": "WORKING" if new_is_in else "NOT_STARTED",
             "latitude": payload.latitude,
             "longitude": payload.longitude,
             "accuracy": payload.accuracy,
@@ -549,6 +680,25 @@ async def field_visit_punch(
         if punch_action == "CHECK_OUT":
             update_fields["check_out"] = now_utc.isoformat()
             update_fields["check_out_time"] = time_str
+
+        # Reconcile status to handle break immunity vs EOD half-day
+        cand_record = {
+            **existing_record,
+            **update_fields,
+            "total_hours": total_hours,
+            "punch_count": punch_num,
+            "is_currently_in": new_is_in
+        }
+        reconciled = reconcile_attendance_status(
+            cand_record,
+            org.get("work_hours") if org else None,
+            emp,
+            current_time_iso=now_utc.isoformat()
+        )
+        update_fields["status"] = reconciled["status"]
+        update_fields["shift_status"] = reconciled["shift_status"]
+        update_fields["break_status"] = reconciled["break_status"]
+
         await store.update_one("attendance", {"id": existing_record["id"]}, update_fields)
         existing_record.update(update_fields)
         res_record = existing_record
@@ -712,6 +862,9 @@ async def get_today_attendance(auth_ctx: Dict[str, Any] = Depends(require_org_ad
         "date": today_str
     }, sort_key="check_in", sort_desc=True)
 
+    org = await store.find_one("organizations", {"id": org_id})
+    org_work_hours = org.get("work_hours") if org else None
+
     # Strictly filter records to active employees only and dynamically enrich
     records = []
     for r in raw_records:
@@ -720,27 +873,25 @@ async def get_today_attendance(auth_ctx: Dict[str, Any] = Depends(require_org_ad
             r["employee_name"] = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
             r["employee_code"] = emp.get("employee_code", r.get("employee_code"))
             r["department"] = emp.get("department", r.get("department"))
+
+            # Reconcile status (distinguishes mid-day lunch break vs EOD half-day)
+            reconciled = reconcile_attendance_status(r, org_work_hours, emp)
+            r["status"] = reconciled["status"]
+            r["shift_status"] = reconciled["shift_status"]
+            r["break_status"] = reconciled["break_status"]
             records.append(r)
 
-    # Normalize shift_status on all records
-    for r in records:
-        if not r.get("shift_status"):
-            if r.get("status") == AttendanceStatus.LATE:
-                r["shift_status"] = "LATE"
-            elif r.get("status") == AttendanceStatus.PRESENT or r.get("check_in"):
-                r["shift_status"] = "ON-TIME"
-            else:
-                r["shift_status"] = "—"
-
     present_count = len([r for r in records if r.get("status") in [AttendanceStatus.PRESENT, AttendanceStatus.LATE]])
-    late_count = len([r for r in records if r.get("status") == AttendanceStatus.LATE])
-    absent_count = max(0, total_emps_count - present_count)
+    half_day_count = len([r for r in records if r.get("status") == AttendanceStatus.HALF_DAY])
+    late_count = len([r for r in records if r.get("status") == AttendanceStatus.LATE or "LATE" in str(r.get("shift_status", ""))])
+    absent_count = max(0, total_emps_count - (present_count + half_day_count))
 
     return {
         "date": today_str,
         "summary": {
             "total_employees": total_emps_count,
             "present": present_count,
+            "half_day": half_day_count,
             "late": late_count,
             "absent": absent_count,
             "on_time_rate": round(((present_count - late_count) / max(1, present_count)) * 100, 1) if present_count > 0 else 0
@@ -889,7 +1040,9 @@ async def get_attendance_history(
 
     for r in records:
         if not r.get("shift_status"):
-            if r.get("status") == AttendanceStatus.LATE:
+            if r.get("status") == AttendanceStatus.HALF_DAY:
+                r["shift_status"] = "HALF-DAY"
+            elif r.get("status") == AttendanceStatus.LATE:
                 r["shift_status"] = "LATE"
             elif r.get("status") == AttendanceStatus.PRESENT or r.get("check_in"):
                 r["shift_status"] = "ON-TIME"

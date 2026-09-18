@@ -155,7 +155,10 @@ export const WorkforceMetricsModal = ({
       if (rec) {
         checkInDisplay = formatTime(rec.check_in_time || rec.check_in);
         checkOutDisplay = formatTime(rec.check_out_time || rec.check_out);
-        if (rec.shift_status?.includes('LATE') || rec.status === 'LATE') {
+        if (rec.status === 'HALF_DAY' || rec.shift_status?.includes('HALF-DAY')) {
+          statusType = 'HALF_DAY';
+          statusLabel = 'HALF-DAY';
+        } else if (rec.shift_status?.includes('LATE') || rec.status === 'LATE') {
           statusType = 'LATE';
           statusLabel = 'LATE';
         } else {
@@ -571,8 +574,13 @@ export const WorkforceMetricsModal = ({
                               PRESENT • ON-TIME ({item.checkInDisplay})
                             </span>
                           )}
-                          {item.statusType === 'LATE' && (
+                          {item.statusType === 'HALF_DAY' && (
                             <span className="px-2 py-0.5 rounded border border-amber-300 bg-amber-50 text-amber-800 text-[10px] font-mono font-bold">
+                              HALF-DAY (0.5d) ({item.checkInDisplay})
+                            </span>
+                          )}
+                          {item.statusType === 'LATE' && (
+                            <span className="px-2 py-0.5 rounded border border-orange-300 bg-orange-50 text-orange-800 text-[10px] font-mono font-bold">
                               PRESENT • LATE ({item.checkInDisplay})
                             </span>
                           )}

@@ -280,3 +280,102 @@ def test_salary_disbursement_payload_metadata():
     assert payload.logged_hours == 30.5
     assert payload.hourly_rate == 250.0
     assert "Hourly Part-Time Basis" in payload.calculation_basis
+
+def test_lunch_break_multi_punch_4_punches():
+    """Verify 4-punch daily cycle (In, Lunch Out, Lunch In, Out) calculates 8.0h and excludes 1h lunch."""
+    from app.api.v1.reports import calculate_punches_total_hours
+
+    punches = [
+        {"punch_number": 1, "action": "CHECK_IN", "timestamp": "2026-09-18T09:00:00+05:30"},
+        {"punch_number": 2, "action": "CHECK_OUT", "timestamp": "2026-09-18T13:00:00+05:30"},
+        {"punch_number": 3, "action": "CHECK_IN", "timestamp": "2026-09-18T14:00:00+05:30"},
+        {"punch_number": 4, "action": "CHECK_OUT", "timestamp": "2026-09-18T18:00:00+05:30"}
+    ]
+    total_hours = calculate_punches_total_hours(punches)
+    # Session 1: 4.0h, Lunch gap: 0h, Session 2: 4.0h -> Total: 8.0h
+    assert total_hours == 8.0
+
+def test_mid_day_lunch_break_immunity_prevents_premature_half_day():
+    """Verify mid-day Punch #2 at lunch (4.0h) is NOT marked HALF_DAY during active shift."""
+    from app.api.v1.reports import reconcile_attendance_status
+    from app.models.schemas import AttendanceStatus
+
+    record = {
+        "date": "2026-09-18",
+        "is_currently_in": False,
+        "punch_count": 2,
+        "total_hours": 4.0,
+        "status": AttendanceStatus.PRESENT,
+        "shift_status": "ON-TIME",
+        "employment_type": "FULL_TIME"
+    }
+    org_work_hours = {
+        "start_time": "09:00",
+        "end_time": "18:00",
+        "half_day_hours": 4.5
+    }
+    # Simulated mid-day time (13:15 PM) while shift is active
+    current_time_midday = "2026-09-18T13:15:00+05:30"
+    reconciled = reconcile_attendance_status(record, org_work_hours, current_time_iso=current_time_midday)
+
+    # Must preserve PRESENT status and tag ON_LUNCH_BREAK (no premature half-day penalty!)
+    assert reconciled["status"] == AttendanceStatus.PRESENT
+    assert reconciled["break_status"] == "ON_LUNCH_BREAK"
+    assert reconciled["is_concluded"] is False
+
+def test_eod_reconciliation_marks_abandoned_lunch_as_half_day():
+    """Verify employee who left at lunch (4.0h) and never returned is reconciled to HALF_DAY after shift end."""
+    from app.api.v1.reports import reconcile_attendance_status
+    from app.models.schemas import AttendanceStatus
+
+    record = {
+        "date": "2026-09-18",
+        "is_currently_in": False,
+        "punch_count": 2,
+        "total_hours": 4.0,
+        "status": AttendanceStatus.PRESENT,
+        "shift_status": "ON-TIME",
+        "employment_type": "FULL_TIME"
+    }
+    org_work_hours = {
+        "start_time": "09:00",
+        "end_time": "18:00",
+        "half_day_hours": 4.5
+    }
+    # Simulated end-of-day time (18:30 PM, past shift_end)
+    current_time_eod = "2026-09-18T18:30:00+05:30"
+    reconciled = reconcile_attendance_status(record, org_work_hours, current_time_iso=current_time_eod)
+
+    # Shift concluded with 4.0h (< 7.5h full target) -> Accurately reconciled to HALF_DAY
+    assert reconciled["status"] == AttendanceStatus.HALF_DAY
+    assert "HALF-DAY" in reconciled["shift_status"]
+    assert reconciled["break_status"] == "SHIFT_ENDED"
+    assert reconciled["is_concluded"] is True
+
+def test_eod_reconciliation_part_time_target_completion():
+    """Verify part-time worker completing 4.0h target is marked PRESENT, not penalized as HALF_DAY."""
+    from app.api.v1.reports import reconcile_attendance_status
+    from app.models.schemas import AttendanceStatus
+
+    record = {
+        "date": "2026-09-18",
+        "is_currently_in": False,
+        "punch_count": 2,
+        "total_hours": 4.0,
+        "status": AttendanceStatus.PRESENT,
+        "shift_status": "ON-TIME",
+        "employment_type": "PART_TIME",
+        "target_daily_hours": 4.0
+    }
+    pt_emp = {
+        "employment_type": "PART_TIME",
+        "target_daily_hours": 4.0,
+        "shift_end": "14:00"
+    }
+    # Simulated time past part-time shift end (14:30 PM)
+    current_time_pt_end = "2026-09-18T14:30:00+05:30"
+    reconciled = reconcile_attendance_status(record, None, emp=pt_emp, current_time_iso=current_time_pt_end)
+
+    # 4.0h on 4.0h target = Full day PRESENT credit!
+    assert reconciled["status"] == AttendanceStatus.PRESENT
+    assert reconciled["is_concluded"] is True

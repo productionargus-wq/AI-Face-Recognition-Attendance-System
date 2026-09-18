@@ -564,9 +564,13 @@ export const AdminDashboard = () => {
                     )}
                   </td>
 
-                  {/* Status: strictly 'PRESENT' or 'ABSENT' */}
+                  {/* Status: 'PRESENT', 'HALF_DAY', or 'ABSENT' */}
                   <td className="p-3.5">
-                    {(rec.status === 'PRESENT' || (rec.check_in && rec.check_in !== '—')) ? (
+                    {rec.status === 'HALF_DAY' ? (
+                      <span className="px-2 py-0.5 rounded border border-amber-300 bg-amber-50 text-amber-800 text-[10px] font-mono font-bold">
+                        HALF-DAY
+                      </span>
+                    ) : (rec.status === 'PRESENT' || (rec.check_in && rec.check_in !== '—')) ? (
                       <span className="px-2 py-0.5 rounded border border-emerald-300 bg-emerald-50/60 text-emerald-800 text-[10px] font-mono font-bold">
                         PRESENT
                       </span>
