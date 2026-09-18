@@ -148,7 +148,7 @@ export const AppLayout = ({ children }) => {
   };
 
   return (
-    <div className="h-screen bg-[#f8fbff] flex flex-col md:flex-row text-slate-800 font-sans overflow-hidden">
+    <div className="h-screen min-h-dvh bg-[#f8fbff] flex flex-col md:flex-row text-slate-800 font-sans overflow-hidden">
       {/* Desktop Left Sidebar - Fixed in place */}
       <aside className="hidden md:flex flex-col w-64 bg-white border-r border-slate-200 shrink-0 z-30 h-full overflow-y-auto">
         {/* Brand Header */}
@@ -225,14 +225,15 @@ export const AppLayout = ({ children }) => {
       {/* Main Content Area - Scrollable */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
         {/* Top Header Bar - Sticky */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8 shrink-0 sticky top-0 z-20">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 md:px-8 shrink-0 sticky top-0 z-20">
           {/* Mobile Menu Button & Brand */}
-          <div className="flex items-center gap-3 md:hidden">
+          <div className="flex items-center gap-2.5 md:hidden">
             <button
-              onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
-              className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100"
+              onClick={() => setMobileSidebarOpen(true)}
+              className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
+              title="Open Navigation Menu"
             >
-              {mobileSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded bg-white border border-slate-200 flex items-center justify-center p-0.5 shadow-2xs shrink-0 overflow-hidden">
@@ -257,7 +258,7 @@ export const AppLayout = ({ children }) => {
           </div>
 
           {/* Right User & Role Info Header */}
-          <div className="flex items-center gap-2.5 sm:gap-3.5">
+          <div className="flex items-center gap-1.5 sm:gap-3">
             {/* Notification Bell with Tray */}
             <div className="relative" ref={notifRef}>
               <button
@@ -276,9 +277,9 @@ export const AppLayout = ({ children }) => {
                 )}
               </button>
 
-              {/* Notification Dropdown Tray */}
+              {/* Notification Dropdown Tray (Responsive Width) */}
               {showNotifTray && (
-                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-xl border border-slate-200 z-50 overflow-hidden animate-in fade-in zoom-in-95">
+                <div className="fixed sm:absolute right-2 sm:right-0 top-16 sm:top-auto sm:mt-2 w-[calc(100vw-1rem)] sm:w-96 max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden animate-in fade-in zoom-in-95">
                   <div className="p-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
                     <div className="flex items-center gap-2">
                       <Bell className="w-4 h-4 text-blue-600" />
@@ -361,14 +362,15 @@ export const AppLayout = ({ children }) => {
               )}
             </div>
 
-            {/* Admin Role Badge */}
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded-md text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-              <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-              <span>{user?.role === 'org_admin' ? 'ADMIN ROLE' : 'EMPLOYEE'}</span>
+            {/* Admin Role Badge (Responsive) */}
+            <div className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-md text-[10px] sm:text-[11px] font-bold text-slate-700 uppercase tracking-wider shrink-0">
+              <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              <span className="hidden sm:inline">{user?.role === 'org_admin' ? 'ADMIN ROLE' : 'EMPLOYEE'}</span>
+              <span className="sm:hidden">{user?.role === 'org_admin' ? 'ADMIN' : 'STAFF'}</span>
             </div>
 
             {/* Profile Avatar & Name */}
-            <div className="flex items-center gap-2.5 pl-2 border-l border-slate-200">
+            <div className="flex items-center gap-2 pl-1.5 sm:pl-2 border-l border-slate-200">
               <div className="text-right hidden sm:block">
                 <div className="text-xs font-bold text-slate-900 leading-tight">
                   {user?.name || user?.email?.split('@')[0] || 'Administrator'}
@@ -379,14 +381,14 @@ export const AppLayout = ({ children }) => {
               </div>
 
               {/* Avatar Photo */}
-              <div className="w-9 h-9 rounded-full ring-2 ring-blue-500/20 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs overflow-hidden">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full ring-2 ring-blue-500/20 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs overflow-hidden shrink-0">
                 {(user?.name || user?.email || 'AD').split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()}
               </div>
 
               <button
                 onClick={handleLogout}
                 title="Sign Out"
-                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-1"
+                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -394,38 +396,97 @@ export const AppLayout = ({ children }) => {
           </div>
         </header>
 
-        {/* Mobile Sidebar Dropdown Drawer */}
+        {/* Mobile Off-Canvas Sliding Navigation Drawer with Backdrop Overlay */}
         {mobileSidebarOpen && (
-          <div className="md:hidden bg-white border-b border-slate-200 px-4 py-3 space-y-1 shadow-md z-30">
-            {navItems.map((item) => {
-              const isActive = location.pathname === item.path || (item.altPaths && item.altPaths.includes(location.pathname));
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.name}
-                  to={item.path}
-                  onClick={() => setMobileSidebarOpen(false)}
-                  className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold ${
-                    isActive ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Icon className="w-4 h-4 text-blue-600" />
-                    <span>{item.name}</span>
+          <div className="fixed inset-0 z-50 md:hidden animate-in fade-in duration-200">
+            {/* Backdrop Tap-Outside Overlay */}
+            <div 
+              className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity"
+              onClick={() => setMobileSidebarOpen(false)}
+            />
+
+            {/* Drawer Panel */}
+            <div className="fixed inset-y-0 left-0 max-w-xs w-full bg-white shadow-2xl z-50 flex flex-col overflow-hidden animate-in slide-in-from-left duration-250">
+              <div className="h-16 border-b border-slate-100 flex items-center justify-between px-4 gap-3 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center p-1 shadow-2xs shrink-0 overflow-hidden">
+                    <img src="/company-logo.jpg" alt="Company Logo" className="w-full h-full object-contain" />
                   </div>
-                  {item.badge && (
-                    <span className="text-[9px] font-mono px-1 bg-slate-100 text-slate-500 rounded">
-                      {item.badge}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
+                  <div>
+                    <div className="text-xs font-black tracking-wider text-slate-900 uppercase">
+                      ARGUS
+                    </div>
+                    <div className="text-[10px] tracking-tight text-blue-600 font-bold -mt-0.5 uppercase">
+                      AI ATTENDANCE SUITE
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setMobileSidebarOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+                {navItems.map((item) => {
+                  const isActive = location.pathname === item.path || (item.altPaths && item.altPaths.includes(location.pathname));
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.name}
+                      to={item.path}
+                      onClick={() => setMobileSidebarOpen(false)}
+                      className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                        isActive
+                          ? 'bg-blue-50 text-blue-700 font-bold border-l-4 border-blue-600 shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Icon className={`w-4 h-4 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} />
+                        <span>{item.name}</span>
+                      </div>
+                      {item.badge && (
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded font-bold">
+                          {item.badge}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </nav>
+
+              <div className="p-4 border-t border-slate-100 bg-slate-50/70 shrink-0">
+                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1.5">
+                  Current Tenant
+                </div>
+                <div className="flex items-center gap-2.5">
+                  {organization?.logo_url ? (
+                    <img
+                      src={organization.logo_url}
+                      alt="Logo"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      className="w-8 h-8 rounded-lg object-contain bg-white border border-slate-200 p-0.5 shrink-0 shadow-2xs"
+                    />
+                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-bold text-slate-800 truncate">
+                      {organization?.name || 'Argus Technologies'}
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono truncate">
+                      ID: {organization?.slug || 'ARGUS-MAIN'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
         {/* Main Body */}
-        <main className="flex-1 overflow-x-hidden p-4 sm:p-8 bg-[#f8fbff] bg-blueprint">
+        <main className="flex-1 overflow-x-hidden p-3 sm:p-6 lg:p-8 bg-[#f8fbff] bg-blueprint">
           {children}
         </main>
       </div>

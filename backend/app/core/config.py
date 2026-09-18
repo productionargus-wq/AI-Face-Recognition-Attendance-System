@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     KIOSK_SECRET: str = os.getenv("KIOSK_SECRET", "argus-kiosk-secret-terminal-key-2026")
     
     # Biometric Face Vector matching
-    SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.55"))  # Calibrated for webcam lighting & angle variance
+    SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.80"))  # High-precision calibrated threshold
     
     # CORS
     CORS_ORIGINS: List[str] = [

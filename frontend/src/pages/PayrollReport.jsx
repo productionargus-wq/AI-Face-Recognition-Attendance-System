@@ -1147,22 +1147,23 @@ export const PayrollReport = () => {
 
           {/* Official Printable Payslip Modal */}
           {slipModalOpen && selectedSlip && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in">
-              <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-8">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-in fade-in">
+              <div className="bg-white w-full max-w-2xl rounded-xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col">
                 {/* Modal Header Bar */}
-                <div className="p-4 bg-slate-900 text-white flex items-center justify-between print:hidden">
+                <div className="p-3 sm:p-4 bg-slate-900 text-white flex items-center justify-between shrink-0 print:hidden">
                   <div className="flex items-center gap-2">
                     <FileText className="w-4 h-4 text-blue-400" />
-                    <span className="text-xs font-bold font-mono tracking-wider uppercase">Official Salary Statement &amp; Payslip</span>
+                    <span className="text-xs font-bold font-mono tracking-wider uppercase truncate">Official Salary Statement &amp; Payslip</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => window.print()}
-                      className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                      className="px-2.5 sm:px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
                     >
                       <Printer className="w-3.5 h-3.5" />
-                      Print / PDF
+                      <span className="hidden sm:inline">Print / PDF</span>
+                      <span className="sm:hidden">Print</span>
                     </button>
                     <button
                       type="button"
@@ -1170,15 +1171,15 @@ export const PayrollReport = () => {
                         setSlipModalOpen(false);
                         setSelectedSlip(null);
                       }}
-                      className="p-1 text-slate-400 hover:text-white rounded-lg cursor-pointer"
+                      className="p-1 text-slate-400 hover:text-white rounded-lg cursor-pointer shrink-0"
                     >
                       <X className="w-5 h-5" />
                     </button>
                   </div>
                 </div>
 
-                {/* Printable Payslip Body */}
-                <div className="p-6 sm:p-8 space-y-6 text-slate-800 bg-white">
+                {/* Printable Payslip Body (Scrollable on mobile) */}
+                <div className="p-4 sm:p-8 space-y-5 sm:space-y-6 text-slate-800 bg-white overflow-y-auto flex-1">
                   {/* Header: Company & Title */}
                   <div className="flex items-start justify-between border-b-2 border-slate-900 pb-5">
                     <div>

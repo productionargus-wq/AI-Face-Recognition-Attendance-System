@@ -45,6 +45,23 @@ def test_tenant_face_matching_isolation():
     no_match, conf2 = find_best_match(vec_emp2, tenant_employees, threshold=0.7)
     assert no_match is None
 
+def test_margin_ambiguity_protection():
+    # Two employees with almost identical templates
+    vec_base = (np.ones(128, dtype=np.float32) / np.sqrt(128)).tolist()
+    # Tiny difference (0.01) between emp A and emp B
+    vec_a = list(vec_base)
+    vec_b = list(vec_base)
+    vec_b[0] += 0.01
+    
+    tenant_employees = [
+        {"id": "emp-a", "first_name": "Alice", "face_embeddings": [vec_a]},
+        {"id": "emp-b", "first_name": "Bob", "face_embeddings": [vec_b]}
+    ]
+    
+    # Matching should reject because difference is smaller than margin_threshold (0.07)
+    match, conf = find_best_match(vec_base, tenant_employees, threshold=0.80, margin_threshold=0.07)
+    assert match is None  # Rejection protects against wrong login!
+
 def test_liveness_challenge_generation():
     challenge = liveness_service.generate_random_challenge()
     assert "instruction" in challenge

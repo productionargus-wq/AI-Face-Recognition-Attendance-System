@@ -251,32 +251,32 @@ export const AttendanceTerminalModal = ({ isOpen, onClose }) => {
   });
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[96vh]">
+    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-5xl sm:rounded-2xl rounded-none shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-full sm:h-auto sm:max-h-[96vh]">
         
         {/* Top Terminal Bar */}
-        <div className="bg-slate-900 text-white px-4 sm:px-6 py-3.5 flex items-center justify-between border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xs font-bold">
-              <ScanFace className="w-5 h-5" />
+        <div className="bg-slate-900 text-white px-3 sm:px-6 py-3 flex items-center justify-between border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xs font-bold shrink-0">
+              <ScanFace className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm sm:text-base font-extrabold tracking-tight">
-                  Attendance Capture Terminal
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h2 className="text-xs sm:text-base font-extrabold tracking-tight truncate">
+                  Attendance Terminal
                 </h2>
-                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
+                <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[9px] sm:text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                   ONLINE
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 font-mono">
-                Multi-Tenant Biometric Facial Punch • No Sign-In Required
+              <p className="text-[10px] sm:text-[11px] text-slate-400 font-mono">
+                Multi-Tenant Biometric Punch
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             {/* Real-time digital clock */}
             <div className="hidden sm:flex flex-col text-right">
               <span className="text-sm sm:text-base font-black font-mono text-cyan-400 tracking-wider">
@@ -290,7 +290,7 @@ export const AttendanceTerminalModal = ({ isOpen, onClose }) => {
             <button
               type="button"
               onClick={onClose}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+              className="p-1.5 sm:p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
               title="Exit Terminal and Return to Sign In"
             >
               <X className="w-5 h-5" />
@@ -299,13 +299,13 @@ export const AttendanceTerminalModal = ({ isOpen, onClose }) => {
         </div>
 
         {/* Action Controls & Org Selector Bar */}
-        <div className="bg-slate-50 border-b border-slate-200 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          {/* Punch Mode Selector */}
-          <div className="flex items-center gap-1 p-1 bg-white border border-slate-200 rounded-xl shadow-2xs">
+        <div className="bg-slate-50 border-b border-slate-200 px-3 sm:px-6 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 shrink-0">
+          {/* Punch Mode Selector (Horizontal Scrollable on mobile) */}
+          <div className="flex items-center gap-1 p-1 bg-white border border-slate-200 rounded-xl shadow-2xs overflow-x-auto max-w-full">
             <button
               type="button"
               onClick={() => setPunchMode('AUTO')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
                 punchMode === 'AUTO'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100'
@@ -316,35 +316,35 @@ export const AttendanceTerminalModal = ({ isOpen, onClose }) => {
             <button
               type="button"
               onClick={() => setPunchMode('CHECK_IN')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
                 punchMode === 'CHECK_IN'
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
-              Punch In (Check-In)
+              Punch In
             </button>
             <button
               type="button"
               onClick={() => setPunchMode('CHECK_OUT')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
                 punchMode === 'CHECK_OUT'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
-              Punch Out (Check-Out)
+              Punch Out
             </button>
           </div>
 
           {/* Organization Filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-mono text-slate-400 uppercase font-bold">ORGANISATION:</span>
-            <div className="relative">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <span className="text-[10px] sm:text-[11px] font-mono text-slate-400 uppercase font-bold shrink-0">ORG:</span>
+            <div className="relative flex-1 sm:flex-none">
               <select
                 value={selectedOrg}
                 onChange={(e) => setSelectedOrg(e.target.value)}
-                className="bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-2xs"
+                className="w-full sm:w-auto bg-white border border-slate-200 rounded-xl pl-2.5 pr-8 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-2xs"
               >
                 <option value="AUTO">✨ Auto-Detect (All Registered)</option>
                 {organizations.map(o => (

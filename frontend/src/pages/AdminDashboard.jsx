@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { EnrollEmployeeModal, ALL_PERMISSIONS, DEFAULT_PERMISSIONS } from '../components/EnrollEmployeeModal';
 import { RevokeAccessModal } from '../components/RevokeAccessModal';
+import { WorkforceMetricsModal } from '../components/WorkforceMetricsModal';
 import { 
   Users, 
   UserCheck, 
@@ -23,7 +24,8 @@ import {
   TrendingUp,
   X,
   Check,
-  RefreshCw
+  RefreshCw,
+  ArrowUpRight
 } from 'lucide-react';
 
 export const AdminDashboard = () => {
@@ -34,10 +36,15 @@ export const AdminDashboard = () => {
 
   const [todayData, setTodayData] = useState({ summary: {}, records: [] });
   const [employees, setEmployees] = useState([]);
+  const [leaves, setLeaves] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Workforce Metrics Drill-down Modal State
+  const [metricsModalOpen, setMetricsModalOpen] = useState(false);
+  const [activeMetricTab, setActiveMetricTab] = useState('TOTAL'); // 'TOTAL' | 'ON_TIME' | 'LATE' | 'ABSENT'
 
   // Revoke Biometric Access Confirmation Modal State
   const [employeeToDelete, setEmployeeToDelete] = useState(null);
@@ -81,17 +88,24 @@ export const AdminDashboard = () => {
   const fetchDashboardData = async (isSilent = false) => {
     if (!isSilent) setLoading(true);
     try {
-      const [attRes, empRes] = await Promise.all([
+      const [attRes, empRes, leavesRes] = await Promise.all([
         api.get('/attendance/today'),
-        api.get('/employees/')
+        api.get('/employees/'),
+        api.get('/operations/leaves').catch(() => ({ data: [] }))
       ]);
       setTodayData(attRes.data);
       setEmployees(empRes.data || []);
+      setLeaves(leavesRes.data || []);
     } catch (err) {
       console.error('Failed to load dashboard data', err);
     } finally {
       if (!isSilent) setLoading(false);
     }
+  };
+
+  const handleOpenMetricsModal = (tab = 'TOTAL') => {
+    setActiveMetricTab(tab);
+    setMetricsModalOpen(true);
   };
 
   const handleExportCSV = () => {
@@ -254,10 +268,10 @@ export const AdminDashboard = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <button
             onClick={() => setIsModalOpen(true)}
-            className="py-2 px-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            className="flex-1 sm:flex-none py-2 px-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Add Employee</span>
@@ -265,7 +279,7 @@ export const AdminDashboard = () => {
 
           <button
             onClick={handleExportCSV}
-            className="py-2 px-3 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs rounded-xl shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            className="flex-1 sm:flex-none py-2 px-3 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs rounded-xl shadow-2xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-blue-600" />
             <span>CSV EXPORT</span>
@@ -273,98 +287,142 @@ export const AdminDashboard = () => {
         </div>
       </div>
 
-      {/* 4 Stat Cards Row (Matches Image 1) */}
+      {/* 4 Stat Cards Row (Interactive Drill-downs) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Total Workforce */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs relative flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              TOTAL WORKFORCE
-            </span>
-            <Building2 className="w-4 h-4 text-blue-600" />
+        <div 
+          onClick={() => handleOpenMetricsModal('TOTAL')}
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs relative flex flex-col justify-between cursor-pointer transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-blue-400 group select-none"
+        >
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider group-hover:text-blue-600 transition-colors">
+                TOTAL WORKFORCE
+              </span>
+              <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                <Building2 className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-1 my-1">
+              <span className="text-3xl font-black text-slate-900">{totalRoster}</span>
+              <span className="text-xs text-slate-400 font-semibold">({presentCount} Active today)</span>
+            </div>
+            <div className="flex items-center justify-between text-[11px] font-semibold mb-2">
+              <span className="text-emerald-700 font-bold">{presentCount} Present</span>
+              <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-mono font-bold">
+                {presentRate}% Rate
+              </span>
+            </div>
+            {/* Progress bar */}
+            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+              <div className="bg-blue-600 h-full rounded-full" style={{ width: `${presentRate}%` }} />
+            </div>
           </div>
-          <div className="flex items-baseline gap-1 my-1">
-            <span className="text-3xl font-black text-slate-900">{presentCount}</span>
-            <span className="text-xs text-slate-400 font-semibold">/ {totalRoster}</span>
-          </div>
-          <div className="flex items-center justify-between text-[11px] font-semibold mb-2">
-            <span className="text-emerald-700 font-bold">{presentCount} Active today</span>
-            <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-mono font-bold">
-              {presentRate}% Rate
-            </span>
-          </div>
-          {/* Progress bar */}
-          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-blue-600 h-full rounded-full" style={{ width: `${presentRate}%` }} />
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold text-blue-600 group-hover:text-blue-700">
+            <span>View all employees &amp; details</span>
+            <ArrowUpRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </div>
         </div>
 
         {/* Card 2: On-Time Arrivals */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs relative flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              ON-TIME ARRIVALS
-            </span>
-            <Clock className="w-4 h-4 text-emerald-600" />
+        <div 
+          onClick={() => handleOpenMetricsModal('ON_TIME')}
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs relative flex flex-col justify-between cursor-pointer transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-emerald-400 group select-none"
+        >
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider group-hover:text-emerald-600 transition-colors">
+                ON-TIME ARRIVALS
+              </span>
+              <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                <Clock className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-1 my-1">
+              <span className="text-3xl font-black text-emerald-600">{presentCount - lateCount}</span>
+              <span className="text-xs text-slate-400 font-semibold">/ {presentCount} active</span>
+            </div>
+            <div className="flex items-center justify-between text-[11px] font-semibold mb-2">
+              <span className="text-slate-500">Punctual Check-ins</span>
+              <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-mono font-bold">
+                {onTimeRate}% Rate
+              </span>
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+              <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${onTimeRate}%` }} />
+            </div>
           </div>
-          <div className="flex items-baseline gap-1 my-1">
-            <span className="text-3xl font-black text-emerald-600">{presentCount - lateCount}</span>
-            <span className="text-xs text-slate-400 font-semibold">/ {presentCount}</span>
-          </div>
-          <div className="flex items-center justify-between text-[11px] font-semibold mb-2">
-            <span className="text-slate-500">Punctual Check-ins</span>
-            <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-mono font-bold">
-              {onTimeRate}% Rate
-            </span>
-          </div>
-          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${onTimeRate}%` }} />
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold text-emerald-600 group-hover:text-emerald-700">
+            <span>View punctual employees &amp; timings</span>
+            <ArrowUpRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </div>
         </div>
 
         {/* Card 3: Late Arrivals */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs relative flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              LATE ARRIVALS
-            </span>
-            <AlertTriangle className="w-4 h-4 text-amber-500" />
+        <div 
+          onClick={() => handleOpenMetricsModal('LATE')}
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs relative flex flex-col justify-between cursor-pointer transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-amber-400 group select-none"
+        >
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider group-hover:text-amber-600 transition-colors">
+                LATE ARRIVALS
+              </span>
+              <div className="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center text-amber-500 group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-1 my-1">
+              <span className="text-3xl font-black text-amber-500">{lateCount}</span>
+              <span className="text-xs text-slate-400 font-semibold">/ {presentCount} active</span>
+            </div>
+            <div className="flex items-center justify-between text-[11px] font-semibold mb-2">
+              <span className="text-slate-500">Grace Exceeded</span>
+              <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-mono font-bold">
+                {lateRate}% Rate
+              </span>
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+              <div className="bg-amber-500 h-full rounded-full" style={{ width: `${lateRate}%` }} />
+            </div>
           </div>
-          <div className="flex items-baseline gap-1 my-1">
-            <span className="text-3xl font-black text-amber-500">{lateCount}</span>
-            <span className="text-xs text-slate-400 font-semibold">/ {presentCount}</span>
-          </div>
-          <div className="flex items-center justify-between text-[11px] font-semibold mb-2">
-            <span className="text-slate-500">Grace Exceeded</span>
-            <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-mono font-bold">
-              {lateRate}% Rate
-            </span>
-          </div>
-          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-amber-500 h-full rounded-full" style={{ width: `${lateRate}%` }} />
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold text-amber-600 group-hover:text-amber-700">
+            <span>View late arrivals &amp; delay timings</span>
+            <ArrowUpRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </div>
         </div>
 
         {/* Card 4: Absent / On Leave */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs relative flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              ABSENT / ON LEAVE
-            </span>
-            <Calendar className="w-4 h-4 text-red-500" />
+        <div 
+          onClick={() => handleOpenMetricsModal('ABSENT')}
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs relative flex flex-col justify-between cursor-pointer transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-red-400 group select-none"
+        >
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider group-hover:text-red-600 transition-colors">
+                ABSENT / ON LEAVE
+              </span>
+              <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center text-red-500 group-hover:bg-red-600 group-hover:text-white transition-colors">
+                <Calendar className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-1 my-1">
+              <span className="text-3xl font-black text-red-500">{absentCount}</span>
+              <span className="text-xs text-slate-400 font-semibold">/ {totalRoster} roster</span>
+            </div>
+            <div className="flex items-center justify-between text-[11px] font-semibold mb-2">
+              <span className="text-slate-500">Unaccounted / Off</span>
+              <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-mono font-bold">
+                {absentRate}% Rate
+              </span>
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+              <div className="bg-red-500 h-full rounded-full" style={{ width: `${absentRate}%` }} />
+            </div>
           </div>
-          <div className="flex items-baseline gap-1 my-1">
-            <span className="text-3xl font-black text-red-500">{absentCount}</span>
-            <span className="text-xs text-slate-400 font-semibold">/ {totalRoster}</span>
-          </div>
-          <div className="flex items-center justify-between text-[11px] font-semibold mb-2">
-            <span className="text-slate-500">Unaccounted / Off</span>
-            <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-mono font-bold">
-              {absentRate}% Rate
-            </span>
-          </div>
-          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-red-500 h-full rounded-full" style={{ width: `${absentRate}%` }} />
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold text-red-600 group-hover:text-red-700">
+            <span>View absent &amp; on-leave staff</span>
+            <ArrowUpRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </div>
         </div>
       </div>
@@ -818,6 +876,17 @@ export const AdminDashboard = () => {
         onClose={() => !deleteLoading && setEmployeeToDelete(null)}
         onConfirm={handleConfirmDelete}
         loading={deleteLoading}
+      />
+
+      {/* Workforce Metrics Drill-Down Modal */}
+      <WorkforceMetricsModal
+        isOpen={metricsModalOpen}
+        onClose={() => setMetricsModalOpen(false)}
+        initialTab={activeMetricTab}
+        employees={employees}
+        records={records}
+        leaves={leaves}
+        onEditEmployee={handleOpenEdit}
       />
     </div>
   );

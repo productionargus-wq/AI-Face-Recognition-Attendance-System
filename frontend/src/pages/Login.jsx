@@ -210,7 +210,7 @@ export const Login = () => {
               }} 
             />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <span className="font-extrabold tracking-wider text-slate-900 text-sm">
               ARGUS
             </span>
@@ -221,11 +221,11 @@ export const Login = () => {
         </div>
 
         {/* Top Center: Attendance Capture Terminal Button */}
-        <div className="flex items-center justify-center">
+        <div className="flex items-center justify-center order-3 sm:order-2 w-full sm:w-auto">
           <button
             type="button"
             onClick={() => setShowTerminal(true)}
-            className="group relative inline-flex items-center gap-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 hover:shadow-lg transition-all cursor-pointer border border-blue-400/30 active:scale-95"
+            className="group relative inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 hover:shadow-lg transition-all cursor-pointer border border-blue-400/30 active:scale-95 w-full sm:w-auto"
             title="Open Live Kiosk Attendance Punch Terminal"
           >
             <span className="relative flex h-2 w-2">
@@ -234,27 +234,27 @@ export const Login = () => {
             </span>
             <ScanFace className="w-4 h-4 text-blue-200 group-hover:scale-110 transition-transform" />
             <span className="tracking-wide font-semibold text-xs sm:text-sm">Attendance Capture Terminal</span>
-            <span className="hidden md:inline text-[9px] font-mono uppercase bg-white/20 text-white px-1.5 py-0.5 rounded ml-0.5 font-bold">
+            <span className="text-[9px] font-mono uppercase bg-white/20 text-white px-1.5 py-0.5 rounded ml-0.5 font-bold">
               LIVE
             </span>
           </button>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-medium text-slate-500 shrink-0">
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-500 shrink-0 order-2 sm:order-3">
           <span className="hidden lg:inline">New organisation?</span>
           <Link
             to="/register-org"
             className="px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 hover:border-blue-500 hover:text-blue-600 bg-white font-semibold transition-colors shadow-2xs text-[11px] sm:text-xs"
           >
-            Register Organisation
+            Register Org
           </Link>
         </div>
       </header>
 
       {/* Main Dual-Column Authentication Viewport */}
-      <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8 relative z-10">
+      <main className="flex-1 flex flex-col items-center justify-center p-3 sm:p-6 lg:p-8 relative z-10 w-full">
         {/* Page Top Heading */}
-        <div className="max-w-4xl w-full mx-auto mb-6">
+        <div className="max-w-4xl w-full mx-auto mb-4 sm:mb-6 px-1">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50/90 border border-blue-200 text-blue-700 text-[10px] font-mono font-bold mb-2 backdrop-blur-xs">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
             PRECISION IDENTITY MATRIX
@@ -267,12 +267,12 @@ export const Login = () => {
           </p>
         </div>
 
-        <div className="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+        <div className="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-center">
           
           {/* Left Column: Live Optical Face Scanner Viewport */}
-          <div className="lg:col-span-5 bg-white/85 backdrop-blur-xl p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xl shadow-blue-900/5 flex flex-col justify-between">
+          <div className="lg:col-span-5 bg-white/85 backdrop-blur-xl p-4 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xl shadow-blue-900/5 flex flex-col justify-between">
             <div>
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3 sm:mb-4">
                 <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
                   FACE RECOGNITION
                 </span>
@@ -283,7 +283,7 @@ export const Login = () => {
               </div>
 
               {/* Viewport Frame with Cybernetic HUD Brackets */}
-              <div className="relative w-full aspect-square bg-slate-950 rounded-xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
+              <div className="relative w-full aspect-[4/3] sm:aspect-square max-w-sm mx-auto bg-slate-950 rounded-xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
                 {/* HUD Corner Brackets */}
                 <div className="hud-corner-tl" />
                 <div className="hud-corner-tr" />
@@ -380,9 +380,25 @@ export const Login = () => {
             {error && (
               <div className="mb-4 p-3.5 rounded-xl bg-red-50/90 border border-red-200 text-red-700 text-xs flex items-start gap-2.5 animate-in fade-in duration-200 backdrop-blur-xs">
                 <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <div className="font-bold text-red-800">Authentication Failed</div>
+                <div className="space-y-2 flex-1">
+                  <div className="font-bold text-red-800">Account Not Registered (403 Forbidden)</div>
                   <div className="text-red-700 text-[11px] leading-relaxed">{error}</div>
+                  
+                  {/* Actionable buttons if email is not yet registered */}
+                  {error.toLowerCase().includes('not registered') && (
+                    <div className="pt-1 flex flex-wrap items-center gap-2">
+                      <Link
+                        to="/register-org"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[11px] shadow-xs transition-colors"
+                      >
+                        Register New Organisation
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </Link>
+                      <span className="text-[10px] text-slate-500 font-medium">
+                        Or ask your employer to enroll this email in their directory.
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -30,7 +30,7 @@ export const EmployeePortal = () => {
   const punctualityScore = presentDays > 0 ? Math.round((onTimeDays / presentDays) * 100) : 100;
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] py-6 sm:py-8 px-3 sm:px-6 lg:px-8 max-w-5xl mx-auto space-y-4 sm:space-y-6">
+    <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6">
       {/* Header Banner */}
       <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
