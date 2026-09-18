@@ -78,6 +78,15 @@ class KioskPunchPayload(BaseModel):
     longitude: Optional[float] = None
     accuracy: Optional[float] = None
 
+class FieldPunchPayload(BaseModel):
+    client_site_id: str
+    image_sample: str
+    latitude: float
+    longitude: float
+    accuracy: Optional[float] = None
+    notes: Optional[str] = None
+    punch_type: str = "AUTO"
+
 @attendance_router.get("/liveness-challenge")
 def get_liveness_challenge():
     return liveness_service.generate_random_challenge()
@@ -382,6 +391,217 @@ async def kiosk_punch(payload: KioskPunchPayload):
         "distance_meters": distance_meters
     }
 
+@attendance_router.post("/field-punch")
+async def field_visit_punch(
+    payload: FieldPunchPayload,
+    auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
+):
+    """
+    Field worker client site punch with live GPS vs. client site geofencing and facial biometrics.
+    """
+    org_id = auth_ctx["org_id"]
+    email = auth_ctx.get("email")
+    emp_id = auth_ctx.get("emp_id")
+
+    emp = None
+    if emp_id:
+        emp = await store.find_one("employees", {"id": emp_id, "organization_id": org_id})
+    if not emp and email:
+        emp = await store.find_one("employees", {"email": email, "organization_id": org_id})
+    if not emp:
+        user = await store.find_one("users", {"email": email, "organization_id": org_id})
+        if user and user.get("employee_id"):
+            emp = await store.find_one("employees", {"id": user["employee_id"], "organization_id": org_id})
+    
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee profile not found.")
+
+    site = await store.find_one("client_sites", {"id": payload.client_site_id, "organization_id": org_id, "is_active": True})
+    if not site:
+        raise HTTPException(status_code=404, detail="Client project site not found or deactivated.")
+
+    try:
+        image = decode_base64_image(payload.image_sample)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid camera frame.")
+
+    quality = liveness_service.check_liveness_quality(image)
+    if not quality.get("passed", False):
+        raise HTTPException(
+            status_code=400,
+            detail="Biometric verification failed: Ensure face is clearly centered in good lighting."
+        )
+
+    live_vector = extract_face_embedding(image)
+    if live_vector is None:
+        raise HTTPException(status_code=400, detail="No face detected in capture.")
+
+    # Match against employee's enrolled face embeddings
+    matched, confidence = find_best_match(live_vector, [emp], threshold=settings.SIMILARITY_THRESHOLD)
+    if not matched:
+        raise HTTPException(status_code=401, detail="Facial biometric mismatch. You can only punch your own site visit.")
+
+    # Calculate distance to designated client site
+    distance = calculate_haversine_distance(
+        payload.latitude, payload.longitude,
+        site["latitude"], site["longitude"]
+    )
+    radius = site.get("radius_meters", 150)
+    is_on_site = distance <= radius
+    geofence_status = "VERIFIED_ON_SITE" if is_on_site else "SITE_PERIMETER_VIOLATION"
+
+    now_utc = datetime.now(timezone.utc)
+    now_local = now_utc.astimezone(IST_TZ)
+    today_str = now_local.strftime("%Y-%m-%d")
+    time_str = now_local.strftime("%I:%M:%S %p")
+
+    # Find today's attendance record
+    existing_record = await store.find_one("attendance", {
+        "organization_id": org_id,
+        "employee_id": emp["id"],
+        "date": today_str
+    })
+
+    # Alternating punch state
+    if not existing_record:
+        punch_action = "CHECK_IN"
+    else:
+        is_currently_in = existing_record.get("is_currently_in", False)
+        punch_action = "CHECK_OUT" if is_currently_in else "CHECK_IN"
+
+    existing_punches = list(existing_record.get("punches") or []) if existing_record else []
+    punch_num = len(existing_punches) + 1
+
+    punch_entry = {
+        "punch_number": punch_num,
+        "action": punch_action,
+        "time": time_str,
+        "timestamp": now_utc.isoformat(),
+        "latitude": payload.latitude,
+        "longitude": payload.longitude,
+        "accuracy": payload.accuracy,
+        "geofence_status": geofence_status,
+        "distance_meters": distance,
+        "client_site_id": site["id"],
+        "client_site_name": site["site_name"],
+        "site_visit_verified": is_on_site,
+        "notes": payload.notes
+    }
+    all_punches = existing_punches + [punch_entry]
+    total_hours = calculate_punches_total_hours(all_punches)
+    new_is_in = (punch_action == "CHECK_IN")
+
+    if not existing_record:
+        new_att = {
+            "id": f"ATT-{now_utc.strftime('%Y%m%d%H%M%S')}-{emp['employee_code']}",
+            "organization_id": org_id,
+            "employee_id": emp["id"],
+            "employee_code": emp["employee_code"],
+            "employee_name": f"{emp['first_name']} {emp['last_name']}",
+            "department": emp.get("department", "Field Operations"),
+            "employment_type": emp.get("employment_type", "FIELD_WORKER"),
+            "shift_type": emp.get("shift_type", "FLEXIBLE"),
+            "date": today_str,
+            "check_in": now_utc.isoformat(),
+            "check_in_time": time_str,
+            "check_out": now_utc.isoformat() if punch_action == "CHECK_OUT" else None,
+            "check_out_time": time_str if punch_action == "CHECK_OUT" else None,
+            "total_hours": total_hours,
+            "is_currently_in": new_is_in,
+            "punch_count": punch_num,
+            "punches": all_punches,
+            "last_punch_time": time_str,
+            "last_punch_action": punch_action,
+            "status": "PRESENT",
+            "shift_status": "ON-SITE" if is_on_site else "OUTSIDE-SITE",
+            "verification_mode": "FIELD_CLIENT_SITE",
+            "confidence_score": confidence,
+            "liveness_verified": True,
+            "client_site_id": site["id"],
+            "client_site_name": site["site_name"],
+            "site_visit_verified": is_on_site,
+            "latitude": payload.latitude,
+            "longitude": payload.longitude,
+            "accuracy": payload.accuracy,
+            "geofence_status": geofence_status,
+            "distance_meters": distance,
+            "notes": payload.notes
+        }
+        await store.insert_one("attendance", new_att)
+        res_record = new_att
+    else:
+        update_fields = {
+            "is_currently_in": new_is_in,
+            "punch_count": punch_num,
+            "punches": all_punches,
+            "last_punch_time": time_str,
+            "last_punch_action": punch_action,
+            "total_hours": total_hours,
+            "client_site_id": site["id"],
+            "client_site_name": site["site_name"],
+            "site_visit_verified": is_on_site,
+            "latitude": payload.latitude,
+            "longitude": payload.longitude,
+            "geofence_status": geofence_status,
+            "distance_meters": distance,
+            "notes": payload.notes or existing_record.get("notes")
+        }
+        if punch_action == "CHECK_OUT":
+            update_fields["check_out"] = now_utc.isoformat()
+            update_fields["check_out_time"] = time_str
+        await store.update_one("attendance", {"id": existing_record["id"]}, update_fields)
+        existing_record.update(update_fields)
+        res_record = existing_record
+
+    # Stream event
+    fn = emp.get("first_name", "")
+    ln = emp.get("last_name", "")
+    initials = ((fn[:1] if fn else "") + (ln[:1] if ln else "")).upper() or "FW"
+    event_label = f"FIELD PUNCH #{punch_num} [{punch_action.replace('CHECK_', '')}]: {site['site_name']}"
+    event = {
+        "id": f"EVT-{now_utc.strftime('%Y%m%d%H%M%S%f')}",
+        "organization_id": org_id,
+        "employee_name": f"{fn} {ln}".strip(),
+        "employee_code": emp["employee_code"],
+        "employment_type": emp.get("employment_type", "FIELD_WORKER"),
+        "department": emp.get("department", "Field Operations"),
+        "time": time_str,
+        "date": today_str,
+        "timestamp": now_utc.isoformat(),
+        "operation": event_label,
+        "action": punch_action,
+        "punch_number": punch_num,
+        "is_in": new_is_in,
+        "avatar": initials,
+        "latitude": payload.latitude,
+        "longitude": payload.longitude,
+        "client_site_id": site["id"],
+        "client_site_name": site["site_name"],
+        "site_visit_verified": is_on_site,
+        "geofence_status": geofence_status,
+        "distance_meters": distance
+    }
+    await store.insert_one("attendance_events", event)
+
+    return {
+        "status": "success",
+        "action": punch_action,
+        "punch_number": punch_num,
+        "punch_count": punch_num,
+        "is_currently_in": new_is_in,
+        "site_name": site["site_name"],
+        "client_name": site["client_name"],
+        "site_visit_verified": is_on_site,
+        "geofence_status": geofence_status,
+        "distance_meters": distance,
+        "allowed_radius": radius,
+        "honesty_status": "HONEST ON-SITE VISIT" if is_on_site else f"VIOLATION: {int(distance)}m AWAY FROM SITE",
+        "employee_name": f"{fn} {ln}".strip(),
+        "timestamp": time_str,
+        "date": today_str,
+        "total_hours": res_record.get("total_hours", 0.0)
+    }
+
 @attendance_router.get("/kiosk-stream")
 async def get_kiosk_stream(organization_slug_or_id: Optional[str] = None, organization_id: Optional[str] = None):
     """Retrieve persisted live punch event stream records for kiosk display."""
@@ -563,6 +783,8 @@ async def get_map_punches(auth_ctx: Dict[str, Any] = Depends(require_tenant_cont
     base_lat = geofence_cfg.get("latitude", 13.0827)
     base_lon = geofence_cfg.get("longitude", 80.2707)
 
+    client_sites = await store.find_many("client_sites", {"organization_id": org_id, "is_active": True})
+
     for idx, r in enumerate(records):
         emp_id = r.get("employee_id")
         emp = emp_map.get(emp_id, {})
@@ -603,6 +825,10 @@ async def get_map_punches(auth_ctx: Dict[str, Any] = Depends(require_tenant_cont
             "employee_code": r.get("employee_code", emp.get("employee_code", "—")),
             "department": emp.get("department", r.get("department", "Operations")),
             "designation": emp.get("designation", "Staff"),
+            "employment_type": emp.get("employment_type", "FULL_TIME"),
+            "client_site_id": r.get("client_site_id"),
+            "client_site_name": r.get("client_site_name"),
+            "site_visit_verified": r.get("site_visit_verified"),
             "avatar": initials,
             "latitude": lat,
             "longitude": lon,
@@ -614,12 +840,13 @@ async def get_map_punches(auth_ctx: Dict[str, Any] = Depends(require_tenant_cont
             "timestamp": r.get("check_in") or r.get("date")
         })
 
-    inside_count = len([m for m in map_items if m.get("geofence_status") == "INSIDE"])
-    violation_count = len([m for m in map_items if m.get("geofence_status") == "OUTSIDE"])
+    inside_count = len([m for m in map_items if m.get("geofence_status") in ("INSIDE", "VERIFIED_ON_SITE")])
+    violation_count = len([m for m in map_items if m.get("geofence_status") in ("OUTSIDE", "SITE_PERIMETER_VIOLATION")])
 
     return {
         "date": today_str,
         "geofence": geofence_cfg,
+        "client_sites": client_sites,
         "punches": map_items,
         "total_punches": len(map_items),
         "inside_count": inside_count,

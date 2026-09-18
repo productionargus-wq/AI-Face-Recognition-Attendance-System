@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional, Dict, Any, List
-from app.models.schemas import Organization, WorkHoursConfig, AuditLog
-from app.core.security import require_org_admin, require_super_admin
+from app.models.schemas import Organization, WorkHoursConfig, AuditLog, ClientSite, ClientSiteCreate
+from app.core.security import require_org_admin, require_super_admin, require_tenant_context
 from app.db.store import store
 
 router = APIRouter(prefix="/organizations", tags=["Organizations & Settings"])
@@ -158,3 +158,36 @@ async def update_org_geofence(
     await store.insert_one("audit_logs", audit)
 
     return {"status": "success", "geofence": geofence_data, "message": "Geofence perimeter updated successfully."}
+
+# ----------------- CLIENT SITES & FIELD WORK LOCATIONS -----------------
+@router.get("/client-sites")
+async def list_client_sites(auth_ctx: Dict[str, Any] = Depends(require_tenant_context)):
+    """List all active client project locations for the tenant."""
+    org_id = auth_ctx["org_id"]
+    sites = await store.find_many("client_sites", {"organization_id": org_id, "is_active": True}, sort_key="created_at", sort_desc=True)
+    return sites
+
+@router.post("/client-sites")
+async def create_client_site(payload: ClientSiteCreate, auth_ctx: Dict[str, Any] = Depends(require_org_admin)):
+    """Register a new client or project site with geofence perimeter."""
+    org_id = auth_ctx["org_id"]
+    site_dict = ClientSite(
+        organization_id=org_id,
+        site_name=payload.site_name.strip(),
+        client_name=payload.client_name.strip(),
+        address=payload.address.strip(),
+        latitude=float(payload.latitude),
+        longitude=float(payload.longitude),
+        radius_meters=int(payload.radius_meters or 150),
+        contact_person=payload.contact_person,
+        contact_phone=payload.contact_phone
+    ).dict()
+    await store.insert_one("client_sites", site_dict)
+    return site_dict
+
+@router.delete("/client-sites/{site_id}")
+async def delete_client_site(site_id: str, auth_ctx: Dict[str, Any] = Depends(require_org_admin)):
+    """Deactivate client site."""
+    org_id = auth_ctx["org_id"]
+    await store.update_one("client_sites", {"id": site_id, "organization_id": org_id}, {"is_active": False})
+    return {"status": "success", "message": "Client site removed successfully."}

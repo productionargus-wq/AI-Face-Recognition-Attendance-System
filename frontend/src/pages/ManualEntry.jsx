@@ -210,14 +210,7 @@ export const ManualEntry = () => {
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
               Manual Attendance Entry
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-mono font-bold">
-              <Lock className="w-3 h-3 text-slate-500" />
-              ADMIN OVERRIDE CONSOLE
-            </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Authoritative punch correction and biometric audit override ledger for your enrolled workforce.
-          </p>
         </div>
 
         <button
@@ -561,9 +554,6 @@ export const ManualEntry = () => {
             <h2 className="text-base font-bold text-slate-900">
               Recent Manual Attendance Adjustments
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Live audit log of authoritative punch adjustments for your organisation.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -712,11 +702,6 @@ export const ManualEntry = () => {
           <div className="flex items-center gap-3">
             <span>Showing {filteredRecords.length} override records</span>
             <span className="hidden sm:inline text-slate-300">•</span>
-            <span className="text-emerald-700 font-medium">Cryptographic Hash Sync: Synchronous</span>
-          </div>
-
-          <div className="text-[11px] text-slate-400 font-mono">
-            Tenant Partitioned Storage
           </div>
         </div>
       </div>

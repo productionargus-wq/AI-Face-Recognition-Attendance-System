@@ -194,18 +194,9 @@ export const LeaveApply = () => {
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-[10px] font-mono font-bold uppercase tracking-wider text-blue-600 mb-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />
-            ABSENCE GOVERNANCE &amp; LEDGER
-          </div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
             {isEmployee ? 'Leave Application & Status' : 'Leave Application & Approvals'}
           </h1>
-          <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-            {isEmployee 
-              ? 'Submit leave requests, check remaining quotas, and review approval status in real-time.' 
-              : `Review, authorize, and audit leave applications for ${organization?.name || 'your organisation'}.`}
-          </p>
         </div>
       </div>
 
@@ -401,9 +392,6 @@ export const LeaveApply = () => {
         <div className="lg:col-span-5 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
             <div>
-              <span className="text-[10px] font-mono uppercase font-bold text-blue-600 tracking-wider">
-                {isEmployee ? 'NEW APPLICATION' : 'ADMIN LEAVE ENTRY'}
-              </span>
               <h2 className="text-base font-bold text-slate-900">
                 Apply for Leave
               </h2>
@@ -639,11 +627,6 @@ export const LeaveApply = () => {
               <h2 className="text-base font-bold text-slate-900">
                 {isEmployee ? 'My Leave Request History' : 'Leave Request Ledger'}
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {isEmployee 
-                  ? 'Audit of your submitted leave applications and supervisor decisions.'
-                  : 'Organization-wide leave submissions synced with biometric timecards.'}
-              </p>
             </div>
 
             <div className="flex items-center gap-2">
@@ -807,10 +790,6 @@ export const LeaveApply = () => {
 
           {/* Table Footer */}
           <div className="pt-4 mt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
-            <div className="flex items-center gap-1.5 text-slate-600">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Ledger Synchronized with Argus Biometric Timecard Node 01</span>
-            </div>
             <div>Showing {filteredHistory.length} record(s)</div>
           </div>
         </div>

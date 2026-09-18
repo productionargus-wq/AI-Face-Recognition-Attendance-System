@@ -65,6 +65,18 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
         shift_start: '09:00',
         shift_end: '18:00'
       }));
+    } else if (type === 'FIELD_WORKER') {
+      setFormData(prev => ({
+        ...prev,
+        employment_type: type,
+        shift_type: 'FLEXIBLE',
+        target_daily_hours: 8.0,
+        base_salary: 35000,
+        hourly_rate: 220,
+        assigned_shift: 'Field Worker Schedule (Multi-Site External Visits)',
+        shift_start: '09:00',
+        shift_end: '18:00'
+      }));
     } else {
       setFormData(prev => ({
         ...prev,
@@ -398,7 +410,7 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
                   {formData.employment_type.replace('_', ' ')}
                 </span>
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <button
                   type="button"
                   onClick={() => handleEmploymentTypeChange('FULL_TIME')}
@@ -432,8 +444,20 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
-                  Daily Wage / Coolie
-                  <span className="block text-[10px] font-normal opacity-80">Flexible / Random</span>
+                  Daily Wage
+                  <span className="block text-[10px] font-normal opacity-80">Coolie / Flexible</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleEmploymentTypeChange('FIELD_WORKER')}
+                  className={`px-2.5 py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                    formData.employment_type === 'FIELD_WORKER'
+                      ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  Field Worker
+                  <span className="block text-[10px] font-normal opacity-80">Client Sites / GPS</span>
                 </button>
               </div>
 
@@ -472,6 +496,26 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
                       value={formData.daily_wage_rate}
                       onChange={(e) => setFormData({ ...formData, daily_wage_rate: parseFloat(e.target.value) || 600 })}
                       className="w-full px-2 py-1 border border-slate-300 rounded text-xs font-mono font-bold text-slate-800 text-right focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {formData.employment_type === 'FIELD_WORKER' && (
+                <div className="p-2.5 bg-white border border-purple-200 rounded-lg flex items-center justify-between gap-3">
+                  <div>
+                    <span className="block text-[11px] font-bold text-purple-900">Field Worker Anti-Fraud Tracking Active</span>
+                    <span className="text-[10px] text-purple-700">Punches are verified against authorized client project sites with facial biometrics and GPS perimeter check.</span>
+                  </div>
+                  <div className="w-28">
+                    <label className="block text-[9px] uppercase font-bold text-slate-500">Base Pay (₹)</label>
+                    <input
+                      type="number"
+                      step="1000"
+                      min="0"
+                      value={formData.base_salary}
+                      onChange={(e) => setFormData({ ...formData, base_salary: parseFloat(e.target.value) || 35000 })}
+                      className="w-full px-2 py-1 border border-slate-300 rounded text-xs font-mono font-bold text-slate-800 text-right focus:ring-2 focus:ring-purple-500"
                     />
                   </div>
                 </div>

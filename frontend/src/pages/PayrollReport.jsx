@@ -255,6 +255,58 @@ export const PayrollReport = () => {
     }
   };
 
+  // Attendance stats
+  const presentDays = attendanceRecords.filter(r => r.status === 'PRESENT').length;
+  const totalLoggedHours = attendanceRecords.reduce((acc, curr) => acc + (Number(curr.total_hours) || 0), 0);
+  const paidLeavesCount = attendanceRecords.filter(r => r.status === 'LEAVE').length;
+
+  // Employment Type & Multi-Model Basis
+  const empType = selectedEmployee?.employment_type || 'FULL_TIME';
+
+  // Dynamic calculations based on state variables
+  const numBaseSalary = Number(baseSalary) || 0;
+  const numHourlyRate = Number(hourlyRate) || 0;
+  const numOvertimeHours = Number(overtimeHours) || 0;
+  const numPerformanceBonus = Number(performanceBonus) || 0;
+  const numAdvanceDeduction = Number(advanceDeduction) || 0;
+  const numStatutoryDeductions = Number(statutoryDeductions) || 0;
+
+  // Multi-Model Calculation Logic
+  let earnedBasePay = numBaseSalary;
+  let calculationBasis = '';
+  let effectiveHourlyRate = numHourlyRate;
+  let effectiveDailyRate = selectedEmployee?.daily_wage_rate || 650;
+  let absentDays = 0;
+  let lossOfPay = 0;
+
+  if (empType === 'PART_TIME') {
+    effectiveHourlyRate = numHourlyRate || (numBaseSalary > 0 ? Math.round(numBaseSalary / 160) : 250);
+    earnedBasePay = Math.round(totalLoggedHours * effectiveHourlyRate);
+    calculationBasis = `${totalLoggedHours.toFixed(1)} hrs logged × ₹${effectiveHourlyRate}/hr (Hourly Part-Time Basis)`;
+  } else if (empType === 'DAILY_WAGE') {
+    effectiveDailyRate = selectedEmployee?.daily_wage_rate || (numBaseSalary > 0 ? Math.round(numBaseSalary / 26) : 650);
+    earnedBasePay = Math.round(presentDays * effectiveDailyRate);
+    calculationBasis = `${presentDays} Days Present × ₹${effectiveDailyRate}/day (Daily Wage Basis)`;
+  } else if (empType === 'FIELD_WORKER') {
+    earnedBasePay = numBaseSalary;
+    calculationBasis = `Field Worker Base Pay: ₹${numBaseSalary.toLocaleString('en-IN')} (Includes designated client project site visits)`;
+  } else {
+    // FULL_TIME Office Staff (9 AM - 6 PM)
+    const standardDays = 26;
+    const perDayRate = Math.round(numBaseSalary / standardDays);
+    absentDays = Math.max(0, standardDays - presentDays - paidLeavesCount);
+    lossOfPay = Math.round(absentDays * perDayRate);
+    earnedBasePay = Math.max(0, numBaseSalary - lossOfPay);
+    calculationBasis = absentDays > 0 
+      ? `Fixed Monthly ₹${numBaseSalary.toLocaleString('en-IN')} (26 days base; -${absentDays} unpaid absent days @ ₹${perDayRate}/day)`
+      : `Fixed Monthly ₹${numBaseSalary.toLocaleString('en-IN')} (100% full attendance credit)`;
+  }
+
+  const overtimePay = Math.round(numOvertimeHours * (effectiveHourlyRate || 250) * 1.5);
+  const grossPay = Math.round(earnedBasePay + overtimePay + numPerformanceBonus);
+  const totalDeductions = Math.round(numAdvanceDeduction + numStatutoryDeductions);
+  const netTakeHome = Math.max(0, grossPay - totalDeductions);
+
   const handleDisburseSalary = async () => {
     if (!selectedEmployee) return;
     setDisbursing(true);
@@ -266,12 +318,17 @@ export const PayrollReport = () => {
         employee_id: selectedEmployee.id,
         cycle: currentCycle,
         amount: netTakeHome,
-        base_salary: numBaseSalary,
+        base_salary: earnedBasePay,
         overtime_pay: overtimePay,
         performance_bonus: numPerformanceBonus,
         advance_deduction: numAdvanceDeduction,
         statutory_deductions: numStatutoryDeductions,
-        net_salary: netTakeHome
+        net_salary: netTakeHome,
+        employment_type: empType,
+        calculation_basis: calculationBasis,
+        logged_hours: totalLoggedHours,
+        hourly_rate: effectiveHourlyRate,
+        days_present: presentDays
       };
       await api.post('/notifications/disburse-salary', payload);
       setPayoutSuccess(true);
@@ -286,23 +343,6 @@ export const PayrollReport = () => {
       setDisbursing(false);
     }
   };
-
-  // Attendance stats
-  const presentDays = attendanceRecords.filter(r => r.status === 'PRESENT').length;
-  const totalLoggedHours = attendanceRecords.reduce((acc, curr) => acc + (Number(curr.total_hours) || 0), 0);
-
-  // Dynamic calculations based on state variables
-  const numBaseSalary = Number(baseSalary) || 0;
-  const numHourlyRate = Number(hourlyRate) || 0;
-  const numOvertimeHours = Number(overtimeHours) || 0;
-  const numPerformanceBonus = Number(performanceBonus) || 0;
-  const numAdvanceDeduction = Number(advanceDeduction) || 0;
-  const numStatutoryDeductions = Number(statutoryDeductions) || 0;
-
-  const overtimePay = Math.round(numOvertimeHours * numHourlyRate * 1.5);
-  const grossPay = Math.round(numBaseSalary + overtimePay + numPerformanceBonus);
-  const totalDeductions = Math.round(numAdvanceDeduction + numStatutoryDeductions);
-  const netTakeHome = Math.max(0, grossPay - totalDeductions);
 
   const filteredLogs = attendanceRecords.filter(log => {
     if (activeFilter === 'Paid Leaves') return log.status === 'LEAVE';
@@ -319,16 +359,7 @@ export const PayrollReport = () => {
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
               {isEmployee ? 'My Salary & Payslip Details' : 'Employee Payroll & Attendance Report'}
             </h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-mono font-bold text-[11px] border border-emerald-200">
-              Current Billing Cycle
-            </span>
           </div>
-          <p className="text-xs text-slate-500">
-            {isEmployee
-              ? 'View personal compensation structure, active cycle earnings breakdown, and authorized payslips.'
-              : `Comprehensive audit, overtime calculations, statutory deductions, and payslip generation for ${organization?.name || 'your organisation'}.`
-            }
-          </p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -419,7 +450,6 @@ export const PayrollReport = () => {
                   <div className="text-xs text-slate-500 font-medium flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span>Department: <span className="font-bold text-slate-800">{selectedEmployee.department || 'Operations'}</span></span>
                     <span>•</span>
-                    <span>Base Hourly Rate: <span className="font-bold text-slate-800 font-mono">₹{numHourlyRate}/hr</span></span>
                     <span>•</span>
                     <span>Email: <span className="font-bold text-slate-800">{selectedEmployee.email || 'N/A'}</span></span>
                   </div>
@@ -609,28 +639,7 @@ export const PayrollReport = () => {
                   <h2 className="text-base font-bold text-slate-900">
                     Monthly Salary Calculation Breakdown
                   </h2>
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
-                    isEmployee ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-blue-50 text-blue-700 border-blue-100'
-                  }`}>
-                    {isEmployee ? (
-                      <>
-                        <ShieldCheck className="w-3 h-3 text-blue-600" />
-                        PERSONAL COMPENSATION
-                      </>
-                    ) : (
-                      <>
-                        <Edit3 className="w-3 h-3" />
-                        DYNAMIC &amp; EDITABLE
-                      </>
-                    )}
-                  </span>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {isEmployee 
-                    ? 'Breakdown of your base compensation, overtime hours, incentives, and active cycle deductions.'
-                    : 'Adjust base pay, hourly rates, overtime, bonus, or statutory deductions in real time. Click "Save Settings" to persist changes for this employee.'
-                  }
-                </p>
               </div>
 
               {!isEmployee ? (
@@ -674,7 +683,36 @@ export const PayrollReport = () => {
               )}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-5 items-start">
+            {/* Multi-Model Payroll Calculation Formula Banner */}
+            <div className="my-4 p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5">
+                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider ${
+                  empType === 'PART_TIME' ? 'bg-blue-100 text-blue-800' :
+                  empType === 'DAILY_WAGE' ? 'bg-amber-100 text-amber-900' :
+                  empType === 'FIELD_WORKER' ? 'bg-purple-100 text-purple-900' :
+                  'bg-emerald-100 text-emerald-800'
+                }`}>
+                  {empType.replace('_', ' ')} BASIS
+                </span>
+                <div>
+                  <div className="font-bold text-slate-800">
+                    Active Calculation Formula: <span className="font-mono text-blue-700">{calculationBasis}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-500">
+                    Calculated Base Earned: <strong className="text-slate-800">₹{earnedBasePay.toLocaleString('en-IN')}.00</strong>
+                    {absentDays > 0 && empType === 'FULL_TIME' && (
+                      <span className="text-red-600 font-medium"> ({absentDays} unpaid absent days prorated deduction)</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <span className="text-[10px] font-mono text-slate-400 block uppercase">Earned Gross Pay</span>
+                <span className="text-base font-black font-mono text-slate-900">₹{grossPay.toLocaleString('en-IN')}.00</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2 items-start">
               {/* Left Columns: Earnings & Entitlements + Deductions */}
               <div className="lg:col-span-8 space-y-6">
                 {/* Section 1: Earnings & Entitlements */}
@@ -925,10 +963,6 @@ export const PayrollReport = () => {
                         )}
                       </button>
 
-                      <div className="text-[10px] text-slate-400 font-medium flex items-center justify-center gap-1">
-                        <ShieldCheck className="w-3 h-3 text-emerald-500" />
-                        Sends instant credit notification to employee
-                      </div>
                     </>
                   ) : (
                     <>
@@ -955,9 +989,6 @@ export const PayrollReport = () => {
                 <h2 className="text-base font-bold text-slate-900">
                   Daily Attendance Log for {selectedEmployee.first_name} {selectedEmployee.last_name}
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Facial terminal punches verified in database
-                </p>
               </div>
 
               <div className="inline-flex rounded-lg p-0.5 bg-slate-100 text-xs font-semibold text-slate-600">
@@ -1045,9 +1076,6 @@ export const PayrollReport = () => {
                     {payoutHistory.length} records
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Audit trail of credited salaries, deductions breakdown, and official downloadable payslips
-                </p>
               </div>
 
               {selectedEmployee && (
@@ -1134,12 +1162,6 @@ export const PayrollReport = () => {
                   <h3 className="text-sm font-bold text-slate-800 mb-1">
                     No historical salary disbursements on record
                   </h3>
-                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    {isEmployee 
-                      ? 'When monthly payroll is disbursed and credited to your account, official signed payslips and credit receipts will appear here.'
-                      : 'Click "Disburse & Credit Salary" above to authorize payment and generate an official verifiable payslip for this employee.'
-                    }
-                  </p>
                 </div>
               )}
             </div>
@@ -1221,9 +1243,9 @@ export const PayrollReport = () => {
                       </div>
                     </div>
                     <div>
-                      <div className="text-[10px] uppercase font-mono font-bold text-slate-400">Department</div>
-                      <div className="font-bold text-slate-900 mt-0.5">
-                        {selectedEmployee?.department || 'Operations'}
+                      <div className="text-[10px] uppercase font-mono font-bold text-slate-400">Employment Model</div>
+                      <div className="font-bold text-blue-700 mt-0.5">
+                        {(selectedSlip.employment_type || selectedEmployee?.employment_type || 'FULL_TIME').replace('_', ' ')}
                       </div>
                     </div>
                     <div>
@@ -1236,6 +1258,19 @@ export const PayrollReport = () => {
                     </div>
                   </div>
 
+                  {/* Itemized Calculation Basis Callout in Payslip */}
+                  {(selectedSlip.calculation_basis || calculationBasis) && (
+                    <div className="px-3.5 py-2.5 bg-blue-50/70 border border-blue-200 rounded-xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                      <div className="text-slate-700">
+                        <span className="font-bold text-blue-950">Calculation Formula: </span>
+                        <span className="font-mono font-semibold text-blue-800">{selectedSlip.calculation_basis || calculationBasis}</span>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold uppercase text-blue-600 bg-white px-2 py-0.5 rounded border border-blue-200 self-start sm:self-auto">
+                        System Verified
+                      </span>
+                    </div>
+                  )}
+
                   {/* Two Column Table: Earnings vs Deductions */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
                     {/* Earnings Section */}
@@ -1246,9 +1281,16 @@ export const PayrollReport = () => {
                       </div>
                       <div className="divide-y divide-slate-100 p-1">
                         <div className="flex justify-between py-2 px-3">
-                          <span className="text-slate-600">Basic Monthly Pay:</span>
+                          <div>
+                            <span className="text-slate-800 font-semibold block">Earned Base / Standard Wages:</span>
+                            {(selectedSlip.calculation_basis || calculationBasis) && (
+                              <span className="text-[10px] text-slate-400 font-mono block">
+                                {selectedSlip.calculation_basis || calculationBasis}
+                              </span>
+                            )}
+                          </div>
                           <span className="font-mono font-bold text-slate-800">
-                            ₹{(Number(selectedSlip.base_salary) || 0).toLocaleString('en-IN')}.00
+                            ₹{(Number(selectedSlip.base_salary != null ? selectedSlip.base_salary : earnedBasePay) || 0).toLocaleString('en-IN')}.00
                           </span>
                         </div>
                         <div className="flex justify-between py-2 px-3 text-emerald-700">
@@ -1267,7 +1309,7 @@ export const PayrollReport = () => {
                       <div className="bg-slate-50 p-2.5 border-t border-slate-200 font-bold flex justify-between text-slate-900">
                         <span>Total Gross Earnings:</span>
                         <span className="font-mono">
-                          ₹{((Number(selectedSlip.base_salary) || 0) + (Number(selectedSlip.overtime_pay) || 0) + (Number(selectedSlip.bonus) || 0)).toLocaleString('en-IN')}.00
+                          ₹{((Number(selectedSlip.base_salary != null ? selectedSlip.base_salary : earnedBasePay) || 0) + (Number(selectedSlip.overtime_pay) || 0) + (Number(selectedSlip.bonus) || 0)).toLocaleString('en-IN')}.00
                         </span>
                       </div>
                     </div>

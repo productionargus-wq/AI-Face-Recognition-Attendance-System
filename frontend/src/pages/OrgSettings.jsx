@@ -268,16 +268,9 @@ export const OrgSettings = () => {
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
             Organisation Settings &amp; Preferences
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Configure legal tenancy parameters, corporate coordinates, shift schedules, and operational policies for {orgDisplayName}.
-          </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-mono font-bold text-xs">
-            <ShieldCheck className="w-4 h-4 text-blue-600" />
-            ADMIN ROLE
-          </span>
 
           <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-200">
             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xs">
@@ -357,11 +350,6 @@ export const OrgSettings = () => {
                 <h2 className="text-sm font-bold text-slate-900">
                   Company Profile &amp; Branding
                 </h2>
-                {logoUrl && (
-                  <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    Custom Logo Active
-                  </span>
-                )}
               </div>
 
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
@@ -393,9 +381,6 @@ export const OrgSettings = () => {
                   <div className="font-extrabold text-base text-slate-900">
                     {orgDisplayName}
                   </div>
-                  <p className="text-[11px] text-slate-400 leading-relaxed max-w-md">
-                    Upload your official company logo (PNG, JPG, SVG, or WEBP up to 5MB). The logo will be displayed on your tenant portal, kiosk terminal, and generated reports.
-                  </p>
 
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     {/* Hidden file input */}
@@ -435,14 +420,6 @@ export const OrgSettings = () => {
 
             {/* Right Card: Executive Oversight */}
             <div className="lg:col-span-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
-                  EXECUTIVE OVERSIGHT
-                </span>
-                <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  Authorized
-                </span>
-              </div>
 
               <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl flex items-center gap-3 my-auto">
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-extrabold flex items-center justify-center text-sm shadow-xs shrink-0">
@@ -458,9 +435,6 @@ export const OrgSettings = () => {
                 </div>
               </div>
 
-              <div className="text-[10px] text-slate-400 font-mono pt-2">
-                Sign-off Authority: Unrestricted
-              </div>
             </div>
           </div>
 
@@ -626,9 +600,6 @@ export const OrgSettings = () => {
               <h2 className="text-base font-bold text-slate-900">
                 Work Shift Timing &amp; Attendance Rules
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Set baseline operational hours, grace thresholds, and automatic deduction boundaries for your organisation.
-              </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -736,9 +707,6 @@ export const OrgSettings = () => {
                   <MapPin className="w-5 h-5 text-blue-600" />
                   <span>Geofencing Perimeter &amp; Location Coordinates</span>
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Enforce physical presence verification by defining the geographic boundaries for your organization.
-                </p>
               </div>
               <a
                 href="/geofence"

@@ -194,3 +194,89 @@ def test_part_time_target_hours_completion():
     assert logged_hours >= target
     full_day_credit = logged_hours >= target
     assert full_day_credit is True
+
+def test_client_site_field_geofence_verification():
+    """Field worker client site verification: VERIFIED_ON_SITE vs SITE_PERIMETER_VIOLATION."""
+    from app.api.v1.reports import calculate_haversine_distance
+
+    client_site = {
+        "site_name": "Metro Rail Project Site #4",
+        "latitude": 13.0400,
+        "longitude": 80.2500,
+        "radius_meters": 150
+    }
+
+    # Worker punching at the site (40m away)
+    worker_on_site_lat = 13.0403
+    worker_on_site_lon = 80.2500
+    dist_on_site = calculate_haversine_distance(
+        worker_on_site_lat, worker_on_site_lon,
+        client_site["latitude"], client_site["longitude"]
+    )
+    status_on_site = "VERIFIED_ON_SITE" if dist_on_site <= client_site["radius_meters"] else "SITE_PERIMETER_VIOLATION"
+    assert dist_on_site <= 150
+    assert status_on_site == "VERIFIED_ON_SITE"
+
+    # Dishonest punch: worker is 2.5 km away at a café
+    worker_away_lat = 13.0600
+    worker_away_lon = 80.2500
+    dist_away = calculate_haversine_distance(
+        worker_away_lat, worker_away_lon,
+        client_site["latitude"], client_site["longitude"]
+    )
+    status_away = "VERIFIED_ON_SITE" if dist_away <= client_site["radius_meters"] else "SITE_PERIMETER_VIOLATION"
+    assert dist_away > 150
+    assert status_away == "SITE_PERIMETER_VIOLATION"
+
+def test_multi_model_payroll_formulas():
+    """Multi-model payroll calculation: Full-time (prorated), Part-time (hourly), Daily wage (days)."""
+    # 1. Part-Time Employee (e.g. 30.5 hours worked @ ₹250/hr)
+    pt_hours = 30.5
+    pt_rate = 250.0
+    pt_earned_base = round(pt_hours * pt_rate)
+    assert pt_earned_base == 7625
+    pt_basis = f"{pt_hours} hrs logged × ₹{pt_rate}/hr (Hourly Part-Time Basis)"
+    assert "30.5 hrs" in pt_basis
+
+    # 2. Daily Wage Employee (e.g. 22 days present @ ₹650/day)
+    dw_days = 22
+    dw_rate = 650.0
+    dw_earned_base = round(dw_days * dw_rate)
+    assert dw_earned_base == 14300
+    dw_basis = f"{dw_days} Days Present × ₹{dw_rate}/day (Daily Wage Basis)"
+    assert "22 Days Present" in dw_basis
+
+    # 3. Full-Time Office Staff (9-6, ₹52,000 monthly base, 26 standard days, 2 unpaid absent days)
+    ft_base = 52000.0
+    standard_days = 26
+    per_day_rate = round(ft_base / standard_days)  # ₹2,000 / day
+    present_days = 24
+    absent_days = standard_days - present_days  # 2 days
+    loss_of_pay = absent_days * per_day_rate    # ₹4,000
+    ft_earned_base = ft_base - loss_of_pay      # ₹48,000
+    assert ft_earned_base == 48000.0
+
+def test_salary_disbursement_payload_metadata():
+    """Verify SalaryDisbursementPayload accepts multi-model calculation metadata."""
+    from app.api.v1.operations import SalaryDisbursementPayload
+
+    payload = SalaryDisbursementPayload(
+        employee_id="emp-pt-1",
+        cycle="September 2026",
+        amount=7625.0,
+        base_salary=7625.0,
+        overtime_pay=0.0,
+        performance_bonus=500.0,
+        advance_deduction=0.0,
+        statutory_deductions=500.0,
+        net_salary=7625.0,
+        employment_type="PART_TIME",
+        calculation_basis="30.5 hrs logged × ₹250/hr (Hourly Part-Time Basis)",
+        logged_hours=30.5,
+        hourly_rate=250.0,
+        days_present=12
+    )
+    assert payload.employment_type == "PART_TIME"
+    assert payload.logged_hours == 30.5
+    assert payload.hourly_rate == 250.0
+    assert "Hourly Part-Time Basis" in payload.calculation_basis

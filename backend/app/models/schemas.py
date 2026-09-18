@@ -87,6 +87,7 @@ class EmploymentType:
     FULL_TIME = "FULL_TIME"
     PART_TIME = "PART_TIME"
     DAILY_WAGE = "DAILY_WAGE"
+    FIELD_WORKER = "FIELD_WORKER"
 
 class ShiftType:
     FIXED = "FIXED"
@@ -140,6 +141,31 @@ class Employee(BaseModel):
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+# ----------------- CLIENT SITES (FOR FIELD WORKERS) -----------------
+class ClientSiteCreate(BaseModel):
+    site_name: str
+    client_name: str
+    address: str
+    latitude: float
+    longitude: float
+    radius_meters: Optional[int] = 150
+    contact_person: Optional[str] = None
+    contact_phone: Optional[str] = None
+
+class ClientSite(BaseModel):
+    id: str = Field(default_factory=generate_uuid)
+    organization_id: str
+    site_name: str
+    client_name: str
+    address: str
+    latitude: float
+    longitude: float
+    radius_meters: int = 150
+    contact_person: Optional[str] = None
+    contact_phone: Optional[str] = None
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
 # ----------------- ATTENDANCE -----------------
 class AttendanceStatus:
     PRESENT = "PRESENT"
@@ -169,6 +195,9 @@ class Attendance(BaseModel):
     confidence_score: float = 0.0
     liveness_verified: bool = True
     kiosk_id: Optional[str] = None
+    client_site_id: Optional[str] = None
+    client_site_name: Optional[str] = None
+    site_visit_verified: Optional[bool] = None
     notes: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

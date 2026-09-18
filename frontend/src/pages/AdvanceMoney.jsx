@@ -233,11 +233,6 @@ export const AdvanceMoney = () => {
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
             {isEmployee ? 'Advance Money Request' : 'Advance Money Management'}
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            {isEmployee 
-              ? 'Submit and track your salary advances against monthly payroll.' 
-              : 'Track, disburse, and auto-amortize employee salary advances against monthly payroll for your organisation.'}
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
@@ -408,11 +403,6 @@ export const AdvanceMoney = () => {
               <h2 className="text-base font-bold text-slate-900">
                 {isEmployee ? 'My Salary Advance Requests & Deductions' : 'Active Advance Register & Amortization'}
               </h2>
-              <p className="text-xs text-slate-500">
-                {isEmployee 
-                  ? 'Personal amortization schedule, deduction amounts, and status history.'
-                  : 'Direct payroll amortization schedule per individual employee.'}
-              </p>
             </div>
           </div>
 
@@ -619,9 +609,6 @@ export const AdvanceMoney = () => {
         <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
           <div>
             Showing {filteredAdvances.length} {isEmployee ? 'personal advance entry(s)' : 'active advance entries'}
-          </div>
-          <div className="text-[11px] text-slate-400 font-mono">
-            Direct Amortization Active
           </div>
         </div>
       </div>

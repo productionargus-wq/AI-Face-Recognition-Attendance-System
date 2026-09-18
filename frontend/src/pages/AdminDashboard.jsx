@@ -262,9 +262,6 @@ export const AdminDashboard = () => {
             <h1 className="text-base sm:text-lg font-black tracking-tight text-slate-900 uppercase">
               ANALYTICS ATTENDANCE DASHBOARD
             </h1>
-            <p className="text-[11px] text-slate-400 font-medium">
-              Real-time biometric workforce tracking & compliance ratios
-            </p>
           </div>
         </div>
 
@@ -613,7 +610,6 @@ export const AdminDashboard = () => {
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900">Enrolled Department Attendance Ratios</h3>
-              <p className="text-xs text-slate-500">Live attendance percentage per department</p>
             </div>
           </div>
           <span className="text-xs font-bold text-blue-600 font-mono bg-blue-50 px-2.5 py-1 rounded-md">

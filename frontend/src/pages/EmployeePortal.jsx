@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
-import { Calendar, Clock, CheckCircle2, ShieldCheck, UserCheck, Award, AlertTriangle, LogOut, ChevronRight, X } from 'lucide-react';
+import { Calendar, Clock, CheckCircle2, ShieldCheck, UserCheck, Award, AlertTriangle, LogOut, ChevronRight, X, Briefcase, Camera, MapPin, Loader2 } from 'lucide-react';
 
 export const EmployeePortal = () => {
   const { user, organization } = useAuth();
@@ -11,19 +11,132 @@ export const EmployeePortal = () => {
   const [loading, setLoading] = useState(true);
   const [selectedPunches, setSelectedPunches] = useState(null);
 
+  // Field Worker Site Visit Punch State
+  const [fieldModalOpen, setFieldModalOpen] = useState(false);
+  const [clientSites, setClientSites] = useState([]);
+  const [selectedSiteId, setSelectedSiteId] = useState('');
+  const [fieldNotes, setFieldNotes] = useState('');
+  const [submittingFieldPunch, setSubmittingFieldPunch] = useState(false);
+  const [fieldPunchResult, setFieldPunchResult] = useState(null);
+  const [fieldPunchError, setFieldPunchError] = useState('');
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [streamActive, setStreamActive] = useState(false);
+
+  const fetchMyHistory = async () => {
+    try {
+      const res = await api.get('/attendance/my-history');
+      setHistory(res.data);
+    } catch (err) {
+      console.error('Failed to load my attendance history', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchMyHistory = async () => {
-      try {
-        const res = await api.get('/attendance/my-history');
-        setHistory(res.data);
-      } catch (err) {
-        console.error('Failed to load my attendance history', err);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchMyHistory();
   }, []);
+
+  const openFieldModal = async () => {
+    setFieldModalOpen(true);
+    setFieldPunchResult(null);
+    setFieldPunchError('');
+    try {
+      const res = await api.get('/organizations/client-sites');
+      setClientSites(res.data || []);
+      if (res.data && res.data.length > 0) {
+        setSelectedSiteId(res.data[0].id);
+      }
+    } catch (e) {
+      setClientSites([]);
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 480, height: 360, facingMode: 'user' }
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        setStreamActive(true);
+      }
+    } catch (err) {
+      setFieldPunchError('Could not start webcam. Please grant camera permissions.');
+    }
+  };
+
+  const closeFieldModal = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+    }
+    setStreamActive(false);
+    setFieldModalOpen(false);
+    setFieldPunchResult(null);
+    setFieldPunchError('');
+  };
+
+  const handleFieldPunchSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedSiteId) {
+      setFieldPunchError('Please select a designated client project site.');
+      return;
+    }
+    if (!videoRef.current || !canvasRef.current) {
+      setFieldPunchError('Camera preview is unavailable.');
+      return;
+    }
+
+    setSubmittingFieldPunch(true);
+    setFieldPunchError('');
+    setFieldPunchResult(null);
+
+    try {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth || 480;
+      canvas.height = video.videoHeight || 360;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageSample = canvas.toDataURL('image/jpeg', 0.85);
+
+      const coords = await new Promise((resolve) => {
+        if (!navigator.geolocation) {
+          resolve(null);
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy
+          }),
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      });
+
+      if (!coords) {
+        throw new Error('Location access is required to verify on-site attendance. Please enable device GPS.');
+      }
+
+      const payload = {
+        client_site_id: selectedSiteId,
+        image_sample: imageSample,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        accuracy: coords.accuracy,
+        notes: fieldNotes
+      };
+
+      const res = await api.post('/attendance/field-punch', payload);
+      setFieldPunchResult(res.data);
+      fetchMyHistory();
+    } catch (err) {
+      setFieldPunchError(err.response?.data?.detail || err.message || 'Failed to submit field punch.');
+    } finally {
+      setSubmittingFieldPunch(false);
+    }
+  };
 
   const totalHours = history.reduce((acc, curr) => acc + (curr.total_hours || 0), 0);
   const presentDays = history.filter(h => h.status === 'PRESENT' || h.status === 'LATE').length;
@@ -52,7 +165,14 @@ export const EmployeePortal = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={openFieldModal}
+            className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl flex items-center gap-2 text-xs font-bold shadow-xs transition-all cursor-pointer"
+          >
+            <Briefcase className="w-4 h-4" />
+            <span>Field Site Punch</span>
+          </button>
           <div className="px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs font-semibold text-emerald-800">
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>Biometric Consent Active</span>
@@ -83,13 +203,22 @@ export const EmployeePortal = () => {
             </div>
           </div>
 
-          <button
-            onClick={() => navigate('/kiosk')}
-            className="shrink-0 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-2"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>Clock Out at Kiosk</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              onClick={openFieldModal}
+              className="px-3.5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Briefcase className="w-4 h-4" />
+              <span>Field Site Punch</span>
+            </button>
+            <button
+              onClick={() => navigate('/kiosk')}
+              className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-2"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Clock Out at Kiosk</span>
+            </button>
+          </div>
         </div>
       ) : todayRecord ? (
         <div className="p-3.5 rounded-2xl border bg-slate-50 border-slate-200 flex items-center justify-between gap-3 text-xs">
@@ -254,7 +383,20 @@ export const EmployeePortal = () => {
                         <div className="text-slate-500 text-[11px] font-mono mt-0.5">
                           {p.time || (p.timestamp ? new Date(p.timestamp).toLocaleTimeString() : '—')}
                         </div>
-                        {p.geofence_status && (
+                        {p.client_site_name && (
+                          <div className="text-[10px] font-bold text-purple-700 mt-0.5">
+                            Client Site: {p.client_site_name}
+                          </div>
+                        )}
+                        {p.site_visit_verified && (
+                          <div className={`text-[9px] font-mono font-bold mt-0.5 ${
+                            p.site_visit_verified === 'VERIFIED_ON_SITE' ? 'text-purple-700' : 'text-red-600'
+                          }`}>
+                            {p.site_visit_verified === 'VERIFIED_ON_SITE' ? '✓ Verified on Client Site' : '⚠ External Perimeter Violation'}
+                            {p.distance_meters != null ? ` (${Math.round(p.distance_meters)}m)` : ''}
+                          </div>
+                        )}
+                        {!p.client_site_name && p.geofence_status && (
                           <div className="text-[10px] text-slate-400 mt-0.5">
                             Location: {p.geofence_status} {p.distance_meters ? `(${p.distance_meters}m)` : ''}
                           </div>
@@ -283,6 +425,157 @@ export const EmployeePortal = () => {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Field Worker Site Visit Modal */}
+      {fieldModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-purple-50/70">
+              <div className="flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-purple-600" />
+                <div>
+                  <h3 className="text-sm font-bold text-purple-950 uppercase tracking-tight">
+                    Field Worker Site Attendance
+                  </h3>
+                  <p className="text-[11px] text-purple-700">
+                    Facial biometrics &amp; live GPS honesty verification
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={closeFieldModal}
+                className="w-8 h-8 rounded-full bg-white border border-purple-200 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleFieldPunchSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
+              {fieldPunchError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-semibold flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{fieldPunchError}</span>
+                </div>
+              )}
+
+              {fieldPunchResult && (
+                <div className={`p-3.5 border rounded-xl text-xs space-y-1 ${
+                  fieldPunchResult.site_visit_verified === 'VERIFIED_ON_SITE'
+                    ? 'bg-purple-50 border-purple-200 text-purple-900'
+                    : 'bg-red-50 border-red-200 text-red-900'
+                }`}>
+                  <div className="font-bold flex items-center gap-1.5">
+                    {fieldPunchResult.site_visit_verified === 'VERIFIED_ON_SITE' ? (
+                      <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                    )}
+                    <span>
+                      {fieldPunchResult.site_visit_verified === 'VERIFIED_ON_SITE'
+                        ? '✓ Verified On-Site Check-In!'
+                        : '⚠ Site Perimeter Violation Logged!'}
+                    </span>
+                  </div>
+                  <div className="text-[11px]">
+                    Site: <strong>{fieldPunchResult.client_site_name}</strong> • Punch #{fieldPunchResult.punch_number} ({fieldPunchResult.action})
+                  </div>
+                  <div className="text-[10px] font-mono opacity-80">
+                    Distance: {Math.round(fieldPunchResult.distance_meters)}m from project perimeter
+                  </div>
+                </div>
+              )}
+
+              {/* Site Selector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  Select Designated Client Project Site
+                </label>
+                {clientSites.length === 0 ? (
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500">
+                    No active client project sites found. Contact administrator.
+                  </div>
+                ) : (
+                  <select
+                    value={selectedSiteId}
+                    onChange={(e) => setSelectedSiteId(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 bg-white focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                  >
+                    {clientSites.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.site_name} — {s.client_name || 'Client'} ({s.address})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Live Webcam Preview */}
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  Facial Biometric Scan
+                </label>
+                <div className="relative rounded-2xl overflow-hidden bg-slate-900 aspect-video flex items-center justify-center border border-slate-200">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover scale-x-[-1]"
+                  />
+                  <canvas ref={canvasRef} className="hidden" />
+
+                  <div className="absolute inset-0 border-2 border-dashed border-purple-400/50 pointer-events-none m-4 rounded-xl flex items-center justify-center">
+                    <span className="text-[10px] text-white/70 font-mono bg-black/40 px-2 py-0.5 rounded">
+                      Center face in frame
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Optional Field Notes */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Visit Purpose / Notes (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={fieldNotes}
+                  onChange={(e) => setFieldNotes(e.target.value)}
+                  placeholder="e.g. Scheduled site audit and safety inspection"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeFieldModal}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingFieldPunch || clientSites.length === 0}
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {submittingFieldPunch ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Verifying &amp; Punching...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Capture &amp; Punch Site Visit</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

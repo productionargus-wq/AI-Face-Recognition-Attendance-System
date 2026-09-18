@@ -467,6 +467,11 @@ class SalaryDisbursementPayload(BaseModel):
     statutory_deductions: Optional[float] = None
     net_salary: Optional[float] = None
     note: Optional[str] = "Monthly Salary Credited"
+    employment_type: Optional[str] = None
+    calculation_basis: Optional[str] = None
+    logged_hours: Optional[float] = None
+    hourly_rate: Optional[float] = None
+    days_present: Optional[int] = None
 
 async def check_and_create_overdue_punch_reminders(org_id: str, emp_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """
@@ -626,6 +631,11 @@ async def disburse_salary(
         "advance_deduction": payload.advance_deduction or 0.0,
         "statutory_deductions": payload.statutory_deductions or emp.get("statutory_deductions", 3000.0),
         "net_salary": net_amount,
+        "employment_type": payload.employment_type or emp.get("employment_type", "FULL_TIME"),
+        "calculation_basis": payload.calculation_basis,
+        "logged_hours": payload.logged_hours,
+        "hourly_rate": payload.hourly_rate,
+        "days_present": payload.days_present,
         "status": "PAID",
         "disbursed_by": admin_name,
         "disbursed_at": datetime.utcnow().isoformat(),

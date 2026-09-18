@@ -237,9 +237,6 @@ export const EnrollmentPage = () => {
                 {employees.length} REGISTERED
               </span>
             </div>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Manage registered workforce biometric credentials, facial vectorization profiles, and personnel records.
-            </p>
           </div>
         </div>
 
@@ -462,10 +459,6 @@ export const EnrollmentPage = () => {
 
         {/* Footer info */}
         <div className="p-3.5 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2">
-          <div className="flex items-center gap-2 font-mono">
-            <Lock className="w-3 h-3 text-emerald-600" />
-            <span>BIOMETRIC ENCRYPTION: AES-256-GCM / 128-D NORMALIZED EMBEDDINGS</span>
-          </div>
           <div>
             Showing <span className="font-bold text-slate-700">{filteredEmployees.length}</span> of {employees.length} personnel
           </div>

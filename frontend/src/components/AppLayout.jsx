@@ -466,9 +466,7 @@ export const AppLayout = ({ children }) => {
               </nav>
 
               <div className="p-4 border-t border-slate-100 bg-slate-50/70 shrink-0">
-                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1.5">
-                  Current Tenant
-                </div>
+
                 <div className="flex items-center gap-2.5">
                   {organization?.logo_url ? (
                     <img
@@ -481,9 +479,6 @@ export const AppLayout = ({ children }) => {
                   <div className="min-w-0 flex-1">
                     <div className="text-xs font-bold text-slate-800 truncate">
                       {organization?.name || 'Argus Technologies'}
-                    </div>
-                    <div className="text-[10px] text-slate-500 font-mono truncate">
-                      ID: {organization?.slug || 'ARGUS-MAIN'}
                     </div>
                   </div>
                 </div>
