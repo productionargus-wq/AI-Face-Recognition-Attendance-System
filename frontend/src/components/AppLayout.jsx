@@ -16,7 +16,8 @@ import {
   Menu, 
   X,
   ChevronRight,
-  Bell
+  Bell,
+  MapPin
 } from 'lucide-react';
 
 export const AppLayout = ({ children }) => {
@@ -126,6 +127,12 @@ export const AppLayout = ({ children }) => {
       path: '/payroll',
       icon: CreditCard,
       id: '/payroll'
+    },
+    {
+      name: 'Live Map & Geofence',
+      path: '/geofence',
+      icon: MapPin,
+      id: '/geofence'
     },
     {
       name: 'Settings',

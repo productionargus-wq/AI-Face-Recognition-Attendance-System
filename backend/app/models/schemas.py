@@ -13,6 +13,14 @@ class WorkHoursConfig(BaseModel):
     late_grace_minutes: int = 15   # 15 mins after start is marked LATE
     half_day_hours: float = 4.5
 
+class GeofenceConfig(BaseModel):
+    is_enabled: bool = False
+    latitude: float = 13.0827
+    longitude: float = 80.2707
+    radius_meters: int = 150
+    strict_enforcement: bool = False
+    office_name: str = "Headquarters"
+
 class OrganizationCreate(BaseModel):
     name: str
     slug: Optional[str] = None
@@ -21,6 +29,7 @@ class OrganizationCreate(BaseModel):
     admin_name: str
     admin_password: Optional[str] = None
     work_hours: Optional[WorkHoursConfig] = Field(default_factory=WorkHoursConfig)
+    geofence: Optional[GeofenceConfig] = Field(default_factory=GeofenceConfig)
 
 class Organization(BaseModel):
     id: str = Field(default_factory=generate_uuid)
@@ -30,6 +39,7 @@ class Organization(BaseModel):
     contact_email: EmailStr
     logo_url: Optional[str] = None
     work_hours: WorkHoursConfig = Field(default_factory=WorkHoursConfig)
+    geofence: Optional[GeofenceConfig] = Field(default_factory=GeofenceConfig)
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

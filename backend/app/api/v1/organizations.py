@@ -21,7 +21,7 @@ async def update_org_settings(
 ):
     org_id = auth_ctx["org_id"]
     update_data = {}
-    for field in ["name", "work_hours", "gstin", "industry", "phone", "website", "address", "logo_url"]:
+    for field in ["name", "work_hours", "gstin", "industry", "phone", "website", "address", "logo_url", "geofence"]:
         if field in settings_payload:
             update_data[field] = settings_payload[field]
 
@@ -110,3 +110,51 @@ async def get_audit_logs(auth_ctx: Dict[str, Any] = Depends(require_org_admin)):
     org_id = auth_ctx["org_id"]
     logs = await store.find_many("audit_logs", {"organization_id": org_id}, sort_key="timestamp", sort_desc=True, limit=100)
     return logs
+
+@router.get("/my-org/geofence")
+async def get_org_geofence(auth_ctx: Dict[str, Any] = Depends(require_org_admin)):
+    """Retrieve geofencing perimeter and settings for the authenticated organization."""
+    org_id = auth_ctx["org_id"]
+    org = await store.find_one("organizations", {"id": org_id})
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    default_geofence = {
+        "is_enabled": False,
+        "latitude": 13.0827,
+        "longitude": 80.2707,
+        "radius_meters": 150,
+        "strict_enforcement": False,
+        "office_name": org.get("name", "Headquarters")
+    }
+    return org.get("geofence") or default_geofence
+
+@router.put("/my-org/geofence")
+async def update_org_geofence(
+    payload: Dict[str, Any],
+    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+):
+    """Configure geofencing coordinates, radius, and enforcement policy."""
+    org_id = auth_ctx["org_id"]
+    geofence_data = {
+        "is_enabled": bool(payload.get("is_enabled", False)),
+        "latitude": float(payload.get("latitude", 13.0827)),
+        "longitude": float(payload.get("longitude", 80.2707)),
+        "radius_meters": int(payload.get("radius_meters", 150)),
+        "strict_enforcement": bool(payload.get("strict_enforcement", False)),
+        "office_name": str(payload.get("office_name") or "Headquarters").strip()
+    }
+    await store.update_one("organizations", {"id": org_id}, {"geofence": geofence_data})
+
+    audit = AuditLog(
+        organization_id=org_id,
+        actor_id=auth_ctx["sub"],
+        actor_name=auth_ctx.get("name", "Admin"),
+        actor_role=auth_ctx.get("role", "org_admin"),
+        action="UPDATE_GEOFENCE_CONFIG",
+        target_resource="Organization",
+        target_id=org_id,
+        details=geofence_data
+    ).dict()
+    await store.insert_one("audit_logs", audit)
+
+    return {"status": "success", "geofence": geofence_data, "message": "Geofence perimeter updated successfully."}

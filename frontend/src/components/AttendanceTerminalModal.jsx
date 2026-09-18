@@ -175,6 +175,26 @@ export const AttendanceTerminalModal = ({ isOpen, onClose }) => {
     return canvas.toDataURL('image/jpeg', 0.85);
   };
 
+  const getDeviceLocation = () => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        resolve({ latitude: null, longitude: null, accuracy: null });
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          resolve({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy
+          });
+        },
+        () => resolve({ latitude: null, longitude: null, accuracy: null }),
+        { enableHighAccuracy: true, timeout: 4000, maximumAge: 30000 }
+      );
+    });
+  };
+
   const triggerPunch = async () => {
     if (scanStatus === 'SCANNING') return;
     const frame = captureFrame();
@@ -187,12 +207,16 @@ export const AttendanceTerminalModal = ({ isOpen, onClose }) => {
     setErrorMessage('');
 
     try {
+      const coords = await getDeviceLocation();
       const res = await api.post('/attendance/kiosk-punch', {
         organization_slug_or_id: selectedOrg === 'AUTO' ? null : selectedOrg,
         image_sample: frame,
         punch_type: punchMode,
         liveness_challenge_response: 'VERIFIED',
-        kiosk_id: 'public-signin-terminal'
+        kiosk_id: 'public-signin-terminal',
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        accuracy: coords.accuracy
       });
 
       const data = res.data;

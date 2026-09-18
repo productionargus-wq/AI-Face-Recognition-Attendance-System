@@ -10,10 +10,11 @@ export const ALL_PERMISSIONS = [
   { id: '/advance-money', label: 'Advance Money', desc: 'Salary advance & repayment' },
   { id: '/leave-apply', label: 'Leave Apply', desc: 'Leave applications & tracking' },
   { id: '/payroll', label: 'My Salary & Payslip', desc: 'Personal compensation, breakdown & payout history' },
+  { id: '/geofence', label: 'Live Map & Geofence', desc: 'Realtime map & geofence perimeter tracking' },
   { id: '/settings', label: 'Settings', desc: 'Organization configurations' }
 ];
 
-export const DEFAULT_PERMISSIONS = ['/admin', '/kiosk', '/leave-apply', '/advance-money', '/payroll'];
+export const DEFAULT_PERMISSIONS = ['/admin', '/kiosk', '/leave-apply', '/advance-money', '/payroll', '/geofence'];
 
 export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
   const [step, setStep] = useState(1);

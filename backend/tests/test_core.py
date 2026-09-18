@@ -66,3 +66,30 @@ def test_liveness_challenge_generation():
     challenge = liveness_service.generate_random_challenge()
     assert "instruction" in challenge
     assert "action" in challenge
+
+def test_haversine_distance_calculation():
+    from app.api.v1.reports import calculate_haversine_distance
+    # Chennai Central (13.0827, 80.2707) to Marina Beach (13.0500, 80.2824) ~ 3.8 km
+    dist = calculate_haversine_distance(13.0827, 80.2707, 13.0500, 80.2824)
+    assert 3500 <= dist <= 4100
+    
+    # Same point distance should be 0.0
+    zero_dist = calculate_haversine_distance(13.0827, 80.2707, 13.0827, 80.2707)
+    assert zero_dist == 0.0
+
+def test_geofence_perimeter_logic():
+    from app.api.v1.reports import calculate_haversine_distance
+    office_lat, office_lon = 13.0827, 80.2707
+    radius = 150  # 150 meters
+    
+    # 50m away point (Inside)
+    inside_lat = 13.0831
+    inside_lon = 80.2707
+    dist_inside = calculate_haversine_distance(office_lat, office_lon, inside_lat, inside_lon)
+    assert dist_inside <= radius
+    
+    # 500m away point (Outside)
+    outside_lat = 13.0870
+    outside_lon = 80.2707
+    dist_outside = calculate_haversine_distance(office_lat, office_lon, outside_lat, outside_lon)
+    assert dist_outside > radius

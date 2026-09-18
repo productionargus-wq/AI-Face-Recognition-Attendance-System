@@ -129,6 +129,26 @@ export const KioskMode = () => {
     return canvas.toDataURL('image/jpeg', 0.85);
   };
 
+  const getDeviceLocation = () => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        resolve({ latitude: null, longitude: null, accuracy: null });
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          resolve({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy
+          });
+        },
+        () => resolve({ latitude: null, longitude: null, accuracy: null }),
+        { enableHighAccuracy: true, timeout: 4000, maximumAge: 30000 }
+      );
+    });
+  };
+
   const triggerVerification = async () => {
     if (!selectedOrg) {
       setErrorMessage('Please select an organization first.');
@@ -141,11 +161,15 @@ export const KioskMode = () => {
     setErrorMessage('');
 
     try {
+      const coords = await getDeviceLocation();
       const res = await api.post('/attendance/kiosk-punch', {
         organization_slug_or_id: selectedOrg,
         image_sample: frame,
         punch_type: 'AUTO',
-        liveness_challenge_response: 'VERIFIED'
+        liveness_challenge_response: 'VERIFIED',
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        accuracy: coords.accuracy
       });
 
       const punchData = res.data;

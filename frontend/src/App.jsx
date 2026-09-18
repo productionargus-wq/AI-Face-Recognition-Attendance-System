@@ -13,6 +13,7 @@ import { AdvanceMoney } from './pages/AdvanceMoney';
 import { LeaveApply } from './pages/LeaveApply';
 import { PayrollReport } from './pages/PayrollReport';
 import { OrgSettings } from './pages/OrgSettings';
+import { LiveMapGeofence } from './pages/LiveMapGeofence';
 import { PublicTerminal } from './pages/PublicTerminal';
 
 const ProtectedRoute = ({ children, requiredPath = null }) => {
@@ -139,6 +140,17 @@ function App() {
               <ProtectedRoute requiredPath="/settings">
                 <AppLayout>
                   <OrgSettings />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/geofence"
+            element={
+              <ProtectedRoute requiredPath="/geofence">
+                <AppLayout>
+                  <LiveMapGeofence />
                 </AppLayout>
               </ProtectedRoute>
             }

@@ -14,7 +14,8 @@ import {
   MapPin, 
   User, 
   Briefcase,
-  AlertCircle
+  AlertCircle,
+  ExternalLink
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
@@ -42,7 +43,14 @@ export const OrgSettings = () => {
     shiftEnd: organization?.work_hours?.end_time || '18:00',
     graceMinutes: organization?.work_hours?.late_grace_minutes || 15,
     halfDayHours: organization?.work_hours?.half_day_hours || 4.5,
-    otMultiplier: 1.5
+    otMultiplier: 1.5,
+    // Geofencing
+    geofenceEnabled: organization?.geofence?.is_enabled ?? true,
+    geofenceLat: organization?.geofence?.latitude || 13.0827,
+    geofenceLon: organization?.geofence?.longitude || 80.2707,
+    geofenceRadius: organization?.geofence?.radius_meters || 200,
+    geofenceStrict: organization?.geofence?.strict_enforcement ?? false,
+    geofenceOfficeName: organization?.geofence?.office_name || organization?.name || 'Headquarters'
   });
 
   useEffect(() => {
@@ -60,7 +68,13 @@ export const OrgSettings = () => {
         shiftStart: organization.work_hours?.start_time || prev.shiftStart,
         shiftEnd: organization.work_hours?.end_time || prev.shiftEnd,
         graceMinutes: organization.work_hours?.late_grace_minutes || prev.graceMinutes,
-        halfDayHours: organization.work_hours?.half_day_hours || prev.halfDayHours
+        halfDayHours: organization.work_hours?.half_day_hours || prev.halfDayHours,
+        geofenceEnabled: organization.geofence?.is_enabled ?? prev.geofenceEnabled,
+        geofenceLat: organization.geofence?.latitude ?? prev.geofenceLat,
+        geofenceLon: organization.geofence?.longitude ?? prev.geofenceLon,
+        geofenceRadius: organization.geofence?.radius_meters ?? prev.geofenceRadius,
+        geofenceStrict: organization.geofence?.strict_enforcement ?? prev.geofenceStrict,
+        geofenceOfficeName: organization.geofence?.office_name || prev.geofenceOfficeName
       }));
     }
   }, [organization]);
@@ -186,6 +200,14 @@ export const OrgSettings = () => {
           end_time: formData.shiftEnd,
           late_grace_minutes: parseInt(formData.graceMinutes) || 15,
           half_day_hours: parseFloat(formData.halfDayHours) || 4.5
+        },
+        geofence: {
+          is_enabled: formData.geofenceEnabled,
+          latitude: parseFloat(formData.geofenceLat) || 13.0827,
+          longitude: parseFloat(formData.geofenceLon) || 80.2707,
+          radius_meters: parseInt(formData.geofenceRadius, 10) || 200,
+          strict_enforcement: formData.geofenceStrict,
+          office_name: formData.geofenceOfficeName
         }
       });
 
@@ -194,7 +216,15 @@ export const OrgSettings = () => {
           name: formData.name.trim(),
           industry: formData.industry,
           gstin: formData.gstin?.trim() ? formData.gstin.trim().toUpperCase() : null,
-          logo_url: logoUrl || null
+          logo_url: logoUrl || null,
+          geofence: {
+            is_enabled: formData.geofenceEnabled,
+            latitude: parseFloat(formData.geofenceLat) || 13.0827,
+            longitude: parseFloat(formData.geofenceLon) || 80.2707,
+            radius_meters: parseInt(formData.geofenceRadius, 10) || 200,
+            strict_enforcement: formData.geofenceStrict,
+            office_name: formData.geofenceOfficeName
+          }
         });
       }
 
@@ -302,9 +332,22 @@ export const OrgSettings = () => {
           <Clock className="w-4 h-4" />
           Work Shifts &amp; Timing
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('geofence')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'geofence'
+              ? 'bg-[#0052cc] text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <MapPin className="w-4 h-4" />
+          Geofencing &amp; Location
+        </button>
       </div>
 
-      {activeTab === 'details' ? (
+      {activeTab === 'details' && (
         <form onSubmit={handleSave} className="space-y-6">
           {/* Top Row: Company Profile & Executive Oversight */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
@@ -573,7 +616,9 @@ export const OrgSettings = () => {
             </div>
           </div>
         </form>
-      ) : (
+      )}
+
+      {activeTab === 'shifts' && (
         /* Work Shifts & Timing Configuration Tab */
         <form onSubmit={handleSave} className="space-y-6">
           <div className="bg-white p-5 sm:p-7 rounded-2xl border border-slate-200 shadow-xs space-y-5">
@@ -677,6 +722,147 @@ export const OrgSettings = () => {
             >
               <Save className="w-4 h-4" />
               <span>{loading ? 'Saving...' : 'Save Shift Timings'}</span>
+            </button>
+          </div>
+        </form>
+      )}
+
+      {activeTab === 'geofence' && (
+        <form onSubmit={handleSave} className="space-y-6">
+          <div className="bg-white p-5 sm:p-7 rounded-2xl border border-slate-200 shadow-xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-blue-600" />
+                  <span>Geofencing Perimeter &amp; Location Coordinates</span>
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Enforce physical presence verification by defining the geographic boundaries for your organization.
+                </p>
+              </div>
+              <a
+                href="/geofence"
+                className="py-2 px-3.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors self-start sm:self-auto shrink-0 shadow-2xs"
+              >
+                <span>Launch Interactive Map</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+
+            {/* Geofence Active Toggle */}
+            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <div>
+                <div className="font-bold text-slate-800 text-xs">Enable Geofence Validation</div>
+                <div className="text-[11px] text-slate-500">
+                  When enabled, attendance punches compare the device GPS with your configured office perimeter.
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={formData.geofenceEnabled}
+                onChange={(e) => setFormData({ ...formData, geofenceEnabled: e.target.checked })}
+                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+              />
+            </div>
+
+            {/* Office Name */}
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                Premises / Branch Name
+              </label>
+              <input
+                type="text"
+                name="geofenceOfficeName"
+                value={formData.geofenceOfficeName}
+                onChange={handleChange}
+                className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                placeholder="e.g. Headquarters Chennai"
+              />
+            </div>
+
+            {/* Coordinates */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Latitude
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  name="geofenceLat"
+                  value={formData.geofenceLat}
+                  onChange={handleChange}
+                  className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Longitude
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  name="geofenceLon"
+                  value={formData.geofenceLon}
+                  onChange={handleChange}
+                  className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Radius Slider */}
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                  Allowed Perimeter Radius
+                </label>
+                <span className="px-2.5 py-0.5 rounded bg-blue-50 text-blue-700 font-mono font-bold text-xs">
+                  {formData.geofenceRadius} meters
+                </span>
+              </div>
+              <input
+                type="range"
+                min="50"
+                max="1000"
+                step="25"
+                name="geofenceRadius"
+                value={formData.geofenceRadius}
+                onChange={handleChange}
+                className="w-full accent-blue-600 cursor-pointer"
+              />
+              <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                <span>50 meters (Tight)</span>
+                <span>500 meters</span>
+                <span>1,000 meters (Campus)</span>
+              </div>
+            </div>
+
+            {/* Strict Enforcement Toggle */}
+            <div className="flex items-start justify-between p-4 bg-amber-50/60 rounded-xl border border-amber-200">
+              <div className="pr-4">
+                <div className="font-bold text-amber-900 text-xs">Strict Perimeter Enforcement</div>
+                <div className="text-[11px] text-amber-800 mt-0.5">
+                  If enabled, any punch attempt made outside the allowed perimeter is rejected with HTTP 403. If disabled, punches are approved but recorded as violations on the Real-time Map.
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={formData.geofenceStrict}
+                onChange={(e) => setFormData({ ...formData, geofenceStrict: e.target.checked })}
+                className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer mt-0.5 shrink-0"
+              />
+            </div>
+          </div>
+
+          {/* Bottom Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-end gap-3">
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-5 py-2 bg-[#0052cc] hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-60"
+            >
+              <Save className="w-4 h-4" />
+              <span>{loading ? 'Saving...' : 'Save Geofence Settings'}</span>
             </button>
           </div>
         </form>
