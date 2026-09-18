@@ -83,6 +83,15 @@ class User(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 # ----------------- EMPLOYEES -----------------
+class EmploymentType:
+    FULL_TIME = "FULL_TIME"
+    PART_TIME = "PART_TIME"
+    DAILY_WAGE = "DAILY_WAGE"
+
+class ShiftType:
+    FIXED = "FIXED"
+    FLEXIBLE = "FLEXIBLE"
+
 class EmployeeCreate(BaseModel):
     employee_code: str
     first_name: str
@@ -91,6 +100,10 @@ class EmployeeCreate(BaseModel):
     department: str
     designation: str
     phone: Optional[str] = None
+    employment_type: Optional[str] = EmploymentType.FULL_TIME
+    shift_type: Optional[str] = ShiftType.FIXED
+    target_daily_hours: Optional[float] = 8.5
+    daily_wage_rate: Optional[float] = 600.0
     assigned_shift: Optional[str] = "General Shift (09:00 AM – 05:30 PM • 8.5h)"
     shift_start: Optional[str] = "09:00"
     shift_end: Optional[str] = "17:30"
@@ -109,6 +122,10 @@ class Employee(BaseModel):
     department: str
     designation: str
     phone: Optional[str] = None
+    employment_type: Optional[str] = EmploymentType.FULL_TIME
+    shift_type: Optional[str] = ShiftType.FIXED
+    target_daily_hours: Optional[float] = 8.5
+    daily_wage_rate: Optional[float] = 600.0
     assigned_shift: Optional[str] = "General Shift (09:00 AM – 05:30 PM • 8.5h)"
     shift_start: Optional[str] = "09:00"
     shift_end: Optional[str] = "17:30"
@@ -141,7 +158,13 @@ class Attendance(BaseModel):
     check_in: Optional[datetime] = None
     check_out: Optional[datetime] = None
     total_hours: float = 0.0
+    is_currently_in: bool = False
+    punch_count: int = 1
+    punches: List[Dict[str, Any]] = []
+    last_punch_time: Optional[str] = None
+    last_punch_action: Optional[str] = None
     status: str = AttendanceStatus.PRESENT
+    shift_status: Optional[str] = "ON-TIME"
     verification_mode: str = "FACE_KIOSK"
     confidence_score: float = 0.0
     liveness_verified: bool = True

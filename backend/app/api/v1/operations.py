@@ -1,11 +1,14 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import uuid
 from app.core.security import require_org_admin, require_tenant_context
 from app.db.store import store
 from app.models.schemas import AuditLog
+
+# Standard Indian Standard Time (UTC+5:30)
+IST_TZ = timezone(timedelta(hours=5, minutes=30))
 
 operations_router = APIRouter(tags=["Operations: Advances, Leaves & Overrides"])
 
@@ -465,6 +468,87 @@ class SalaryDisbursementPayload(BaseModel):
     net_salary: Optional[float] = None
     note: Optional[str] = "Monthly Salary Credited"
 
+async def check_and_create_overdue_punch_reminders(org_id: str, emp_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Checks if employees are still clocked in (is_currently_in == True) past their shift_end
+    (or >8.5h for flexible/daily wage workers), and triggers a punch-out reminder notification.
+    """
+    now_utc = datetime.now(timezone.utc)
+    now_local = now_utc.astimezone(IST_TZ)
+    today_str = now_local.strftime("%Y-%m-%d")
+    cur_mins = now_local.hour * 60 + now_local.minute
+
+    query = {"organization_id": org_id, "date": today_str, "is_currently_in": True}
+    if emp_id:
+        query["employee_id"] = emp_id
+
+    active_attendances = await store.find_many("attendance", query)
+    created_reminders = []
+
+    for att in active_attendances:
+        target_emp_id = att.get("employee_id")
+        emp = await store.find_one("employees", {"id": target_emp_id, "organization_id": org_id})
+        if not emp:
+            continue
+
+        emp_type = (emp.get("employment_type") or "FULL_TIME").upper()
+        shift_type = (emp.get("shift_type") or "FIXED").upper()
+        is_flexible = shift_type == "FLEXIBLE" or emp_type == "DAILY_WAGE" or "flexible" in (emp.get("assigned_shift") or "").lower()
+
+        is_overdue = False
+        shift_info = ""
+
+        if is_flexible:
+            check_in_str = att.get("check_in")
+            if check_in_str:
+                try:
+                    dt = datetime.fromisoformat(check_in_str.replace("Z", "+00:00"))
+                    elapsed_hours = (now_utc - dt).total_seconds() / 3600.0
+                    if elapsed_hours >= 8.5:
+                        is_overdue = True
+                        shift_info = f"{round(elapsed_hours, 1)} hrs logged"
+                except Exception:
+                    pass
+        else:
+            shift_end = emp.get("shift_end") or "17:30"
+            try:
+                end_h, end_m = map(int, shift_end.split(":"))
+                end_mins = end_h * 60 + end_m + 10  # 10 minute grace after scheduled end
+                if cur_mins >= end_mins:
+                    is_overdue = True
+                    shift_info = f"shift ended at {shift_end}"
+            except Exception:
+                pass
+
+        if is_overdue:
+            # Check if reminder already issued for today
+            existing = await store.find_one("notifications", {
+                "organization_id": org_id,
+                "employee_id": target_emp_id,
+                "type": "PUNCH_OUT_REMINDER",
+                "date": today_str
+            })
+            if not existing:
+                first_name = emp.get("first_name", "Employee")
+                punch_in_time = att.get("check_in_time") or "earlier today"
+                notif = {
+                    "id": f"NOTIF-{uuid.uuid4().hex[:8].upper()}",
+                    "organization_id": org_id,
+                    "employee_id": target_emp_id,
+                    "employee_email": emp.get("email"),
+                    "type": "PUNCH_OUT_REMINDER",
+                    "title": "Punch-Out Reminder: Shift Overdue",
+                    "message": f"Hello {first_name}, your {shift_info}. You are still clocked in from {punch_in_time}. Please punch out before leaving!",
+                    "action_required": True,
+                    "date": today_str,
+                    "is_read": False,
+                    "created_at": now_utc.isoformat()
+                }
+                await store.insert_one("notifications", notif)
+                created_reminders.append(notif)
+
+    return created_reminders
+
 @operations_router.get("/notifications")
 async def list_notifications(
     auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
@@ -472,6 +556,15 @@ async def list_notifications(
     org_id = auth_ctx["org_id"]
     is_admin = auth_ctx.get("role") in ("org_admin", "super_admin")
     
+    # Auto-check for overdue punch reminders for this tenant or employee
+    emp_id = None
+    email = auth_ctx.get("email")
+    if not is_admin:
+        emp = await store.find_one("employees", {"email": email, "organization_id": org_id})
+        emp_id = emp["id"] if emp else None
+
+    await check_and_create_overdue_punch_reminders(org_id, emp_id=emp_id)
+
     # Retrieve all notifications for this tenant
     all_notifs = await store.find_many(
         "notifications", 
@@ -485,10 +578,6 @@ async def list_notifications(
         return all_notifs
 
     # For employee, filter notifications meant for them
-    email = auth_ctx.get("email")
-    emp = await store.find_one("employees", {"email": email, "organization_id": org_id})
-    emp_id = emp["id"] if emp else None
-
     filtered = []
     for n in all_notifs:
         if (emp_id and n.get("employee_id") == emp_id) or (email and n.get("employee_email") == email):
@@ -498,6 +587,16 @@ async def list_notifications(
             filtered.append(n)
             
     return filtered
+
+@operations_router.post("/notifications/check-overdue-punches")
+async def trigger_overdue_punch_check(
+    auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
+):
+    org_id = auth_ctx["org_id"]
+    is_admin = auth_ctx.get("role") in ("org_admin", "super_admin")
+    emp_id = None if is_admin else auth_ctx.get("emp_id")
+    reminders = await check_and_create_overdue_punch_reminders(org_id, emp_id=emp_id)
+    return {"status": "success", "reminders_created": len(reminders), "reminders": reminders}
 
 @operations_router.post("/notifications/disburse-salary")
 async def disburse_salary(

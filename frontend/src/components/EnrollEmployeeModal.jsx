@@ -27,6 +27,10 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
     department: 'Engineering',
     designation: '',
     phone: '',
+    employment_type: 'FULL_TIME',
+    shift_type: 'FIXED',
+    target_daily_hours: 8.5,
+    daily_wage_rate: 600,
     assigned_shift: 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
     shift_start: '09:00',
     shift_end: '17:30',
@@ -35,6 +39,45 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
     statutory_deductions: 3000,
     permissions: DEFAULT_PERMISSIONS
   });
+
+  const handleEmploymentTypeChange = (type) => {
+    if (type === 'PART_TIME') {
+      setFormData(prev => ({
+        ...prev,
+        employment_type: type,
+        shift_type: 'FIXED',
+        target_daily_hours: 4.0,
+        base_salary: 20000,
+        assigned_shift: 'Part-Time Shift (10:00 AM – 02:00 PM • 4.0h)',
+        shift_start: '10:00',
+        shift_end: '14:00'
+      }));
+    } else if (type === 'DAILY_WAGE') {
+      setFormData(prev => ({
+        ...prev,
+        employment_type: type,
+        shift_type: 'FLEXIBLE',
+        target_daily_hours: 8.0,
+        daily_wage_rate: 650,
+        hourly_rate: 80,
+        base_salary: 0,
+        assigned_shift: 'Flexible Daily Wage Schedule (No Fixed Hours)',
+        shift_start: '09:00',
+        shift_end: '18:00'
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        employment_type: type,
+        shift_type: 'FIXED',
+        target_daily_hours: 8.5,
+        base_salary: 40000,
+        assigned_shift: 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
+        shift_start: '09:00',
+        shift_end: '17:30'
+      }));
+    }
+  };
 
   const formatTime12h = (time24) => {
     if (!time24) return '';
@@ -343,6 +386,96 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+            </div>
+
+            {/* Employment Type & Worker Model */}
+            <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-xl space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-800">
+                  Employment Type & Worker Model
+                </label>
+                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold">
+                  {formData.employment_type.replace('_', ' ')}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleEmploymentTypeChange('FULL_TIME')}
+                  className={`px-2.5 py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                    formData.employment_type === 'FULL_TIME'
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  Full-Time
+                  <span className="block text-[10px] font-normal opacity-80">8.5h Standard</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleEmploymentTypeChange('PART_TIME')}
+                  className={`px-2.5 py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                    formData.employment_type === 'PART_TIME'
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  Part-Time
+                  <span className="block text-[10px] font-normal opacity-80">{formData.target_daily_hours || 4.0}h Target</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleEmploymentTypeChange('DAILY_WAGE')}
+                  className={`px-2.5 py-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                    formData.employment_type === 'DAILY_WAGE'
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  Daily Wage / Coolie
+                  <span className="block text-[10px] font-normal opacity-80">Flexible / Random</span>
+                </button>
+              </div>
+
+              {formData.employment_type === 'PART_TIME' && (
+                <div className="p-2.5 bg-white border border-blue-200 rounded-lg flex items-center justify-between gap-3">
+                  <div>
+                    <span className="block text-[11px] font-bold text-slate-800">Part-Time Daily Target Hours</span>
+                    <span className="text-[10px] text-slate-500">Completing this duration counts as 100% full attendance credit (no late/half-day penalties).</span>
+                  </div>
+                  <div className="w-24">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="1"
+                      max="12"
+                      value={formData.target_daily_hours}
+                      onChange={(e) => setFormData({ ...formData, target_daily_hours: parseFloat(e.target.value) || 4.0 })}
+                      className="w-full px-2 py-1 border border-slate-300 rounded text-xs font-mono font-bold text-slate-800 text-right focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {formData.employment_type === 'DAILY_WAGE' && (
+                <div className="p-2.5 bg-white border border-amber-200 rounded-lg flex items-center justify-between gap-3">
+                  <div>
+                    <span className="block text-[11px] font-bold text-amber-900">Flexible Daily Wage Mode Active</span>
+                    <span className="text-[10px] text-amber-700">Workers can punch in at random hours without LATE penalties. Pay calculated per logged hours & daily rate.</span>
+                  </div>
+                  <div className="w-28">
+                    <label className="block text-[9px] uppercase font-bold text-slate-500">Wage (₹/day)</label>
+                    <input
+                      type="number"
+                      step="50"
+                      min="0"
+                      value={formData.daily_wage_rate}
+                      onChange={(e) => setFormData({ ...formData, daily_wage_rate: parseFloat(e.target.value) || 600 })}
+                      className="w-full px-2 py-1 border border-slate-300 rounded text-xs font-mono font-bold text-slate-800 text-right focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">

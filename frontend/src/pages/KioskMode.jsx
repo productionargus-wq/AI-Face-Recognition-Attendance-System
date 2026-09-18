@@ -183,13 +183,15 @@ export const KioskMode = () => {
       });
 
       // Prepend to recent punch events stream
+      const punchNum = punchData.punch_number || punchData.punch_count || 1;
+      const opLabel = `PUNCH #${punchNum} [${punchData.action === 'CHECK_IN' ? 'IN' : 'OUT'}]`;
       const newEntry = {
         id: 'p-' + Date.now(),
         employee_name: punchData.employee_name,
         employee_code: punchData.employee_code,
         department: punchData.department || 'Operations',
         time: punchData.timestamp,
-        operation: punchData.action === 'CHECK_IN' ? 'SHIFT START [IN]' : 'SHIFT END [OUT]',
+        operation: opLabel,
         is_in: punchData.action === 'CHECK_IN',
         avatar: punchData.employee_name ? punchData.employee_name.split(' ').map(n=>n[0]).join('').slice(0,2) : 'EM'
       };
@@ -443,6 +445,15 @@ export const KioskMode = () => {
                 {/* Metrics Grid */}
                 <div className="bg-slate-50/70 border border-slate-200 rounded-lg p-3.5 space-y-2.5 text-xs">
                   <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">PUNCH EVENT</span>
+                    <span className={`font-mono font-bold px-2 py-0.5 rounded text-[11px] ${
+                      punchResult.action === 'CHECK_IN' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      PUNCH #{punchResult.punch_number || 1} [{punchResult.action === 'CHECK_IN' ? 'IN' : 'OUT'}]
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between items-center">
                     <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">RECORDED TIME</span>
                     <span className="font-mono font-bold text-blue-600">
                       {punchResult.timestamp}
@@ -451,15 +462,24 @@ export const KioskMode = () => {
 
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">COMPLIANCE</span>
-                    <span className="font-semibold text-emerald-600">
-                      {punchResult.attendance_status === 'LATE' ? 'Late' : 'On-Time'}
+                    <span className={`font-semibold ${
+                      punchResult.shift_status === 'LATE' ? 'text-amber-600' : 'text-emerald-600'
+                    }`}>
+                      {punchResult.shift_status || (punchResult.attendance_status === 'LATE' ? 'Late' : 'On-Time')}
                     </span>
                   </div>
 
                   <div className="flex justify-between items-center">
-                    <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">CURRENT SHIFT</span>
-                    <span className="font-mono text-slate-700 font-medium">
-                      08:30 AM - 5:00 PM
+                    <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">WORKER MODEL</span>
+                    <span className="font-mono text-slate-700 font-semibold">
+                      {(punchResult.employment_type || 'FULL_TIME').replace('_', ' ')}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">TOTAL WORK HOURS</span>
+                    <span className="font-mono font-bold text-slate-900">
+                      {punchResult.total_hours || 0} hrs
                     </span>
                   </div>
                 </div>

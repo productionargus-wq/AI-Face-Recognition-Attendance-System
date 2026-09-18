@@ -24,6 +24,10 @@ class EmployeeUpdate(BaseModel):
     department: Optional[str] = None
     designation: Optional[str] = None
     phone: Optional[str] = None
+    employment_type: Optional[str] = None
+    shift_type: Optional[str] = None
+    target_daily_hours: Optional[float] = None
+    daily_wage_rate: Optional[float] = None
     assigned_shift: Optional[str] = None
     shift_start: Optional[str] = None
     shift_end: Optional[str] = None
@@ -175,6 +179,10 @@ async def create_employee(
         department=payload.department,
         designation=payload.designation,
         phone=payload.phone,
+        employment_type=payload.employment_type or "FULL_TIME",
+        shift_type=payload.shift_type or "FIXED",
+        target_daily_hours=payload.target_daily_hours if payload.target_daily_hours is not None else (4.0 if payload.employment_type == "PART_TIME" else 8.5),
+        daily_wage_rate=payload.daily_wage_rate if payload.daily_wage_rate is not None else 600.0,
         assigned_shift=payload.assigned_shift or "General Shift (09:00 AM – 05:30 PM • 8.5h)",
         shift_start=payload.shift_start or "09:00",
         shift_end=payload.shift_end or "17:30",
@@ -392,6 +400,14 @@ async def update_employee(
         update_fields["designation"] = payload.designation.strip()
     if payload.phone is not None:
         update_fields["phone"] = payload.phone.strip()
+    if payload.employment_type is not None:
+        update_fields["employment_type"] = payload.employment_type.strip()
+    if payload.shift_type is not None:
+        update_fields["shift_type"] = payload.shift_type.strip()
+    if payload.target_daily_hours is not None:
+        update_fields["target_daily_hours"] = float(payload.target_daily_hours)
+    if payload.daily_wage_rate is not None:
+        update_fields["daily_wage_rate"] = float(payload.daily_wage_rate)
     if payload.assigned_shift is not None:
         update_fields["assigned_shift"] = payload.assigned_shift.strip()
     if payload.shift_start is not None:

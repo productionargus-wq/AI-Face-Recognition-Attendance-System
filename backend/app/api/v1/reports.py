@@ -34,6 +34,38 @@ def calculate_haversine_distance(lat1: float, lon1: float, lat2: float, lon2: fl
     c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
     return round(R * c, 1)
 
+def calculate_punches_total_hours(punches: List[Dict[str, Any]]) -> float:
+    """
+    Computes cumulative worked hours from alternating IN/OUT punch sessions.
+    Each completed (CHECK_IN -> CHECK_OUT) pair contributes its duration.
+    """
+    if not punches:
+        return 0.0
+    total_seconds = 0.0
+    last_in_dt = None
+    for p in punches:
+        action = (p.get("action") or "").upper()
+        ts_str = p.get("timestamp")
+        if not ts_str:
+            continue
+        try:
+            ts_dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        except Exception:
+            continue
+
+        if action == "CHECK_IN":
+            last_in_dt = ts_dt
+        elif action == "CHECK_OUT" and last_in_dt:
+            diff = (ts_dt - last_in_dt).total_seconds()
+            if diff > 0:
+                total_seconds += diff
+            last_in_dt = None
+
+    hours = total_seconds / 3600.0
+    if total_seconds > 0 and hours < 0.01:
+        return 0.01
+    return round(hours, 2)
+
 # ----------------- ATTENDANCE ENDPOINTS -----------------
 
 class KioskPunchPayload(BaseModel):
@@ -130,28 +162,57 @@ async def kiosk_punch(payload: KioskPunchPayload):
         "date": today_str
     })
 
+    # 1. Determine punch action
     req_type = (payload.punch_type or "AUTO").upper()
-    if req_type == "CHECK_IN":
-        punch_action = "CHECK_IN"
-    elif req_type == "CHECK_OUT":
-        punch_action = "CHECK_OUT"
+    if req_type in ("CHECK_IN", "CHECK_OUT"):
+        punch_action = req_type
     else:
-        punch_action = "CHECK_IN" if not existing_record else "CHECK_OUT"
+        # Alternating Multi-Punch State Machine:
+        # If no record exists for today -> 1st punch is always CHECK_IN.
+        # If record exists: if currently clocked in -> CHECK_OUT, otherwise CHECK_IN.
+        if not existing_record:
+            punch_action = "CHECK_IN"
+        else:
+            is_currently_in = existing_record.get("is_currently_in", False)
+            punch_action = "CHECK_OUT" if is_currently_in else "CHECK_IN"
 
-    record_status = AttendanceStatus.PRESENT
+    # 2. Worker Classification & Late Arrival / Shift Status Evaluation
+    emp_type = (matched_emp.get("employment_type") or "FULL_TIME").upper()
+    shift_type = (matched_emp.get("shift_type") or "FIXED").upper()
+    assigned_shift_str = (matched_emp.get("assigned_shift") or "").lower()
 
-    work_start = matched_emp.get("shift_start") or org.get("work_hours", {}).get("start_time", "09:00")
-    grace = org.get("work_hours", {}).get("late_grace_minutes", 15)
-    
-    start_h, start_m = map(int, work_start.split(":"))
-    cur_h, cur_m = now_local.hour, now_local.minute
-    total_start_mins = start_h * 60 + start_m + grace
-    total_cur_mins = cur_h * 60 + cur_m
+    is_flexible = (
+        shift_type == "FLEXIBLE" or 
+        emp_type == "DAILY_WAGE" or 
+        "flexible" in assigned_shift_str or
+        "coolie" in assigned_shift_str
+    )
 
-    if total_cur_mins > total_start_mins:
-        record_status = AttendanceStatus.LATE
+    if is_flexible:
+        # Flexible and Daily Wage workers are NEVER penalized as LATE
+        record_status = AttendanceStatus.PRESENT
+        shift_status = "FLEXIBLE"
+    else:
+        if not existing_record:
+            # First punch of the day: Check against shift start + grace
+            work_start = matched_emp.get("shift_start") or org.get("work_hours", {}).get("start_time", "09:00")
+            grace = org.get("work_hours", {}).get("late_grace_minutes", 15)
+            
+            start_h, start_m = map(int, work_start.split(":"))
+            cur_h, cur_m = now_local.hour, now_local.minute
+            total_start_mins = start_h * 60 + start_m + grace
+            total_cur_mins = cur_h * 60 + cur_m
 
-    shift_status = "LATE" if record_status == AttendanceStatus.LATE else "ON-TIME"
+            if total_cur_mins > total_start_mins:
+                record_status = AttendanceStatus.LATE
+                shift_status = "LATE"
+            else:
+                record_status = AttendanceStatus.PRESENT
+                shift_status = "ON-TIME"
+        else:
+            # Preserve existing daily arrival status on subsequent punches
+            record_status = existing_record.get("status", AttendanceStatus.PRESENT)
+            shift_status = existing_record.get("shift_status", "ON-TIME")
 
     # Geofence validation & distance calculation
     geofence_cfg = org.get("geofence") if org else None
@@ -183,113 +244,113 @@ async def kiosk_punch(payload: KioskPunchPayload):
                     detail="Geofence Enforcement: Location access is required to verify on-site attendance. Please enable device GPS."
                 )
 
-    if punch_action == "CHECK_IN":
-        if not existing_record:
-            new_att = {
-                "id": f"ATT-{now_utc.strftime('%Y%m%d%H%M%S')}-{matched_emp['employee_code']}",
-                "organization_id": org_id,
-                "employee_id": matched_emp["id"],
-                "employee_code": matched_emp["employee_code"],
-                "employee_name": f"{matched_emp['first_name']} {matched_emp['last_name']}",
-                "department": matched_emp.get("department", "General"),
-                "date": today_str,
-                "check_in": now_utc.isoformat(),
-                "check_in_time": time_str,
-                "check_out": None,
-                "check_out_time": None,
-                "total_hours": 0.0,
-                "status": record_status,
-                "shift_status": shift_status,
-                "verification_mode": "FACE_KIOSK",
-                "confidence_score": confidence,
-                "liveness_verified": True,
-                "kiosk_id": payload.kiosk_id,
-                "latitude": payload.latitude,
-                "longitude": payload.longitude,
-                "accuracy": payload.accuracy,
-                "geofence_status": geofence_status,
-                "distance_meters": distance_meters
-            }
-            await store.insert_one("attendance", new_att)
-            res_record = new_att
-        else:
-            res_record = existing_record
+    # 3. Assemble Sequential Punch List
+    existing_punches = list(existing_record.get("punches") or []) if existing_record else []
+    punch_num = len(existing_punches) + 1
+
+    punch_entry = {
+        "punch_number": punch_num,
+        "action": punch_action,
+        "time": time_str,
+        "timestamp": now_utc.isoformat(),
+        "latitude": payload.latitude,
+        "longitude": payload.longitude,
+        "accuracy": payload.accuracy,
+        "geofence_status": geofence_status,
+        "distance_meters": distance_meters
+    }
+    all_punches = existing_punches + [punch_entry]
+
+    # Calculate cumulative total hours across all completed sessions
+    total_hours = calculate_punches_total_hours(all_punches)
+    new_is_currently_in = (punch_action == "CHECK_IN")
+
+    # Part-time threshold check: if part-time and target hours reached, ensure PRESENT
+    if emp_type == "PART_TIME":
+        target_hours = float(matched_emp.get("target_daily_hours") or 4.0)
+        if total_hours >= target_hours and record_status != AttendanceStatus.LATE:
+            shift_status = "ON-TIME"
+
+    if not existing_record:
+        new_att = {
+            "id": f"ATT-{now_utc.strftime('%Y%m%d%H%M%S')}-{matched_emp['employee_code']}",
+            "organization_id": org_id,
+            "employee_id": matched_emp["id"],
+            "employee_code": matched_emp["employee_code"],
+            "employee_name": f"{matched_emp['first_name']} {matched_emp['last_name']}",
+            "department": matched_emp.get("department", "General"),
+            "employment_type": emp_type,
+            "shift_type": shift_type,
+            "date": today_str,
+            "check_in": now_utc.isoformat(),
+            "check_in_time": time_str,
+            "check_out": now_utc.isoformat() if punch_action == "CHECK_OUT" else None,
+            "check_out_time": time_str if punch_action == "CHECK_OUT" else None,
+            "total_hours": total_hours,
+            "is_currently_in": new_is_currently_in,
+            "punch_count": punch_num,
+            "punches": all_punches,
+            "last_punch_time": time_str,
+            "last_punch_action": punch_action,
+            "status": record_status,
+            "shift_status": shift_status,
+            "verification_mode": "FACE_KIOSK",
+            "confidence_score": confidence,
+            "liveness_verified": True,
+            "kiosk_id": payload.kiosk_id,
+            "latitude": payload.latitude,
+            "longitude": payload.longitude,
+            "accuracy": payload.accuracy,
+            "geofence_status": geofence_status,
+            "distance_meters": distance_meters
+        }
+        await store.insert_one("attendance", new_att)
+        res_record = new_att
     else:
-        # CHECK_OUT
-        if not existing_record:
-            new_att = {
-                "id": f"ATT-{now_utc.strftime('%Y%m%d%H%M%S')}-{matched_emp['employee_code']}",
-                "organization_id": org_id,
-                "employee_id": matched_emp["id"],
-                "employee_code": matched_emp["employee_code"],
-                "employee_name": f"{matched_emp['first_name']} {matched_emp['last_name']}",
-                "department": matched_emp.get("department", "General"),
-                "date": today_str,
-                "check_in": now_utc.isoformat(),
-                "check_in_time": time_str,
-                "check_out": now_utc.isoformat(),
-                "check_out_time": time_str,
-                "total_hours": 0.1,
-                "status": record_status,
-                "shift_status": shift_status,
-                "verification_mode": "FACE_KIOSK",
-                "confidence_score": confidence,
-                "liveness_verified": True,
-                "kiosk_id": payload.kiosk_id,
-                "latitude": payload.latitude,
-                "longitude": payload.longitude,
-                "accuracy": payload.accuracy,
-                "geofence_status": geofence_status,
-                "distance_meters": distance_meters
-            }
-            await store.insert_one("attendance", new_att)
-            res_record = new_att
-        else:
-            check_in_time = existing_record.get("check_in")
-            if isinstance(check_in_time, str):
-                try:
-                    check_in_time = datetime.fromisoformat(check_in_time.replace("Z", "+00:00"))
-                except Exception:
-                    check_in_time = now_utc
-            elif not isinstance(check_in_time, datetime):
-                check_in_time = now_utc
+        update_fields = {
+            "is_currently_in": new_is_currently_in,
+            "punch_count": punch_num,
+            "punches": all_punches,
+            "last_punch_time": time_str,
+            "last_punch_action": punch_action,
+            "total_hours": total_hours,
+            "confidence_score": max(confidence, existing_record.get("confidence_score", 0))
+        }
+        if punch_action == "CHECK_OUT":
+            update_fields["check_out"] = now_utc.isoformat()
+            update_fields["check_out_time"] = time_str
+        
+        if payload.latitude is not None:
+            update_fields["latitude"] = payload.latitude
+            update_fields["longitude"] = payload.longitude
+            update_fields["geofence_status"] = geofence_status
+            update_fields["distance_meters"] = distance_meters
 
-            duration_sec = (now_utc - check_in_time).total_seconds()
-            total_hours = round(max(0.1, duration_sec / 3600.0), 2)
-            
-            update_fields = {
-                "check_out": now_utc.isoformat(),
-                "check_out_time": time_str,
-                "total_hours": total_hours,
-                "confidence_score": max(confidence, existing_record.get("confidence_score", 0))
-            }
-            if payload.latitude is not None:
-                update_fields["latitude"] = payload.latitude
-                update_fields["longitude"] = payload.longitude
-                update_fields["geofence_status"] = geofence_status
-                update_fields["distance_meters"] = distance_meters
-
-            await store.update_one("attendance", {"id": existing_record["id"]}, update_fields)
-            existing_record["check_out"] = now_utc.isoformat()
-            existing_record["check_out_time"] = time_str
-            existing_record["total_hours"] = total_hours
-            res_record = existing_record
+        await store.update_one("attendance", {"id": existing_record["id"]}, update_fields)
+        existing_record.update(update_fields)
+        res_record = existing_record
 
     # Record persistent punch stream event for LIVE PUNCH EVENT STREAM
     fn = matched_emp.get("first_name", "")
     ln = matched_emp.get("last_name", "")
     initials = ((fn[:1] if fn else "") + (ln[:1] if ln else "")).upper() or "EM"
+
+    operation_label = f"PUNCH #{punch_num} [{punch_action.replace('CHECK_', '')}]"
     punch_event = {
         "id": f"EVT-{now_utc.strftime('%Y%m%d%H%M%S%f')}",
         "organization_id": org_id,
         "employee_name": f"{fn} {ln}".strip(),
         "employee_code": matched_emp["employee_code"],
+        "employment_type": emp_type,
+        "shift_type": shift_type,
         "department": matched_emp.get("department", "Operations"),
         "time": time_str,
         "date": today_str,
         "timestamp": now_utc.isoformat(),
-        "operation": "SHIFT START [IN]" if punch_action == "CHECK_IN" else "SHIFT END [OUT]",
-        "is_in": punch_action == "CHECK_IN",
+        "operation": operation_label,
+        "action": punch_action,
+        "punch_number": punch_num,
+        "is_in": new_is_currently_in,
         "avatar": initials,
         "latitude": payload.latitude,
         "longitude": payload.longitude,
@@ -301,8 +362,13 @@ async def kiosk_punch(payload: KioskPunchPayload):
     return {
         "status": "success",
         "action": punch_action,
+        "punch_number": punch_num,
+        "punch_count": punch_num,
+        "is_currently_in": new_is_currently_in,
         "employee_name": f"{matched_emp['first_name']} {matched_emp['last_name']}",
         "employee_code": matched_emp["employee_code"],
+        "employment_type": emp_type,
+        "shift_type": shift_type,
         "department": matched_emp.get("department", "General"),
         "organization_id": org_id,
         "organization_name": org.get("name", "Argus Enterprise"),

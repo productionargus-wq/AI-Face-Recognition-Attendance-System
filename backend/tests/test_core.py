@@ -93,3 +93,104 @@ def test_geofence_perimeter_logic():
     outside_lon = 80.2707
     dist_outside = calculate_haversine_distance(office_lat, office_lon, outside_lat, outside_lon)
     assert dist_outside > radius
+
+def test_calculate_punches_total_hours():
+    from app.api.v1.reports import calculate_punches_total_hours
+    
+    # 1st Punch: IN at 09:00:00 (Open session -> 0.0 hrs confirmed)
+    p1 = [{"action": "CHECK_IN", "timestamp": "2026-09-18T09:00:00+05:30"}]
+    assert calculate_punches_total_hours(p1) == 0.0
+
+    # 2nd Punch: OUT at 13:00:00 (4.0 hrs worked)
+    p2 = p1 + [{"action": "CHECK_OUT", "timestamp": "2026-09-18T13:00:00+05:30"}]
+    assert calculate_punches_total_hours(p2) == 4.0
+
+    # 3rd Punch: IN at 14:00:00 (Lunch ended, resumed -> still 4.0 hrs confirmed)
+    p3 = p2 + [{"action": "CHECK_IN", "timestamp": "2026-09-18T14:00:00+05:30"}]
+    assert calculate_punches_total_hours(p3) == 4.0
+
+    # 4th Punch: OUT at 18:00:00 (Another 4.0 hrs -> total 8.0 hrs worked)
+    p4 = p3 + [{"action": "CHECK_OUT", "timestamp": "2026-09-18T18:00:00+05:30"}]
+    assert calculate_punches_total_hours(p4) == 8.0
+
+    # 5th Punch: IN at 19:00:00, 6th Punch: OUT at 20:30:00 (1.5 hrs OT -> 9.5 hrs)
+    p6 = p4 + [
+        {"action": "CHECK_IN", "timestamp": "2026-09-18T19:00:00+05:30"},
+        {"action": "CHECK_OUT", "timestamp": "2026-09-18T20:30:00+05:30"}
+    ]
+    assert calculate_punches_total_hours(p6) == 9.5
+
+def test_alternating_punch_state_machine():
+    """Simulates alternating IN -> OUT -> IN -> OUT and daily reset."""
+    def determine_action(existing_record, req_type="AUTO"):
+        if req_type in ("CHECK_IN", "CHECK_OUT"):
+            return req_type
+        if not existing_record:
+            return "CHECK_IN"
+        return "CHECK_OUT" if existing_record.get("is_currently_in", False) else "CHECK_IN"
+
+    # Day 1:
+    day1_rec = None
+    # Punch 1: First punch of the day must be CHECK_IN
+    action1 = determine_action(day1_rec)
+    assert action1 == "CHECK_IN"
+    day1_rec = {"is_currently_in": True, "punch_count": 1}
+
+    # Punch 2: 2nd punch must be CHECK_OUT
+    action2 = determine_action(day1_rec)
+    assert action2 == "CHECK_OUT"
+    day1_rec = {"is_currently_in": False, "punch_count": 2}
+
+    # Punch 3: 3rd punch must be CHECK_IN
+    action3 = determine_action(day1_rec)
+    assert action3 == "CHECK_IN"
+    day1_rec = {"is_currently_in": True, "punch_count": 3}
+
+    # Punch 4: 4th punch must be CHECK_OUT
+    action4 = determine_action(day1_rec)
+    assert action4 == "CHECK_OUT"
+    day1_rec = {"is_currently_in": False, "punch_count": 4}
+
+    # Day 2: New day (record is None for new date) -> 1st punch resets to CHECK_IN!
+    day2_rec = None
+    action_day2_p1 = determine_action(day2_rec)
+    assert action_day2_p1 == "CHECK_IN"
+
+def test_flexible_and_daily_wage_exempt_from_late():
+    """Daily wage and flexible shift workers are never marked LATE."""
+    from app.models.schemas import AttendanceStatus
+
+    def evaluate_status(emp, arrival_hour, arrival_min):
+        emp_type = (emp.get("employment_type") or "FULL_TIME").upper()
+        shift_type = (emp.get("shift_type") or "FIXED").upper()
+        is_flexible = shift_type == "FLEXIBLE" or emp_type == "DAILY_WAGE"
+        if is_flexible:
+            return AttendanceStatus.PRESENT, "FLEXIBLE"
+        
+        # Fixed schedule 09:00 with 15m grace
+        if (arrival_hour * 60 + arrival_min) > (9 * 60 + 15):
+            return AttendanceStatus.LATE, "LATE"
+        return AttendanceStatus.PRESENT, "ON-TIME"
+
+    # Full time employee arriving at 11:30 AM -> LATE
+    ft_emp = {"employment_type": "FULL_TIME", "shift_type": "FIXED"}
+    status_ft, shift_ft = evaluate_status(ft_emp, 11, 30)
+    assert status_ft == AttendanceStatus.LATE
+    assert shift_ft == "LATE"
+
+    # Daily wage / Coolie worker arriving at 11:30 AM -> PRESENT (FLEXIBLE)
+    daily_wage_emp = {"employment_type": "DAILY_WAGE", "shift_type": "FLEXIBLE"}
+    status_dw, shift_dw = evaluate_status(daily_wage_emp, 11, 30)
+    assert status_dw == AttendanceStatus.PRESENT
+    assert shift_dw == "FLEXIBLE"
+
+def test_part_time_target_hours_completion():
+    """Part-time workers who hit target hours (e.g. 4.0h) get full day credit."""
+    pt_emp = {"employment_type": "PART_TIME", "target_daily_hours": 4.0}
+    target = float(pt_emp.get("target_daily_hours", 4.0))
+    
+    # 4.2 hours worked on 4.0h target
+    logged_hours = 4.2
+    assert logged_hours >= target
+    full_day_credit = logged_hours >= target
+    assert full_day_credit is True

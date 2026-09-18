@@ -234,13 +234,15 @@ export const AttendanceTerminalModal = ({ isOpen, onClose }) => {
       // Prepend to recent punches stream
       const fn = data.employee_name || 'Staff';
       const initials = fn.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+      const punchNum = data.punch_number || data.punch_count || 1;
+      const opLabel = `PUNCH #${punchNum} [${data.action === 'CHECK_IN' ? 'IN' : 'OUT'}]`;
       const newEntry = {
         id: 'p-' + Date.now(),
         employee_name: data.employee_name,
         employee_code: data.employee_code,
         department: data.department || 'Operations',
         time: data.timestamp,
-        operation: data.action === 'CHECK_IN' ? 'SHIFT START [IN]' : 'SHIFT END [OUT]',
+        operation: opLabel,
         is_in: data.action === 'CHECK_IN',
         avatar: initials
       };
@@ -446,7 +448,7 @@ export const AttendanceTerminalModal = ({ isOpen, onClose }) => {
                       ? 'bg-emerald-500 text-white shadow-md'
                       : 'bg-blue-600 text-white shadow-md'
                   }`}>
-                    {punchResult.action === 'CHECK_IN' ? '✓ PUNCHED IN [SHIFT START]' : '✓ PUNCHED OUT [SHIFT END]'}
+                    {`✓ PUNCH #${punchResult.punch_number || 1}: ${punchResult.action === 'CHECK_IN' ? 'CHECKED IN' : 'CHECKED OUT'}`}
                   </span>
 
                   <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">
@@ -466,6 +468,14 @@ export const AttendanceTerminalModal = ({ isOpen, onClose }) => {
                     }`}>
                       {punchResult.shift_status}
                     </span>
+                    {punchResult.employment_type && punchResult.employment_type !== 'FULL_TIME' && (
+                      <>
+                        <span className="text-slate-500">•</span>
+                        <span className="font-mono text-[10px] text-cyan-400 font-semibold">
+                          {punchResult.employment_type.replace('_', ' ')}
+                        </span>
+                      </>
+                    )}
                   </div>
 
                   <div className="mt-4 text-xs font-mono text-slate-400">
