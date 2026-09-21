@@ -230,11 +230,11 @@ export const PrecisionIdentityMatrix = () => {
     window.addEventListener('resize', onResize);
 
     // --- 8. Render & Animation Loop ---
-    const clock = new THREE.Clock();
+    const startTime = performance.now();
 
     const animate = () => {
       frameId = requestAnimationFrame(animate);
-      const time = clock.getElapsedTime();
+      const time = (performance.now() - startTime) * 0.001;
 
       // Rotate primary planetary mesh and inner core
       faceMesh.rotation.y = time * 0.08;
