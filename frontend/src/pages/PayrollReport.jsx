@@ -776,6 +776,36 @@ export const PayrollReport = () => {
     const minsInt = Math.round((totalLoggedHours - hoursInt) * 60);
     const formattedHrs = `${String(hoursInt).padStart(2, '0')}:${String(minsInt).padStart(2, '0')}`;
 
+    const dailyBreakdown = attendanceRecords.map(r => {
+      const hrs = extractHours(r);
+      const manualSal = (r.mode === 'Salary' || (r.manual_salary != null && Number(r.manual_salary) > 0)) ? Number(r.manual_salary) : 0;
+      let earned = 0;
+      let rateLabel = '';
+      if (manualSal > 0) {
+        earned = manualSal;
+        rateLabel = 'Manual Day Wage';
+      } else if (empType === 'DAILY_WAGE') {
+        const isHalf = r.status === 'HALF_DAY';
+        earned = isHalf ? effectiveHalfDaySalary : effectiveDailyRate;
+        rateLabel = isHalf ? `₹${effectiveHalfDaySalary} (Half-Day)` : `₹${effectiveDailyRate}`;
+      } else {
+        earned = Math.round(hrs * effectiveHourlyRate);
+        rateLabel = `₹${effectiveHourlyRate}/hr`;
+      }
+      return {
+        id: r.id,
+        date: r.date,
+        shift: r.shift || (r.shift_start ? `${r.shift_start} - ${r.shift_end}` : 'Regular Shift'),
+        check_in_time: r.check_in_time || (r.check_in ? strTime(r.check_in) : '—'),
+        check_out_time: r.check_out_time || (r.check_out ? strTime(r.check_out) : '—'),
+        hours: hrs,
+        status: r.status,
+        mode: r.mode,
+        rate_label: rateLabel,
+        daily_earned: earned
+      };
+    });
+
     return {
       id: `PREVIEW-${selectedEmployee.employee_code || 'EMP'}`,
       employee_name: `${selectedEmployee.first_name || ''} ${selectedEmployee.last_name || ''}`.trim(),
@@ -803,13 +833,15 @@ export const PayrollReport = () => {
       total_deductions: totalDeductions,
       net_pay: netTakeHome,
       net_pay_words: netPayWords,
+      calculation_basis: calculationBasis,
+      daily_breakdown: dailyBreakdown,
       status: 'PREVIEW'
     };
   }, [
     selectedEmployee, selectedCycle, totalLoggedHours, effectiveHourlyRate, effectiveDailyRate, 
     effectiveHalfDaySalary, workingDaysCount, leaveDaysCount, earnedBasePay, totalAllowance, 
     totalIncentive, overtimePay, grossPay, numStatutoryDeductions, numAdvanceDeduction, 
-    manualDeductions, totalDeductions, netTakeHome, netPayWords
+    manualDeductions, totalDeductions, netTakeHome, netPayWords, calculationBasis, attendanceRecords, empType
   ]);
 
   return (
@@ -1964,6 +1996,7 @@ export const PayrollReport = () => {
                           <th className="py-3 px-4">CHECK-IN</th>
                           <th className="py-3 px-4">CHECK-OUT</th>
                           <th className="py-3 px-4">HOURS LOGGED</th>
+                          <th className="py-3 px-4 text-right">DAILY EARNED (₹)</th>
                           <th className="py-3 px-4">ATTENDANCE STATUS</th>
                           <th className="py-3 px-4">VERIFICATION MODE</th>
                         </tr>
@@ -1982,6 +2015,31 @@ export const PayrollReport = () => {
                             </td>
                             <td className="py-3.5 px-4 font-bold text-slate-900">
                               {log.total_hours || 0} hrs
+                            </td>
+                            <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                              {(() => {
+                                const hrs = extractHours(log);
+                                const manualSal = (log.mode === 'Salary' || (log.manual_salary != null && Number(log.manual_salary) > 0)) ? Number(log.manual_salary) : 0;
+                                let earned = 0;
+                                let sub = '';
+                                if (manualSal > 0) {
+                                  earned = manualSal;
+                                  sub = 'Manual Day Wage';
+                                } else if (empType === 'DAILY_WAGE') {
+                                  const isHalf = log.status === 'HALF_DAY';
+                                  earned = isHalf ? effectiveHalfDaySalary : effectiveDailyRate;
+                                  sub = isHalf ? 'Half-Day Rate' : 'Daily Wage';
+                                } else {
+                                  earned = Math.round(hrs * effectiveHourlyRate);
+                                  sub = `@₹${effectiveHourlyRate}/hr`;
+                                }
+                                return (
+                                  <div>
+                                    <span className="font-mono font-bold text-emerald-700">₹{earned.toLocaleString('en-IN')}</span>
+                                    <span className="block text-[10px] text-slate-400 font-mono font-normal">{sub}</span>
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="py-3.5 px-4 whitespace-nowrap">
                               <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono font-bold text-[10px] border ${
@@ -2178,14 +2236,39 @@ export const PayrollReport = () => {
 
             {/* Printable Sheet Body (Strictly matching reference image layout) */}
             <div className="p-4 sm:p-8 bg-white overflow-y-auto flex-1 font-sans text-slate-900 text-xs">
-              {/* Company Header */}
-              <div className="text-center space-y-0.5 mb-3">
+              {/* Dynamic Company Header from Settings */}
+              <div className="text-center space-y-1 mb-3">
+                {organization?.logo_url && (
+                  <div className="flex justify-center mb-1">
+                    <img
+                      src={organization.logo_url}
+                      alt={organization?.name || 'Company Logo'}
+                      className="h-12 max-w-[180px] object-contain"
+                    />
+                  </div>
+                )}
                 <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#002b80] uppercase">
                   {organization?.name || 'ARGUS TECHNOLOGIES'}
                 </h1>
-                <p className="text-[11px] sm:text-xs text-[#3b5998] font-medium">
-                  SF NO.515, Bharathiyar Road, Maniyakaranpalayam, Ganapathy (PO), Coimbatore - 641 006.
+                <p className="text-[11px] sm:text-xs text-[#3b5998] font-medium max-w-xl mx-auto">
+                  {organization?.address || 'Corporate Headquarters & Registered Office'}
                 </p>
+                {((organization?.phone) || (organization?.contact_email || organization?.email) || (organization?.website) || (organization?.gstin)) && (
+                  <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 text-[10px] text-slate-500 font-mono">
+                    {(organization?.phone) && (
+                      <span>Phone: <strong className="text-slate-700">{organization.phone}</strong></span>
+                    )}
+                    {(organization?.contact_email || organization?.email) && (
+                      <span>Email: <strong className="text-slate-700">{organization.contact_email || organization.email}</strong></span>
+                    )}
+                    {organization?.website && (
+                      <span>Web: <strong className="text-slate-700">{organization.website}</strong></span>
+                    )}
+                    {organization?.gstin && (
+                      <span>GSTIN: <strong className="text-slate-700">{organization.gstin}</strong></span>
+                    )}
+                  </div>
+                )}
                 <h2 className="text-sm font-bold text-slate-900 pt-1">
                   Monthly Payslip
                 </h2>
@@ -2365,6 +2448,105 @@ export const PayrollReport = () => {
                 <div>** Net Pay = Total Earnings - Total Deduction</div>
                 <div>"Payslip is auto-generated and valid without the need for a signature."</div>
               </div>
+
+              {/* Daily Punch Hours & Salary Breakdown Annexure */}
+              {((selectedSlip.daily_breakdown && selectedSlip.daily_breakdown.length > 0) || (attendanceRecords && attendanceRecords.length > 0)) && (
+                <div className="border-x border-b border-slate-300">
+                  <div className="bg-[#003870] text-white px-3 py-1.5 flex flex-wrap items-center justify-between gap-1 text-[11px] font-extrabold uppercase tracking-wider">
+                    <span>DAILY PUNCH HOURS &amp; WAGE BREAKDOWN ANNEXURE</span>
+                    <span className="text-[10px] font-mono text-blue-200 normal-case">
+                      Formula: {selectedSlip.calculation_basis || calculationBasis}
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-[11px] border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100/90 text-[10px] font-mono uppercase text-slate-700 font-bold border-b border-slate-300">
+                          <th className="py-2 px-3">Date &amp; Day</th>
+                          <th className="py-2 px-3">Shift Timing</th>
+                          <th className="py-2 px-3 font-mono">Punch-In</th>
+                          <th className="py-2 px-3 font-mono">Punch-Out</th>
+                          <th className="py-2 px-3 text-right font-mono">Logged Hours</th>
+                          <th className="py-2 px-3 text-right">Applied Rate</th>
+                          <th className="py-2 px-3 text-right font-mono font-bold">Daily Earned (₹)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {(selectedSlip.daily_breakdown && selectedSlip.daily_breakdown.length > 0
+                          ? selectedSlip.daily_breakdown
+                          : (attendanceRecords || []).map(r => {
+                              const hrs = extractHours(r);
+                              const manualSal = (r.mode === 'Salary' || (r.manual_salary != null && Number(r.manual_salary) > 0)) ? Number(r.manual_salary) : 0;
+                              let earned = 0;
+                              let rateLabel = '';
+                              if (manualSal > 0) {
+                                earned = manualSal;
+                                rateLabel = 'Manual Day Wage';
+                              } else if (empType === 'DAILY_WAGE') {
+                                const isHalf = r.status === 'HALF_DAY';
+                                earned = isHalf ? effectiveHalfDaySalary : effectiveDailyRate;
+                                rateLabel = isHalf ? `₹${effectiveHalfDaySalary} (Half-Day)` : `₹${effectiveDailyRate}`;
+                              } else {
+                                earned = Math.round(hrs * effectiveHourlyRate);
+                                rateLabel = `₹${effectiveHourlyRate}/hr`;
+                              }
+                              return {
+                                date: r.date,
+                                shift: r.shift || (r.shift_start ? `${r.shift_start} - ${r.shift_end}` : 'Regular Shift'),
+                                check_in_time: r.check_in_time || (r.check_in ? strTime(r.check_in) : '—'),
+                                check_out_time: r.check_out_time || (r.check_out ? strTime(r.check_out) : '—'),
+                                hours: hrs,
+                                rate_label: rateLabel,
+                                daily_earned: earned
+                              };
+                            })
+                        ).map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/50">
+                            <td className="py-1.5 px-3 font-bold text-slate-800 whitespace-nowrap">
+                              {item.date} {item.day_name && <span className="text-[10px] text-slate-400 font-normal">({item.day_name.slice(0, 3)})</span>}
+                            </td>
+                            <td className="py-1.5 px-3 text-slate-600">
+                              {item.shift || 'Regular Shift'}
+                            </td>
+                            <td className="py-1.5 px-3 font-mono font-bold text-blue-600">
+                              {item.check_in_time || '—'}
+                            </td>
+                            <td className="py-1.5 px-3 font-mono font-bold text-slate-700">
+                              {item.check_out_time || '—'}
+                            </td>
+                            <td className="py-1.5 px-3 font-mono font-bold text-slate-900 text-right">
+                              {item.hours != null ? `${Number(item.hours).toFixed(1)}h` : '0.0h'}
+                            </td>
+                            <td className="py-1.5 px-3 text-right text-slate-600 text-[10px] font-mono">
+                              {item.rate_label}
+                            </td>
+                            <td className="py-1.5 px-3 font-mono font-bold text-emerald-700 text-right">
+                              ₹{Number(item.daily_earned || 0).toLocaleString('en-IN')}.00
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-slate-50 border-t-2 border-slate-300 font-bold">
+                        <tr>
+                          <td colSpan={4} className="py-2 px-3 uppercase text-[10px] text-slate-600 font-mono">
+                            Subtotal Punch Hours &amp; Earned Wage:
+                          </td>
+                          <td className="py-2 px-3 font-mono text-right text-slate-900">
+                            {selectedSlip.daily_breakdown && selectedSlip.daily_breakdown.length > 0
+                              ? selectedSlip.daily_breakdown.reduce((acc, i) => acc + (Number(i.hours) || 0), 0).toFixed(1)
+                              : totalLoggedHours.toFixed(1)}h
+                          </td>
+                          <td></td>
+                          <td className="py-2 px-3 font-mono text-right text-emerald-800 font-black">
+                            ₹{Number(selectedSlip.basic_salary != null ? selectedSlip.basic_salary : (selectedSlip.base_salary != null ? selectedSlip.base_salary : earnedBasePay)).toLocaleString('en-IN')}.00
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {/* Dark Slate/Blue Footer Bar */}
               <div className="bg-[#38536e] text-white text-center py-2 text-[11px] font-bold tracking-wide">

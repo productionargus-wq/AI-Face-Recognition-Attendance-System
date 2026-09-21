@@ -320,6 +320,84 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
     mins_int = int(round((total_logged_hours - hours_int) * 60))
     total_hours_formatted = f"{hours_int:02d}:{mins_int:02d}"
 
+    # Build itemized daily punch-to-wage breakdown for the billing cycle
+    daily_breakdown = []
+    sorted_cycle_records = sorted(cycle_records, key=lambda x: (x.get("date") or "", x.get("check_in") or ""))
+    for r in sorted_cycle_records:
+        r_date = r.get("date", "")
+        r_day_name = ""
+        if r_date:
+            try:
+                dt_obj = datetime.strptime(r_date, "%Y-%m-%d")
+                r_day_name = dt_obj.strftime("%A")
+            except Exception:
+                pass
+
+        hrs = extract_record_hours(r)
+        mode = r.get("mode", "Hours")
+        manual_sal = float(r.get("manual_salary") or 0.0) if r.get("manual_salary") is not None else 0.0
+        st = r.get("status", "PRESENT")
+
+        if mode == "Salary" or manual_sal > 0:
+            rate_label = "Manual Day Wage"
+            daily_earned = manual_sal
+        elif emp_type == "DAILY_WAGE":
+            if st == "HALF_DAY":
+                rate_label = f"₹{half_day_salary:.2f} (Half-Day)"
+                daily_earned = half_day_salary
+            else:
+                rate_label = f"₹{daily_wage_rate:.2f} (Full Day)"
+                daily_earned = daily_wage_rate
+        else:
+            rate_label = f"₹{hourly_rate:.2f}/hr"
+            daily_earned = round(hrs * hourly_rate, 2)
+
+        ci_time = r.get("check_in_time")
+        if not ci_time and r.get("check_in"):
+            ci_val = str(r.get("check_in"))
+            if "T" in ci_val:
+                try:
+                    ci_time = datetime.fromisoformat(ci_val.replace("Z", "+00:00")).strftime("%I:%M %p")
+                except Exception:
+                    ci_time = ci_val
+            else:
+                ci_time = ci_val
+
+        co_time = r.get("check_out_time")
+        if not co_time and r.get("check_out"):
+            co_val = str(r.get("check_out"))
+            if "T" in co_val:
+                try:
+                    co_time = datetime.fromisoformat(co_val.replace("Z", "+00:00")).strftime("%I:%M %p")
+                except Exception:
+                    co_time = co_val
+            else:
+                co_time = co_val
+
+        shift_label = r.get("shift")
+        if not shift_label:
+            s_start = r.get("shift_start")
+            s_end = r.get("shift_end")
+            if s_start and s_end:
+                shift_label = f"{s_start} - {s_end}"
+            else:
+                shift_label = "Regular Shift"
+
+        daily_breakdown.append({
+            "id": r.get("id"),
+            "date": r_date,
+            "day_name": r_day_name,
+            "shift": shift_label,
+            "check_in_time": ci_time or "—",
+            "check_out_time": co_time or "—",
+            "hours": hrs,
+            "status": st,
+            "mode": mode,
+            "rate_label": rate_label,
+            "daily_earned": round(daily_earned, 2),
+            "verification_mode": r.get("verification_mode", "FACE_KIOSK")
+        })
+
     return {
         "employee_id": emp_id,
         "employee_name": full_name,
@@ -364,6 +442,7 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
         "net_pay": net_pay,
         "net_pay_words": net_pay_words,
         "calculation_basis": calculation_basis,
+        "daily_breakdown": daily_breakdown,
         "payout_status": payout_status,
         "payout_id": existing_payout.get("id") if existing_payout else None,
         "disbursed_at": existing_payout.get("disbursed_at") if existing_payout else None,
@@ -523,6 +602,7 @@ async def batch_disburse_payroll(
             "days_present": comp["days_present"],
             "half_days": comp["half_days"],
             "leave_days": comp["leave_days"],
+            "daily_breakdown": comp.get("daily_breakdown", []),
             "status": "PAID",
             "disbursed_by": admin_name,
             "disbursed_at": datetime.utcnow().isoformat(),

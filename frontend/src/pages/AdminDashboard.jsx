@@ -25,7 +25,8 @@ import {
   X,
   Check,
   RefreshCw,
-  ArrowUpRight
+  ArrowUpRight,
+  MapPin
 } from 'lucide-react';
 
 export const AdminDashboard = () => {
@@ -516,6 +517,7 @@ export const AdminDashboard = () => {
                 <th className="p-3.5">PUNCH-IN</th>
                 <th className="p-3.5">PUNCH-OUT</th>
                 <th className="p-3.5">DEPT</th>
+                <th className="p-3.5">ENTRY DISTANCE</th>
                 <th className="p-3.5">SHIFT STATUS</th>
                 <th className="p-3.5">STATUS</th>
               </tr>
@@ -523,7 +525,7 @@ export const AdminDashboard = () => {
             <tbody className="divide-y divide-slate-100 font-medium">
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-10 text-center text-slate-400">
+                  <td colSpan={7} className="p-10 text-center text-slate-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Clock className="w-8 h-8 text-slate-300 stroke-1" />
                       <p className="text-xs font-bold text-slate-600">
@@ -571,6 +573,24 @@ export const AdminDashboard = () => {
                   {/* Dept */}
                   <td className="p-3.5 text-xs text-slate-700">
                     {rec.department}
+                  </td>
+
+                  {/* Entry Distance */}
+                  <td className="p-3.5">
+                    <div className="flex items-center gap-1.5 whitespace-nowrap">
+                      <MapPin className={`w-3.5 h-3.5 shrink-0 ${
+                        (rec.distance_meters != null && rec.distance_meters > 200) || (rec.entry_distance && rec.entry_distance.includes('Off-Site'))
+                          ? 'text-amber-500'
+                          : 'text-emerald-500'
+                      }`} />
+                      <span className={`text-[10px] font-mono font-bold ${
+                        (rec.distance_meters != null && rec.distance_meters > 200) || (rec.entry_distance && rec.entry_distance.includes('Off-Site'))
+                          ? 'text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200'
+                          : 'text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200'
+                      }`}>
+                        {rec.entry_distance || (rec.distance_meters != null ? `${Math.round(rec.distance_meters)}m` : '0m (On-Site)')}
+                      </span>
+                    </div>
                   </td>
 
                   {/* Shift Status: strictly 'LATE' or 'ON-TIME' */}

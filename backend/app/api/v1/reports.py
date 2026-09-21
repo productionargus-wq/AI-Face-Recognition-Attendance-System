@@ -881,6 +881,19 @@ async def get_today_attendance(
 
     org_work_hours = org.get("work_hours") if org else None
 
+    # Geofence configuration for distance calculation
+    geofence_cfg = (org.get("geofence") if org else None) or {
+        "is_enabled": True,
+        "latitude": 13.0827,
+        "longitude": 80.2707,
+        "radius_meters": 200,
+        "office_name": org.get("name", "Headquarters") if org else "Headquarters"
+    }
+    base_lat = geofence_cfg.get("latitude", 13.0827)
+    base_lon = geofence_cfg.get("longitude", 80.2707)
+    radius = geofence_cfg.get("radius_meters", 200)
+    office_name = geofence_cfg.get("office_name") or (org.get("name") if org else "Headquarters")
+
     # Dynamically resolve employee details and reconcile status without dropping any record
     records = []
     for r in raw_records:
@@ -898,6 +911,39 @@ async def get_today_attendance(
         r["status"] = reconciled["status"]
         r["shift_status"] = reconciled["shift_status"]
         r["break_status"] = reconciled["break_status"]
+
+        # Calculate entry distance from designated location for all employees
+        dist = None
+        if r.get("distance_meters") is not None:
+            try:
+                dist = round(float(r["distance_meters"]), 1)
+            except Exception:
+                dist = None
+        elif r.get("latitude") is not None and r.get("longitude") is not None and base_lat is not None and base_lon is not None:
+            try:
+                dist = calculate_haversine_distance(float(r["latitude"]), float(r["longitude"]), float(base_lat), float(base_lon))
+                r["distance_meters"] = dist
+            except Exception:
+                dist = None
+
+        if r.get("verification_mode") == "MANUAL_OVERRIDE":
+            r["entry_distance"] = "0m (HQ Authorized)"
+            r["distance_meters"] = 0.0
+        elif dist is not None:
+            if dist <= radius:
+                r["entry_distance"] = f"{int(dist)}m (Within {office_name})"
+            else:
+                r["entry_distance"] = f"{int(dist)}m (Off-Site)"
+        elif r.get("site_visit_verified") or r.get("client_site_name"):
+            r["entry_distance"] = f"0m ({r.get('client_site_name', 'Client Site')})"
+            r["distance_meters"] = 0.0
+        elif r.get("kiosk_id") or r.get("verification_mode") == "FACE_KIOSK":
+            r["entry_distance"] = f"0m ({office_name} Kiosk)"
+            r["distance_meters"] = 0.0
+        else:
+            r["entry_distance"] = f"0m (Within {office_name})"
+            r["distance_meters"] = 0.0
+
         records.append(r)
 
     present_count = len([r for r in records if r.get("status") in [AttendanceStatus.PRESENT, AttendanceStatus.LATE]])

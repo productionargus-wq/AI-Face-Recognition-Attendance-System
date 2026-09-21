@@ -588,3 +588,81 @@ async def test_manual_override_dynamic_shift_timings():
     updated_emp = await store.find_one("employees", {"id": emp_id})
     assert updated_emp["shift_end"] == "18:00"
     assert updated_emp["assigned_shift"] == "Shift (09:00 AM – 06:00 PM • 9.0h)"
+
+
+@pytest.mark.anyio
+async def test_entry_distance_and_daily_breakdown():
+    from app.db.store import store
+    from app.api.v1.reports import get_today_attendance
+    from app.api.v1.payroll import compute_single_employee_payroll
+
+    test_org_id = "org-dist-test"
+    emp_id = "emp-dist-1"
+
+    # Setup org with geofence
+    await store.delete_many("organizations", {"id": test_org_id})
+    await store.delete_many("employees", {"organization_id": test_org_id})
+    await store.delete_many("attendance", {"organization_id": test_org_id})
+
+    await store.insert_one("organizations", {
+        "id": test_org_id,
+        "name": "Argus Systems HQ",
+        "geofence": {
+            "is_enabled": True,
+            "latitude": 13.0827,
+            "longitude": 80.2707,
+            "radius_meters": 150,
+            "office_name": "Argus HQ"
+        }
+    })
+
+    emp = {
+        "id": emp_id,
+        "organization_id": test_org_id,
+        "first_name": "Rahul",
+        "last_name": "Sharma",
+        "employee_code": "RS100",
+        "department": "Engineering",
+        "hourly_rate": 300.0,
+        "is_active": True,
+        "employment_type": "FULL_TIME"
+    }
+    await store.insert_one("employees", emp)
+
+    # Insert attendance record with GPS coordinates (approx 50m away from 13.0827, 80.2707)
+    await store.insert_one("attendance", {
+        "id": "ATT-DIST-1",
+        "organization_id": test_org_id,
+        "employee_id": emp_id,
+        "employee_code": "RS100",
+        "employee_name": "Rahul Sharma",
+        "department": "Engineering",
+        "date": "2026-09-21",
+        "check_in": "2026-09-21T09:00:00",
+        "check_in_time": "09:00 AM",
+        "check_out": "2026-09-21T18:00:00",
+        "check_out_time": "06:00 PM",
+        "total_hours": 9.0,
+        "status": "PRESENT",
+        "latitude": 13.0830,
+        "longitude": 80.2710
+    })
+
+    # Test get_today_attendance includes entry_distance
+    auth_ctx = {"org_id": test_org_id, "role": "org_admin"}
+    today_res = await get_today_attendance(date="2026-09-21", auth_ctx=auth_ctx)
+    assert len(today_res["records"]) == 1
+    rec = today_res["records"][0]
+    assert "entry_distance" in rec
+    assert "Within Argus HQ" in rec["entry_distance"] or "m" in rec["entry_distance"]
+    assert rec["distance_meters"] is not None
+
+    # Test compute_single_employee_payroll includes daily_breakdown
+    payroll_res = await compute_single_employee_payroll(test_org_id, emp, "2026-09")
+    assert "daily_breakdown" in payroll_res
+    assert len(payroll_res["daily_breakdown"]) == 1
+    day_entry = payroll_res["daily_breakdown"][0]
+    assert day_entry["date"] == "2026-09-21"
+    assert day_entry["hours"] == 9.0
+    assert day_entry["daily_earned"] == 2700.0  # 9.0h * 300/hr
+    assert "300" in day_entry["rate_label"]
