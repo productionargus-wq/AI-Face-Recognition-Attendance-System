@@ -93,27 +93,61 @@ function numberToIndianWords(num) {
   return `${result} Only`;
 }
 
-// Generate cycle dropdown options for last 12 months
-function getCycleOptions() {
-  const options = [];
-  const now = new Date();
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const val = `${year}-${month}`;
-    const label = d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-    options.push({ value: val, label });
+const MONTHS = [
+  { value: '01', label: 'January' },
+  { value: '02', label: 'February' },
+  { value: '03', label: 'March' },
+  { value: '04', label: 'April' },
+  { value: '05', label: 'May' },
+  { value: '06', label: 'June' },
+  { value: '07', label: 'July' },
+  { value: '08', label: 'August' },
+  { value: '09', label: 'September' },
+  { value: '10', label: 'October' },
+  { value: '11', label: 'November' },
+  { value: '12', label: 'December' }
+];
+
+const YEARS = (() => {
+  const currentYear = new Date().getFullYear();
+  const list = [];
+  for (let y = currentYear - 6; y <= currentYear + 6; y++) {
+    list.push(y);
   }
-  return options;
-}
+  return list;
+})();
+
+const formatCycleDisplay = (cycle) => {
+  if (!cycle) return '';
+  try {
+    const parts = cycle.split('-');
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (!y || !m) return cycle;
+    const d = new Date(y, m - 1, 1);
+    return d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  } catch {
+    return cycle;
+  }
+};
 
 export const PayrollReport = () => {
   const { user, organization } = useAuth();
   const isEmployee = user?.role === 'employee' || user?.role === 'staff';
 
-  const cycleOptions = useMemo(() => getCycleOptions(), []);
-  const [selectedCycle, setSelectedCycle] = useState(cycleOptions[0]?.value || '2026-09');
+  const [selectedCycle, setSelectedCycle] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+
+  const [selectedYear, selectedMonth] = useMemo(() => {
+    const parts = (selectedCycle || '').split('-');
+    const now = new Date();
+    return [
+      parts[0] || String(now.getFullYear()),
+      parts[1] || String(now.getMonth() + 1).padStart(2, '0')
+    ];
+  }, [selectedCycle]);
 
   // View Mode: 'individual' (Employee Ledger) or 'register' (Master Register)
   const [activeTab, setActiveTab] = useState('individual');
@@ -604,8 +638,7 @@ export const PayrollReport = () => {
     setSaveSuccess('');
     setSaveError('');
     try {
-      const selectedOption = cycleOptions.find(o => o.value === selectedCycle);
-      const cycleDisplay = selectedOption?.label || selectedCycle;
+      const cycleDisplay = formatCycleDisplay(selectedCycle);
 
       const payload = {
         employee_id: selectedEmployee.id,
@@ -781,43 +814,43 @@ export const PayrollReport = () => {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
-      {/* Top Header with Billing Cycle Selector */}
+      {/* Top Header with Duration (Month-Year) Selector */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
             {isEmployee ? 'My Salary & Payslip Details' : 'Workforce Payroll & Attendance Engine'}
           </h1>
-          <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Automated biometric reconciliation, multi-model wage calculations, and bank advice
-          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Billing Cycle Selector Dropdown */}
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shadow-2xs">
-            <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-            <span className="text-slate-500 hidden sm:inline">Cycle:</span>
+        <div className="flex items-center gap-3">
+          {/* Duration Selector (Month-Year) */}
+          <div className="flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shadow-2xs">
+            <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
+            <span className="text-slate-500 font-bold">Duration:</span>
             <select
-              value={selectedCycle}
-              onChange={(e) => setSelectedCycle(e.target.value)}
+              value={selectedMonth}
+              onChange={(e) => setSelectedCycle(`${selectedYear}-${e.target.value}`)}
               className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer pr-1"
+              aria-label="Select Duration Month"
             >
-              {cycleOptions.map(opt => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label} ({opt.value})
+              {MONTHS.map(m => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
                 </option>
               ))}
             </select>
-          </div>
-          
-          <div className="hidden md:flex items-center gap-2 pl-3 border-l border-slate-200">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xs">
-              {(user?.name || user?.email || 'AD').slice(0, 2).toUpperCase()}
-            </div>
-            <div className="text-left">
-              <div className="text-xs font-bold text-slate-800">{user?.name || user?.email?.split('@')[0] || (isEmployee ? 'Employee' : 'Administrator')}</div>
-              <div className="text-[10px] text-slate-400 font-mono">{isEmployee ? 'Verified Staff Member' : 'Organisation Administrator'}</div>
-            </div>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedCycle(`${e.target.value}-${selectedMonth}`)}
+              className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer pr-1 border-l border-slate-200 pl-2"
+              aria-label="Select Duration Year"
+            >
+              {YEARS.map(y => (
+                <option key={y} value={String(y)}>
+                  {y}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
