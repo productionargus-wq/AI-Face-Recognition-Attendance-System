@@ -69,8 +69,9 @@ async def get_my_employee_profile(
         raise HTTPException(status_code=404, detail="Employee profile not found.")
 
     c = dict(emp)
-    c["has_biometric"] = len(c.get("face_embeddings", [])) > 0
-    c["samples_count"] = len(c.get("face_embeddings", []))
+    face_embs = c.get("face_embeddings") or []
+    c["has_biometric"] = len(face_embs) > 0
+    c["samples_count"] = len(face_embs)
     c["face_embeddings"] = None
     return c
 
@@ -100,8 +101,9 @@ async def list_employees(
                 emp = await store.find_one("employees", {"id": user["employee_id"], "organization_id": org_id})
         if emp:
             c = dict(emp)
-            c["has_biometric"] = len(c.get("face_embeddings", [])) > 0
-            c["samples_count"] = len(c.get("face_embeddings", []))
+            face_embs = c.get("face_embeddings") or []
+            c["has_biometric"] = len(face_embs) > 0
+            c["samples_count"] = len(face_embs)
             c["face_embeddings"] = None
             return [c]
         return []
@@ -127,8 +129,9 @@ async def list_employees(
     cleaned = []
     for emp in employees:
         c = dict(emp)
-        c["has_biometric"] = len(c.get("face_embeddings", [])) > 0
-        c["samples_count"] = len(c.get("face_embeddings", []))
+        face_embs = c.get("face_embeddings") or []
+        c["has_biometric"] = len(face_embs) > 0
+        c["samples_count"] = len(face_embs)
         c["face_embeddings"] = None  # Don't send raw vectors in list
         cleaned.append(c)
     return cleaned
@@ -603,7 +606,8 @@ async def update_employee(
 
     updated_emp = await store.find_one("employees", {"id": employee_id, "organization_id": org_id})
     if updated_emp:
-        updated_emp["has_biometric"] = len(updated_emp.get("face_embeddings", [])) > 0
+        face_embs = updated_emp.get("face_embeddings") or []
+        updated_emp["has_biometric"] = len(face_embs) > 0
         updated_emp["face_embeddings"] = None
     return updated_emp
 

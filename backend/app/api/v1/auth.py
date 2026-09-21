@@ -489,7 +489,7 @@ async def face_login(payload: FaceLoginRequest):
 
     employees = await store.find_many("employees", query)
     # Filter only those who actually have face embeddings
-    enrolled_employees = [e for e in employees if e.get("face_embeddings") and len(e.get("face_embeddings", [])) > 0]
+    enrolled_employees = [e for e in employees if len(e.get("face_embeddings") or []) > 0]
 
     if not enrolled_employees:
         raise HTTPException(
