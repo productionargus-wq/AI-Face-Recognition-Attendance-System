@@ -469,3 +469,71 @@ def test_employee_create_optional_fields():
     # 3. Custom designation
     emp3 = EmployeeCreate(first_name="Kavitha", designation="Quality Lead")
     assert emp3.designation == "Quality Lead"
+
+def test_manual_override_mode_hours_and_salary_payroll_integration():
+    """Verify ManualOverridePayload supports 'Hours' and 'Salary' modes and integrates into payroll."""
+    from app.api.v1.operations import ManualOverridePayload
+    from app.api.v1.payroll import extract_record_hours
+
+    # 1. Test Mode = "Hours"
+    p_hours = ManualOverridePayload(
+        employee_id="emp-01",
+        log_date="2026-09-20",
+        shift="General Shift (09:00 AM – 05:30 PM • 8.5h)",
+        mode="Hours",
+        hours=7.5,
+        status="Permission",
+        reason="Medical appointment"
+    )
+    assert p_hours.mode == "Hours"
+    assert p_hours.hours == 7.5
+    assert p_hours.manual_salary is None
+
+    # 2. Test Mode = "Salary"
+    p_salary = ManualOverridePayload(
+        employee_id="emp-02",
+        log_date="2026-09-21",
+        shift="General Shift (09:00 AM – 05:30 PM • 8.5h)",
+        mode="Salary",
+        manual_salary=850.0,
+        hours=8.0,
+        status="Permission",
+        reason="Special client project bonus day"
+    )
+    assert p_salary.mode == "Salary"
+    assert p_salary.manual_salary == 850.0
+
+    # 3. Simulate Attendance Records for an Employee in a Cycle
+    # - 2 days normal punches: 8.0h and 7.0h (15.0h total)
+    # - 1 day manual salary override: ₹900.00
+    cycle_records = [
+        {"date": "2026-09-01", "status": "PRESENT", "total_hours": 8.0, "mode": "Hours"},
+        {"date": "2026-09-02", "status": "PRESENT", "total_hours": 7.0, "mode": "Hours"},
+        {"date": "2026-09-03", "status": "PRESENT", "total_hours": 8.0, "mode": "Salary", "manual_salary": 900.0}
+    ]
+
+    manual_salary_records = [
+        r for r in cycle_records
+        if r.get("mode") == "Salary" or (r.get("manual_salary") is not None and float(r.get("manual_salary") or 0) > 0)
+    ]
+    hourly_records = [r for r in cycle_records if r not in manual_salary_records]
+
+    assert len(manual_salary_records) == 1
+    assert len(hourly_records) == 2
+
+    hours_from_punches = round(sum(extract_record_hours(r) for r in hourly_records), 2)
+    direct_manual_salaries = round(sum(float(r.get("manual_salary") or 0.0) for r in manual_salary_records), 2)
+
+    assert hours_from_punches == 15.0
+    assert direct_manual_salaries == 900.0
+
+    # Part-Time hourly calculation: (15.0 hrs * ₹200/hr) + ₹900 manual salary = ₹3,900
+    hourly_rate = 200.0
+    pt_earned_base = round((hours_from_punches * hourly_rate) + direct_manual_salaries, 2)
+    assert pt_earned_base == 3900.0
+
+    # Daily Wage calculation: (2 standard days * ₹600/day) + ₹900 manual salary = ₹2,100
+    daily_rate = 600.0
+    dw_standard_days = len([r for r in hourly_records if r.get("status") in ("PRESENT", "LATE")])
+    dw_earned_base = round((dw_standard_days * daily_rate) + direct_manual_salaries, 2)
+    assert dw_earned_base == 2100.0

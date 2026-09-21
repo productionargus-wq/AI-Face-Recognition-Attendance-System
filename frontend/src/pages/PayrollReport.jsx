@@ -502,7 +502,16 @@ export const PayrollReport = () => {
   const presentDays = attendanceRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE').length;
   const halfDaysCount = attendanceRecords.filter(r => r.status === 'HALF_DAY').length;
   const effectivePresentDays = presentDays + (0.5 * halfDaysCount);
+
+  // Manual day salary records vs hourly records
+  const manualSalaryRecords = attendanceRecords.filter(r => r.mode === 'Salary' || (r.manual_salary != null && Number(r.manual_salary) > 0));
+  const hourlyRecords = attendanceRecords.filter(r => !manualSalaryRecords.includes(r));
+  const standardPresentDays = hourlyRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE').length;
+  const standardHalfDaysCount = hourlyRecords.filter(r => r.status === 'HALF_DAY').length;
+  const hourlyLoggedHours = Math.round(hourlyRecords.reduce((acc, curr) => acc + extractHours(curr), 0) * 10) / 10;
+  const directManualSalaries = Math.round(manualSalaryRecords.reduce((acc, curr) => acc + (Number(curr.manual_salary) || 0), 0));
   const totalLoggedHours = Math.round(attendanceRecords.reduce((acc, curr) => acc + extractHours(curr), 0) * 10) / 10;
+
   const paidLeavesCount = attendanceRecords.filter(r => r.status === 'LEAVE').length;
   const workingDaysCount = presentDays + halfDaysCount;
   const leaveDaysCount = Math.max(0, 26 - workingDaysCount);
@@ -534,34 +543,42 @@ export const PayrollReport = () => {
 
   if (empType === 'PART_TIME') {
     effectiveHourlyRate = numHourlyRate || (numBaseSalary > 0 ? Math.round(numBaseSalary / 160) : 250);
-    earnedBasePay = Math.round(totalLoggedHours * effectiveHourlyRate);
-    calculationBasis = `${totalLoggedHours.toFixed(1)} hrs logged × ₹${effectiveHourlyRate}/hr (Hourly Part-Time Basis)`;
+    earnedBasePay = Math.round(hourlyLoggedHours * effectiveHourlyRate) + directManualSalaries;
+    calculationBasis = directManualSalaries > 0 
+      ? `${hourlyLoggedHours.toFixed(1)} hrs logged × ₹${effectiveHourlyRate}/hr + ₹${directManualSalaries.toLocaleString('en-IN')} manual salary`
+      : `${totalLoggedHours.toFixed(1)} hrs logged × ₹${effectiveHourlyRate}/hr (Hourly Part-Time Basis)`;
   } else if (empType === 'DAILY_WAGE') {
     effectiveDailyRate = selectedEmployee?.daily_wage_rate || (numBaseSalary > 0 ? Math.round(numBaseSalary / 26) : 650);
     effectiveHalfDaySalary = selectedEmployee?.half_day_salary || Math.round(effectiveDailyRate / 2);
-    earnedBasePay = Math.round((presentDays * effectiveDailyRate) + (halfDaysCount * effectiveHalfDaySalary));
-    calculationBasis = halfDaysCount > 0
-      ? `${presentDays} Full Days (@₹${effectiveDailyRate}) + ${halfDaysCount} Half-Days (@₹${effectiveHalfDaySalary})`
-      : `${presentDays} Days Present × ₹${effectiveDailyRate}/day (Daily Wage Basis)`;
+    earnedBasePay = Math.round((standardPresentDays * effectiveDailyRate) + (standardHalfDaysCount * effectiveHalfDaySalary)) + directManualSalaries;
+    calculationBasis = standardHalfDaysCount > 0
+      ? `${standardPresentDays} Full Days (@₹${effectiveDailyRate}) + ${standardHalfDaysCount} Half-Days (@₹${effectiveHalfDaySalary})` + (directManualSalaries > 0 ? ` + ₹${directManualSalaries.toLocaleString('en-IN')} manual salary` : '')
+      : `${standardPresentDays} Days Present × ₹${effectiveDailyRate}/day (Daily Wage Basis)` + (directManualSalaries > 0 ? ` + ₹${directManualSalaries.toLocaleString('en-IN')} manual salary` : '');
   } else if (empType === 'FIELD_WORKER') {
-    if (totalLoggedHours > 0) {
-      earnedBasePay = Math.round(totalLoggedHours * effectiveHourlyRate);
-      calculationBasis = `${totalLoggedHours.toFixed(1)} hrs logged × ₹${effectiveHourlyRate}/hr (Field Worker Punch Basis)`;
+    if (totalLoggedHours > 0 || directManualSalaries > 0) {
+      earnedBasePay = Math.round(hourlyLoggedHours * effectiveHourlyRate) + directManualSalaries;
+      calculationBasis = `${hourlyLoggedHours.toFixed(1)} hrs logged × ₹${effectiveHourlyRate}/hr` + (directManualSalaries > 0 ? ` + ₹${directManualSalaries.toLocaleString('en-IN')} manual salary` : '');
     } else {
       earnedBasePay = numBaseSalary;
       calculationBasis = `Field Worker Base Pay: ₹${numBaseSalary.toLocaleString('en-IN')} (Includes designated client project site visits)`;
     }
   } else {
     // Standard Office / FULL_TIME:
-    // Automatic calculation from punch hours * hourly rate
-    const autoBase = Math.round(totalLoggedHours * effectiveHourlyRate);
-    if (totalLoggedHours > 0) {
-      if (numBaseSalary === autoBase || Math.abs(numBaseSalary - autoBase) < 1) {
-        earnedBasePay = autoBase;
-        calculationBasis = `${totalLoggedHours.toFixed(1)} hrs logged × ₹${effectiveHourlyRate}/hr = ₹${earnedBasePay.toLocaleString('en-IN')}.00 (Automatic Punch Basis)`;
+    const autoBaseFromHours = Math.round(hourlyLoggedHours * effectiveHourlyRate);
+    const totalAutoBase = autoBaseFromHours + directManualSalaries;
+    if (hourlyLoggedHours > 0 || directManualSalaries > 0) {
+      if (numBaseSalary === totalAutoBase || Math.abs(numBaseSalary - totalAutoBase) < 1) {
+        earnedBasePay = totalAutoBase;
+        if (directManualSalaries > 0 && hourlyLoggedHours > 0) {
+          calculationBasis = `${hourlyLoggedHours.toFixed(1)} hrs logged (@₹${effectiveHourlyRate}/hr = ₹${autoBaseFromHours.toLocaleString('en-IN')}) + ₹${directManualSalaries.toLocaleString('en-IN')} manual day salary = ₹${earnedBasePay.toLocaleString('en-IN')}.00`;
+        } else if (directManualSalaries > 0) {
+          calculationBasis = `₹${directManualSalaries.toLocaleString('en-IN')}.00 (from ${manualSalaryRecords.length} manual day salary override${manualSalaryRecords.length > 1 ? 's' : ''})`;
+        } else {
+          calculationBasis = `${hourlyLoggedHours.toFixed(1)} hrs logged × ₹${effectiveHourlyRate}/hr = ₹${earnedBasePay.toLocaleString('en-IN')}.00 (Automatic Punch Basis)`;
+        }
       } else {
         earnedBasePay = numBaseSalary;
-        calculationBasis = `Manual Base: ₹${numBaseSalary.toLocaleString('en-IN')}.00 (Auto: ${totalLoggedHours.toFixed(1)}h × ₹${effectiveHourlyRate} = ₹${autoBase.toLocaleString('en-IN')})`;
+        calculationBasis = `Manual Base: ₹${numBaseSalary.toLocaleString('en-IN')}.00 (Auto: ${hourlyLoggedHours.toFixed(1)}h × ₹${effectiveHourlyRate} + ₹${directManualSalaries} = ₹${totalAutoBase.toLocaleString('en-IN')})`;
       }
     } else {
       earnedBasePay = numBaseSalary;
@@ -838,6 +855,53 @@ export const PayrollReport = () => {
               </span>
             )}
           </button>
+        </div>
+      )}
+
+      {/* Employee Search & Select Control Bar - Below Toggle */}
+      {!isEmployee && activeTab === 'individual' && employees.length > 0 && (
+        <div className="bg-white p-3 sm:p-3.5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center gap-3 animate-in fade-in duration-150">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search employee by name, code, or department..."
+              className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder:text-slate-400"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          <div className="w-full md:w-80">
+            <select
+              value={selectedEmployeeId}
+              onChange={(e) => handleEmployeeSelect(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
+            >
+              {filteredEmployees.length > 0 ? (
+                filteredEmployees.map(emp => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.first_name} {emp.last_name} ({emp.employee_code || 'EMP'}) — {emp.department || 'General'}
+                  </option>
+                ))
+              ) : (
+                <option value="" disabled>No matching employees found</option>
+              )}
+            </select>
+          </div>
+
+          <div className="text-[11px] text-slate-400 font-mono shrink-0 pr-1">
+            {filteredEmployees.length} of {employees.length} employees
+          </div>
         </div>
       )}
 
@@ -1163,53 +1227,6 @@ export const PayrollReport = () => {
                     </button>
                   </div>
                 </div>
-
-                {/* Employee Search & Select Control Bar - Admin Only */}
-                {!isEmployee && (
-                  <div className="pt-3 border-t border-slate-100 flex flex-col md:flex-row items-stretch md:items-center gap-3">
-                    <div className="relative flex-1">
-                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search employee by name, code, or department..."
-                        className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder:text-slate-400"
-                      />
-                      {searchQuery && (
-                        <button
-                          type="button"
-                          onClick={() => setSearchQuery('')}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
-                        >
-                          ×
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="w-full md:w-80">
-                      <select
-                        value={selectedEmployeeId}
-                        onChange={(e) => handleEmployeeSelect(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
-                      >
-                        {filteredEmployees.length > 0 ? (
-                          filteredEmployees.map(emp => (
-                            <option key={emp.id} value={emp.id}>
-                              {emp.first_name} {emp.last_name} ({emp.employee_code || 'EMP'}) — {emp.department || 'General'}
-                            </option>
-                          ))
-                        ) : (
-                          <option value="" disabled>No matching employees found</option>
-                        )}
-                      </select>
-                    </div>
-
-                    <div className="text-[11px] text-slate-400 font-mono shrink-0">
-                      {filteredEmployees.length} of {employees.length} employees
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* 5 KPI Metric Cards */}

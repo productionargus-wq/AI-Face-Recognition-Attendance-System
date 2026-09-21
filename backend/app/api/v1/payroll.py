@@ -162,7 +162,19 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
     half_days = len([r for r in cycle_records if r.get("status") == "HALF_DAY"])
     paid_leaves = len([r for r in cycle_records if r.get("status") == "LEAVE"])
     effective_present_days = present_days + (0.5 * half_days)
-    total_logged_hours = round(sum(extract_record_hours(r) for r in cycle_records), 2)
+
+    manual_salary_records = [
+        r for r in cycle_records 
+        if r.get("mode") == "Salary" or (r.get("manual_salary") is not None and float(r.get("manual_salary") or 0) > 0)
+    ]
+    hourly_records = [
+        r for r in cycle_records 
+        if r not in manual_salary_records
+    ]
+
+    hours_from_punches = round(sum(extract_record_hours(r) for r in hourly_records), 2)
+    direct_manual_salaries = round(sum(float(r.get("manual_salary") or 0.0) for r in manual_salary_records), 2)
+    total_logged_hours = round(hours_from_punches + sum(extract_record_hours(r) for r in manual_salary_records), 2)
     
     # Working Days & Leave Days
     working_days = present_days + half_days
@@ -184,29 +196,45 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
     statutory_deductions = float(emp.get("statutory_deductions") if emp.get("statutory_deductions") is not None else 3000.0)
 
     # 4. Multi-Model Calculation Logic
-    # Automatic concept: calculate earned salary from actual punch timings: total_logged_hours * hourly_rate
-    earned_base_pay = round(total_logged_hours * hourly_rate, 2)
-    calculation_basis = f"{total_logged_hours:.1f} hrs logged × ₹{hourly_rate:.2f}/hr (Punch-Hours Basis)"
+    # Automatic concept: calculate earned salary from actual punch timings: hours_from_punches * hourly_rate + direct_manual_salaries
+    earned_base_pay = round((hours_from_punches * hourly_rate) + direct_manual_salaries, 2)
+    if direct_manual_salaries > 0 and hours_from_punches > 0:
+        calculation_basis = f"{hours_from_punches:.1f} hrs logged (@₹{hourly_rate:.2f}/hr) + ₹{direct_manual_salaries:,.2f} manual day salary"
+    elif direct_manual_salaries > 0:
+        calculation_basis = f"₹{direct_manual_salaries:,.2f} (from {len(manual_salary_records)} manual day salary override{'s' if len(manual_salary_records) > 1 else ''})"
+    else:
+        calculation_basis = f"{total_logged_hours:.1f} hrs logged × ₹{hourly_rate:.2f}/hr (Punch-Hours Basis)"
     lop_days = 0.0
 
     if emp_type == "DAILY_WAGE":
-        earned_base_pay = round((present_days * daily_wage_rate) + (half_days * half_day_salary), 2)
-        calculation_basis = f"{present_days} Full Days (@₹{daily_wage_rate}) + {half_days} Half-Days (@₹{half_day_salary})"
+        standard_present_days = len([r for r in hourly_records if r.get("status") in ("PRESENT", "LATE")])
+        standard_half_days = len([r for r in hourly_records if r.get("status") == "HALF_DAY"])
+        wage_from_days = round((standard_present_days * daily_wage_rate) + (standard_half_days * half_day_salary), 2)
+        earned_base_pay = round(wage_from_days + direct_manual_salaries, 2)
+        calculation_basis = f"{standard_present_days} Full Days (@₹{daily_wage_rate}) + {standard_half_days} Half-Days (@₹{half_day_salary})" + (f" + ₹{direct_manual_salaries:,.2f} manual salary" if direct_manual_salaries > 0 else "")
     elif emp_type == "PART_TIME":
-        earned_base_pay = round(total_logged_hours * hourly_rate, 2)
-        calculation_basis = f"{total_logged_hours:.1f} hrs logged × ₹{hourly_rate:.2f}/hr (Hourly Part-Time Basis)"
+        earned_base_pay = round((hours_from_punches * hourly_rate) + direct_manual_salaries, 2)
+        if direct_manual_salaries > 0:
+            calculation_basis = f"{hours_from_punches:.1f} hrs logged × ₹{hourly_rate:.2f}/hr + ₹{direct_manual_salaries:,.2f} manual salary"
+        else:
+            calculation_basis = f"{total_logged_hours:.1f} hrs logged × ₹{hourly_rate:.2f}/hr (Hourly Part-Time Basis)"
     elif emp_type == "FIELD_WORKER":
-        if total_logged_hours > 0:
-            earned_base_pay = round(total_logged_hours * hourly_rate, 2)
-            calculation_basis = f"{total_logged_hours:.1f} hrs logged × ₹{hourly_rate:.2f}/hr (Field Worker Punch Basis)"
+        if total_logged_hours > 0 or direct_manual_salaries > 0:
+            earned_base_pay = round((hours_from_punches * hourly_rate) + direct_manual_salaries, 2)
+            calculation_basis = f"{hours_from_punches:.1f} hrs logged × ₹{hourly_rate:.2f}/hr" + (f" + ₹{direct_manual_salaries:,.2f} manual salary" if direct_manual_salaries > 0 else "")
         else:
             earned_base_pay = base_salary
             calculation_basis = f"Field Worker Base Pay: ₹{base_salary:,.2f}"
     else:
-        # Standard FULL_TIME: If punch records exist, automatically compute from punch hours
-        if total_logged_hours > 0:
-            earned_base_pay = round(total_logged_hours * hourly_rate, 2)
-            calculation_basis = f"{total_logged_hours:.1f} hrs logged × ₹{hourly_rate:.2f}/hr (Punch-Hours Basis)"
+        # Standard FULL_TIME: If punch records or manual salary entries exist, automatically compute
+        if hours_from_punches > 0 or direct_manual_salaries > 0:
+            earned_base_pay = round((hours_from_punches * hourly_rate) + direct_manual_salaries, 2)
+            if direct_manual_salaries > 0 and hours_from_punches > 0:
+                calculation_basis = f"{hours_from_punches:.1f} hrs logged (@₹{hourly_rate:.2f}/hr) + ₹{direct_manual_salaries:,.2f} manual day salary"
+            elif direct_manual_salaries > 0:
+                calculation_basis = f"₹{direct_manual_salaries:,.2f} (from {len(manual_salary_records)} manual day salary override{'s' if len(manual_salary_records) > 1 else ''})"
+            else:
+                calculation_basis = f"{total_logged_hours:.1f} hrs logged × ₹{hourly_rate:.2f}/hr (Punch-Hours Basis)"
         else:
             per_day_rate = round(base_salary / standard_working_days, 2)
             explicit_absents = len([r for r in cycle_records if r.get("status") == "ABSENT"])

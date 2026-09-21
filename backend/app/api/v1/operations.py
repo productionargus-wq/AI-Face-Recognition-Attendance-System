@@ -17,12 +17,14 @@ operations_router = APIRouter(tags=["Operations: Advances, Leaves & Overrides"])
 class ManualOverridePayload(BaseModel):
     employee_id: str
     log_date: str
-    shift: str
-    punch_in: str
-    punch_out: str
+    shift: Optional[str] = "General Shift"
+    mode: Optional[str] = "Hours"  # "Hours" or "Salary"
+    hours: Optional[float] = 8.0
+    manual_salary: Optional[float] = None
+    punch_in: Optional[str] = "09:00"
+    punch_out: Optional[str] = "17:30"
     reason: str
     status: Optional[str] = "Permission"
-    hours: Optional[float] = 8.5
 
 def format_time_12h(time_str: str) -> str:
     try:
@@ -48,8 +50,27 @@ async def create_manual_override(
 
     override_id = f"OVR-{uuid.uuid4().hex[:6].upper()}"
     emp_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
-    punch_in_12h = format_time_12h(payload.punch_in)
-    punch_out_12h = format_time_12h(payload.punch_out)
+
+    is_salary_mode = (payload.mode or "").strip().capitalize() == "Salary"
+    manual_sal = None
+    if is_salary_mode and payload.manual_salary is not None:
+        try:
+            manual_sal = round(float(payload.manual_salary), 2)
+        except Exception:
+            manual_sal = None
+
+    if is_salary_mode and manual_sal is not None:
+        emp_h_rate = float(emp.get("hourly_rate") or 250.0)
+        effective_hours = round(manual_sal / emp_h_rate, 2) if emp_h_rate > 0 else 8.0
+        display_hours_str = f"₹{manual_sal:,.2f}"
+    else:
+        effective_hours = float(payload.hours if payload.hours is not None else 8.0)
+        display_hours_str = f"{effective_hours} hrs"
+
+    punch_in_val = payload.punch_in or "09:00"
+    punch_out_val = payload.punch_out or "17:30"
+    punch_in_12h = format_time_12h(punch_in_val)
+    punch_out_12h = format_time_12h(punch_out_val)
     override_status = payload.status if payload.status in ["Permission", "Improper", "Others"] else "Permission"
 
     record = {
@@ -60,13 +81,15 @@ async def create_manual_override(
         "employee_code": emp.get("employee_code", "EMP"),
         "department": emp.get("department", "Operations"),
         "date": payload.log_date,
+        "mode": "Salary" if is_salary_mode else "Hours",
+        "manual_salary": manual_sal,
         "punch_in": punch_in_12h,
         "punch_out": punch_out_12h,
         "check_in_time": punch_in_12h,
         "check_out_time": punch_out_12h,
-        "hours": f"{payload.hours} hrs",
-        "total_hours": payload.hours,
-        "shift": payload.shift,
+        "hours": display_hours_str,
+        "total_hours": effective_hours,
+        "shift": payload.shift or "General Shift",
         "status": override_status,
         "override_status": override_status,
         "reason": payload.reason,
@@ -89,11 +112,13 @@ async def create_manual_override(
         await store.update_one("attendance", {"id": existing_att["id"]}, {
             "status": "PRESENT",
             "override_status": override_status,
-            "check_in": f"{payload.log_date}T{payload.punch_in}:00",
-            "check_out": f"{payload.log_date}T{payload.punch_out}:00",
+            "check_in": f"{payload.log_date}T{punch_in_val}:00",
+            "check_out": f"{payload.log_date}T{punch_out_val}:00",
             "check_in_time": punch_in_12h,
             "check_out_time": punch_out_12h,
-            "total_hours": payload.hours,
+            "total_hours": effective_hours,
+            "mode": "Salary" if is_salary_mode else "Hours",
+            "manual_salary": manual_sal,
             "verification_mode": "MANUAL_OVERRIDE"
         })
     else:
@@ -105,11 +130,13 @@ async def create_manual_override(
             "employee_name": emp_name,
             "department": emp.get("department", "Operations"),
             "date": payload.log_date,
-            "check_in": f"{payload.log_date}T{payload.punch_in}:00",
-            "check_out": f"{payload.log_date}T{payload.punch_out}:00",
+            "check_in": f"{payload.log_date}T{punch_in_val}:00",
+            "check_out": f"{payload.log_date}T{punch_out_val}:00",
             "check_in_time": punch_in_12h,
             "check_out_time": punch_out_12h,
-            "total_hours": payload.hours,
+            "total_hours": effective_hours,
+            "mode": "Salary" if is_salary_mode else "Hours",
+            "manual_salary": manual_sal,
             "status": "PRESENT",
             "override_status": override_status,
             "verification_mode": "MANUAL_OVERRIDE",
@@ -154,7 +181,7 @@ async def list_manual_overrides(
             r["employee_name"] = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
             r["employee_code"] = emp.get("employee_code", r.get("employee_code"))
             r["department"] = emp.get("department", r.get("department"))
-            res.append(r)
+        res.append(r)
     return res
 
 

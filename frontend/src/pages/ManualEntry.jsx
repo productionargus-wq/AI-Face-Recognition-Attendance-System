@@ -13,8 +13,7 @@ import {
   Edit3, 
   Trash2, 
   Lock,
-  ArrowDownLeft,
-  ArrowUpRight,
+  IndianRupee,
   UserPlus,
   Inbox,
   ChevronDown,
@@ -45,8 +44,9 @@ export const ManualEntry = () => {
     shift: 'General Shift (09:00 AM – 05:30 PM • 8.5h)',
     shiftStart: '09:00',
     shiftEnd: '17:30',
-    punchIn: '09:00',
-    punchOut: '17:30',
+    mode: 'Hours',
+    hours: 8.0,
+    manualSalary: '',
     status: 'Permission',
     reason: '',
     confirmed: true
@@ -87,7 +87,6 @@ export const ManualEntry = () => {
     }
   };
 
-  const computedHours = calculateHours(formData.punchIn, formData.punchOut);
   const scheduledHours = calculateHours(formData.shiftStart, formData.shiftEnd);
 
 
@@ -137,21 +136,39 @@ export const ManualEntry = () => {
     setSubmitting(true);
     setErrorMessage('');
     try {
-      const hoursToSave = calculateHours(formData.punchIn, formData.punchOut);
       const shiftText = `Shift (${formatTime12h(formData.shiftStart)} – ${formatTime12h(formData.shiftEnd)} • ${scheduledHours}h)`;
-      const res = await api.post('/attendance/manual', {
+      const payload = {
         employee_id: formData.employeeId,
         log_date: formData.logDate,
         shift: shiftText,
-        punch_in: formData.punchIn,
-        punch_out: formData.punchOut,
+        mode: formData.mode,
         status: formData.status || 'Permission',
         reason: formData.reason,
-        hours: hoursToSave
-      });
+      };
+
+      if (formData.mode === 'Hours') {
+        const numHours = parseFloat(formData.hours);
+        if (isNaN(numHours) || numHours < 0) {
+          setErrorMessage('Please enter valid working hours.');
+          setSubmitting(false);
+          return;
+        }
+        payload.hours = numHours;
+      } else {
+        const numSalary = parseFloat(formData.manualSalary);
+        if (isNaN(numSalary) || numSalary < 0) {
+          setErrorMessage('Please enter a valid salary amount for this day.');
+          setSubmitting(false);
+          return;
+        }
+        payload.manual_salary = numSalary;
+        payload.hours = 8.0; // standard equivalent full day
+      }
+
+      const res = await api.post('/attendance/manual', payload);
 
       setRecords(prev => [res.data, ...prev]);
-      setSubmittedMessage('Attendance punch override verified and synced to ledger in database.');
+      setSubmittedMessage('Attendance override verified and synced to ledger in database.');
       setTimeout(() => setSubmittedMessage(''), 4000);
     } catch (err) {
       setErrorMessage(err.response?.data?.detail || 'Failed to submit manual override.');
@@ -168,8 +185,9 @@ export const ManualEntry = () => {
       shift: firstEmp?.assigned_shift || 'Shift (09:00 AM – 05:30 PM • 8.5h)',
       shiftStart: firstEmp?.shift_start || '09:00',
       shiftEnd: firstEmp?.shift_end || '17:30',
-      punchIn: '09:00',
-      punchOut: '17:30',
+      mode: 'Hours',
+      hours: 8.0,
+      manualSalary: '',
       status: 'Permission',
       reason: '',
       confirmed: true
@@ -459,44 +477,74 @@ export const ManualEntry = () => {
             </div>
           </div>
 
-          {/* Row 3: Actual Punch-In & Punch-Out */}
+          {/* Row 3: Mode and Worked Hours or Daily Salary */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1.5">
-                  <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
-                  Actual Punch-In Time *
-                </label>
-                <span className="text-[10px] font-mono text-emerald-600 font-bold">
-                  {formatTime12h(formData.punchIn)}
-                </span>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                Mode *
+              </label>
+              <div className="relative">
+                <select
+                  value={formData.mode}
+                  onChange={(e) => setFormData(prev => ({ ...prev, mode: e.target.value }))}
+                  className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none pr-10 cursor-pointer"
+                >
+                  <option value="Hours">Hours (Enter worked hours)</option>
+                  <option value="Salary">Salary (Enter day salary ₹)</option>
+                </select>
+                <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                  <ChevronDown className="w-4 h-4" />
+                </div>
               </div>
-              <input
-                type="time"
-                required
-                value={formData.punchIn}
-                onChange={(e) => setFormData({ ...formData, punchIn: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-blue-700 flex items-center gap-1.5">
-                  <ArrowUpRight className="w-3.5 h-3.5 text-blue-600" />
-                  Actual Punch-Out Time *
-                </label>
-                <span className="text-[10px] font-mono text-blue-600 font-bold">
-                  {formatTime12h(formData.punchOut)} ({computedHours} hrs)
-                </span>
-              </div>
-              <input
-                type="time"
-                required
-                value={formData.punchOut}
-                onChange={(e) => setFormData({ ...formData, punchOut: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              {formData.mode === 'Hours' ? (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-blue-700 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-blue-600" />
+                      Worked Hours *
+                    </label>
+                    <span className="text-[10px] font-mono text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                      {formData.hours || 0} hrs
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="24"
+                    required
+                    placeholder="e.g. 8.0"
+                    value={formData.hours}
+                    onChange={(e) => setFormData(prev => ({ ...prev, hours: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1.5">
+                      <IndianRupee className="w-3.5 h-3.5 text-emerald-600" />
+                      Day Salary (₹) *
+                    </label>
+                    <span className="text-[10px] font-mono text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      ₹{Number(formData.manualSalary || 0).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    required
+                    placeholder="Enter salary for this day e.g. 650"
+                    value={formData.manualSalary}
+                    onChange={(e) => setFormData(prev => ({ ...prev, manualSalary: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -627,8 +675,8 @@ export const ManualEntry = () => {
                 <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
                   <th className="py-3 px-4">EMPLOYEE &amp; ID</th>
                   <th className="py-3 px-4">DATE</th>
-                  <th className="py-3 px-4">PUNCH-IN</th>
-                  <th className="py-3 px-4">PUNCH-OUT</th>
+                  <th className="py-3 px-4">MODE</th>
+                  <th className="py-3 px-4">OVERRIDE VALUE</th>
                   <th className="py-3 px-4">TOTAL HOURS</th>
                   <th className="py-3 px-4">OVERRIDE REASON</th>
                   <th className="py-3 px-4">AUTHORIZED BY</th>
@@ -664,20 +712,32 @@ export const ManualEntry = () => {
                         {record.date}
                       </td>
 
-                      {/* Punch In */}
-                      <td className="py-3.5 px-4 font-mono font-semibold text-slate-800">
-                        {record.punch_in || record.punchIn}
+                      {/* Mode */}
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                          record.mode === 'Salary'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-blue-50 text-blue-700 border-blue-200'
+                        }`}>
+                          {record.mode || 'Hours'}
+                        </span>
                       </td>
 
-                      {/* Punch Out */}
-                      <td className="py-3.5 px-4 font-mono font-semibold text-slate-800">
-                        {record.punch_out || record.punchOut}
+                      {/* Override Value */}
+                      <td className="py-3.5 px-4 font-mono font-bold whitespace-nowrap">
+                        {record.mode === 'Salary' || (record.manual_salary != null && Number(record.manual_salary) > 0) ? (
+                          <span className="text-emerald-700 font-bold">₹{Number(record.manual_salary).toLocaleString('en-IN')}</span>
+                        ) : (
+                          <span className="text-blue-700 font-bold">
+                            {record.hours != null ? `${record.hours} hrs` : (record.total_hours != null ? `${record.total_hours} hrs` : '8.0 hrs')}
+                          </span>
+                        )}
                       </td>
 
                       {/* Total Hours */}
-                      <td className="py-3.5 px-4">
-                        <span className="inline-block px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-mono font-bold text-[11px] border border-blue-200">
-                          {record.hours || '8.5 hrs'}
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <span className="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono font-bold text-[11px] border border-slate-200">
+                          {record.total_hours != null ? `${record.total_hours} hrs` : (record.hours ? `${record.hours} hrs` : '8.0 hrs')}
                         </span>
                       </td>
 
