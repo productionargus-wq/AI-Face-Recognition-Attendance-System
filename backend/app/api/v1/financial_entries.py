@@ -9,6 +9,7 @@ from app.models.schemas import FinancialEntryCreate
 financial_entries_router = APIRouter(prefix="/financial-entries", tags=["Payroll: Financial Entries"])
 
 @financial_entries_router.post("", status_code=status.HTTP_201_CREATED)
+@financial_entries_router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_financial_entry(
     payload: FinancialEntryCreate,
     auth_ctx: Dict[str, Any] = Depends(require_org_admin)
@@ -43,6 +44,7 @@ async def create_financial_entry(
     return record
 
 @financial_entries_router.get("")
+@financial_entries_router.get("/")
 async def list_financial_entries(
     employee_id: Optional[str] = None,
     cycle: Optional[str] = None,

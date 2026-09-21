@@ -39,10 +39,12 @@ app.add_middleware(
         "http://localhost:8000",
         "https://ai-face-recognition-attendance-system-2d63.onrender.com"
     ],
-    allow_origin_regex=r"https://.*\.onrender\.com|http://localhost:\d+|http://127\.0\.0\.1:\d+",
+    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=86400,
 )
 
 app.include_router(auth_router, prefix=settings.API_V1_STR)

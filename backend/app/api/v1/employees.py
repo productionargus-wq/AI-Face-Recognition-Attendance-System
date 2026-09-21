@@ -74,6 +74,7 @@ async def get_my_employee_profile(
     c["face_embeddings"] = None
     return c
 
+@router.get("")
 @router.get("/")
 async def list_employees(
     department: Optional[str] = None,
@@ -132,6 +133,7 @@ async def list_employees(
         cleaned.append(c)
     return cleaned
 
+@router.post("", status_code=status.HTTP_201_CREATED)
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_employee(
     payload: EmployeeCreate,

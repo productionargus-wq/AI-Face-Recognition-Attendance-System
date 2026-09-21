@@ -10,6 +10,7 @@ export const API_BASE_URL = rawBaseUrl;
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 45000,
 });
 
 api.interceptors.request.use((config) => {
@@ -22,10 +23,18 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response && error.response.status === 401) {
-      // Clear token on 401 if unauthorized
-      // localStorage.removeItem('argus_token');
+  async (error) => {
+    const config = error.config;
+    // Auto-retry GET requests on network failures or Render spin-up 502/503/504
+    const isNetworkOrGateway = !error.response || [502, 503, 504].includes(error.response?.status);
+    if (config && isNetworkOrGateway && (config.method || 'get').toLowerCase() === 'get') {
+      config.__retryCount = config.__retryCount || 0;
+      if (config.__retryCount < 3) {
+        config.__retryCount += 1;
+        const delay = config.__retryCount * 1500;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return api(config);
+      }
     }
     return Promise.reject(error);
   }
