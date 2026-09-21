@@ -127,6 +127,18 @@ class UnifiedDataStore:
                 matched = matched[:limit]
             return matched
 
+    async def count(self, collection: str, query: Dict[str, Any] = None) -> int:
+        target_col = self._resolve_collection(collection)
+        db = await self.get_active_db()
+        if db is not None:
+            try:
+                return await db[target_col].count_documents(query or {})
+            except Exception as e:
+                logger.warning(f"Error in MongoDB count_documents {target_col}: {e}")
+
+        docs = await self.find_many(collection, query or {})
+        return len(docs)
+
     async def insert_one(self, collection: str, doc: Dict[str, Any]):
         target_col = self._resolve_collection(collection)
         db = await self.get_active_db()

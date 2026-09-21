@@ -83,15 +83,29 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         msgs.append(f"{loc}: {msg}" if loc else msg)
     detail_str = "; ".join(msgs) or "Invalid form payload."
     logger.warning(f"Request validation error on {request.method} {request.url}: {detail_str}")
+    origin = request.headers.get("origin")
+    resp_headers = {}
+    if origin:
+        resp_headers["Access-Control-Allow-Origin"] = origin
+        resp_headers["Access-Control-Allow-Credentials"] = "true"
+        resp_headers["Access-Control-Expose-Headers"] = "*"
     return JSONResponse(
         status_code=422,
-        content={"detail": detail_str, "errors": errors}
+        content={"detail": detail_str, "errors": errors},
+        headers=resp_headers
     )
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception on {request.method} {request.url}: {exc}", exc_info=True)
+    origin = request.headers.get("origin")
+    resp_headers = {}
+    if origin:
+        resp_headers["Access-Control-Allow-Origin"] = origin
+        resp_headers["Access-Control-Allow-Credentials"] = "true"
+        resp_headers["Access-Control-Expose-Headers"] = "*"
     return JSONResponse(
         status_code=500,
-        content={"detail": "An internal server error occurred. Please contact administrator or check server logs."}
+        content={"detail": "An internal server error occurred. Please contact administrator or check server logs."},
+        headers=resp_headers
     )

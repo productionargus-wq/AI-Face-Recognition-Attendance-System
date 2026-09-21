@@ -38,6 +38,9 @@ export const extractErrorMessage = (err, fallback = 'An unexpected error occurre
   if (detail && typeof detail === 'object') {
     return detail.message || detail.msg || JSON.stringify(detail);
   }
+  if (!err.response && (err.message === 'Network Error' || err.code === 'ERR_NETWORK')) {
+    return 'Connection issue: Backend is waking up or deploying on Render. Please try again in a few seconds.';
+  }
   if (typeof err === 'string' && err.trim()) return err;
   if (err.message) return err.message;
   return fallback;

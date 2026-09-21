@@ -148,7 +148,11 @@ async def create_employee(
     # Auto-generate employee code if missing
     emp_code = (payload.employee_code or "").strip()
     if not emp_code:
-        count = await store.count("employees", {"organization_id": org_id})
+        try:
+            count = await store.count("employees", {"organization_id": org_id})
+        except Exception:
+            all_e = await store.find_many("employees", {"organization_id": org_id})
+            count = len(all_e)
         emp_code = f"ARG-{count + 101}"
 
     # Split name if full name provided in first_name and last_name is empty
