@@ -47,6 +47,7 @@ export const ManualEntry = () => {
     shiftEnd: '17:30',
     punchIn: '09:00',
     punchOut: '17:30',
+    status: 'Permission',
     reason: '',
     confirmed: true
   });
@@ -144,6 +145,7 @@ export const ManualEntry = () => {
         shift: shiftText,
         punch_in: formData.punchIn,
         punch_out: formData.punchOut,
+        status: formData.status || 'Permission',
         reason: formData.reason,
         hours: hoursToSave
       });
@@ -168,6 +170,7 @@ export const ManualEntry = () => {
       shiftEnd: firstEmp?.shift_end || '17:30',
       punchIn: '09:00',
       punchOut: '17:30',
+      status: 'Permission',
       reason: '',
       confirmed: true
     });
@@ -497,7 +500,28 @@ export const ManualEntry = () => {
             </div>
           </div>
 
-          {/* Row 4: Justification / Exception Reason (Only text input) */}
+          {/* Status dropdown */}
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+              Status *
+            </label>
+            <div className="relative">
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none pr-10 cursor-pointer"
+              >
+                <option value="Permission">Permission</option>
+                <option value="Improper">Improper</option>
+                <option value="Others">Others</option>
+              </select>
+              <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <ChevronDown className="w-4 h-4" />
+              </div>
+            </div>
+          </div>
+
+          {/* Justification / Exception Reason (Only text input) */}
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
               Justification / Exception Reason *
@@ -672,8 +696,18 @@ export const ManualEntry = () => {
 
                       {/* Status */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-mono font-bold text-[10px] border border-emerald-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-mono font-bold text-[10px] border ${
+                          record.status === 'Permission' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                          record.status === 'Improper' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                          record.status === 'Others' ? 'bg-slate-100 text-slate-700 border-slate-300' :
+                          'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            record.status === 'Permission' ? 'bg-indigo-500' :
+                            record.status === 'Improper' ? 'bg-amber-500' :
+                            record.status === 'Others' ? 'bg-slate-500' :
+                            'bg-emerald-500'
+                          }`} />
                           {record.status || 'Approved & Synced'}
                         </span>
                       </td>

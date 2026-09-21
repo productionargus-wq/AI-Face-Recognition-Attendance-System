@@ -21,6 +21,7 @@ class ManualOverridePayload(BaseModel):
     punch_in: str
     punch_out: str
     reason: str
+    status: Optional[str] = "Permission"
     hours: Optional[float] = 8.5
 
 def format_time_12h(time_str: str) -> str:
@@ -49,6 +50,7 @@ async def create_manual_override(
     emp_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
     punch_in_12h = format_time_12h(payload.punch_in)
     punch_out_12h = format_time_12h(payload.punch_out)
+    override_status = payload.status if payload.status in ["Permission", "Improper", "Others"] else "Permission"
 
     record = {
         "id": override_id,
@@ -65,10 +67,11 @@ async def create_manual_override(
         "hours": f"{payload.hours} hrs",
         "total_hours": payload.hours,
         "shift": payload.shift,
+        "status": override_status,
+        "override_status": override_status,
         "reason": payload.reason,
         "authorized_by": f"{auth_ctx.get('name', 'Admin')}\n{datetime.utcnow().strftime('%d %b %I:%M %p')}",
-        "status": "Approved & Synced",
-        "status_type": "success",
+        "status_type": "permission" if override_status == "Permission" else "improper" if override_status == "Improper" else "others",
         "created_at": datetime.utcnow().isoformat()
     }
 
@@ -85,6 +88,7 @@ async def create_manual_override(
     if existing_att:
         await store.update_one("attendance", {"id": existing_att["id"]}, {
             "status": "PRESENT",
+            "override_status": override_status,
             "check_in": f"{payload.log_date}T{payload.punch_in}:00",
             "check_out": f"{payload.log_date}T{payload.punch_out}:00",
             "check_in_time": punch_in_12h,
@@ -107,6 +111,7 @@ async def create_manual_override(
             "check_out_time": punch_out_12h,
             "total_hours": payload.hours,
             "status": "PRESENT",
+            "override_status": override_status,
             "verification_mode": "MANUAL_OVERRIDE",
             "confidence_score": 1.0,
             "liveness_verified": True
@@ -122,7 +127,7 @@ async def create_manual_override(
         action="MANUAL_ATTENDANCE_OVERRIDE",
         target_resource="Attendance",
         target_id=override_id,
-        details={"employee_id": emp["id"], "date": payload.log_date, "reason": payload.reason}
+        details={"employee_id": emp["id"], "date": payload.log_date, "status": override_status, "reason": payload.reason}
     ).dict()
     await store.insert_one("audit_logs", audit)
 
