@@ -93,7 +93,7 @@ export const AppLayout = ({ children }) => {
       id: '/admin'
     },
     {
-      name: 'Attendance Capture & Reports',
+      name: 'Attendance Capture',
       path: '/kiosk',
       icon: ScanFace,
       id: '/kiosk'

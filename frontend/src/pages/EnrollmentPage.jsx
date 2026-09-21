@@ -21,10 +21,12 @@ import {
   RefreshCw, 
   X,
   Lock,
-  Check
+  Check,
+  Eye
 } from 'lucide-react';
 import { EnrollEmployeeModal, ALL_PERMISSIONS, DEFAULT_PERMISSIONS } from '../components/EnrollEmployeeModal';
 import { RevokeAccessModal } from '../components/RevokeAccessModal';
+import { EmployeeAttendanceModal } from '../components/EmployeeAttendanceModal';
 
 export const EnrollmentPage = () => {
   const { organization } = useAuth();
@@ -33,6 +35,7 @@ export const EnrollmentPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('All Departments');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [selectedEmployeeForReport, setSelectedEmployeeForReport] = useState(null);
   
   // Edit Employee State
   const [editingEmployee, setEditingEmployee] = useState(null);
@@ -471,6 +474,14 @@ export const EnrollmentPage = () => {
                     {/* Actions */}
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedEmployeeForReport(emp)}
+                          title="View Attendance Report"
+                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleOpenEdit(emp)}
@@ -1060,6 +1071,13 @@ export const EnrollmentPage = () => {
         onClose={() => !deleteLoading && setEmployeeToDelete(null)}
         onConfirm={handleConfirmDelete}
         loading={deleteLoading}
+      />
+
+      {/* Employee Attendance Report Modal */}
+      <EmployeeAttendanceModal
+        isOpen={!!selectedEmployeeForReport}
+        employee={selectedEmployeeForReport}
+        onClose={() => setSelectedEmployeeForReport(null)}
       />
     </div>
   );

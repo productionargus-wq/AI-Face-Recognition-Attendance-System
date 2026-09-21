@@ -18,11 +18,13 @@ class ManualOverridePayload(BaseModel):
     employee_id: str
     log_date: str
     shift: Optional[str] = "General Shift"
+    shift_start: Optional[str] = None
+    shift_end: Optional[str] = None
     mode: Optional[str] = "Hours"  # "Hours" or "Salary"
     hours: Optional[float] = 8.0
     manual_salary: Optional[float] = None
-    punch_in: Optional[str] = "09:00"
-    punch_out: Optional[str] = "17:30"
+    punch_in: Optional[str] = None
+    punch_out: Optional[str] = None
     reason: str
     status: Optional[str] = "Permission"
 
@@ -67,11 +69,12 @@ async def create_manual_override(
         effective_hours = float(payload.hours if payload.hours is not None else 8.0)
         display_hours_str = f"{effective_hours} hrs"
 
-    punch_in_val = payload.punch_in or "09:00"
-    punch_out_val = payload.punch_out or "17:30"
+    punch_in_val = payload.punch_in or payload.shift_start or emp.get("shift_start") or "09:00"
+    punch_out_val = payload.punch_out or payload.shift_end or emp.get("shift_end") or "18:00"
     punch_in_12h = format_time_12h(punch_in_val)
     punch_out_12h = format_time_12h(punch_out_val)
     override_status = payload.status if payload.status in ["Permission", "Improper", "Others"] else "Permission"
+    shift_label = payload.shift or f"Shift ({punch_in_12h} – {punch_out_12h})"
 
     record = {
         "id": override_id,
@@ -87,9 +90,11 @@ async def create_manual_override(
         "punch_out": punch_out_12h,
         "check_in_time": punch_in_12h,
         "check_out_time": punch_out_12h,
+        "shift_start": punch_in_val,
+        "shift_end": punch_out_val,
         "hours": display_hours_str,
         "total_hours": effective_hours,
-        "shift": payload.shift or "General Shift",
+        "shift": shift_label,
         "status": override_status,
         "override_status": override_status,
         "reason": payload.reason,
@@ -116,6 +121,9 @@ async def create_manual_override(
             "check_out": f"{payload.log_date}T{punch_out_val}:00",
             "check_in_time": punch_in_12h,
             "check_out_time": punch_out_12h,
+            "shift": shift_label,
+            "shift_start": punch_in_val,
+            "shift_end": punch_out_val,
             "total_hours": effective_hours,
             "mode": "Salary" if is_salary_mode else "Hours",
             "manual_salary": manual_sal,
@@ -134,6 +142,9 @@ async def create_manual_override(
             "check_out": f"{payload.log_date}T{punch_out_val}:00",
             "check_in_time": punch_in_12h,
             "check_out_time": punch_out_12h,
+            "shift": shift_label,
+            "shift_start": punch_in_val,
+            "shift_end": punch_out_val,
             "total_hours": effective_hours,
             "mode": "Salary" if is_salary_mode else "Hours",
             "manual_salary": manual_sal,
@@ -144,6 +155,17 @@ async def create_manual_override(
             "liveness_verified": True
         }
         await store.insert_one("attendance", new_att)
+
+    # Sync shift updates to employee profile if shift timings provided
+    emp_updates = {}
+    if payload.shift_start:
+        emp_updates["shift_start"] = payload.shift_start
+    if payload.shift_end:
+        emp_updates["shift_end"] = payload.shift_end
+    if payload.shift:
+        emp_updates["assigned_shift"] = payload.shift
+    if emp_updates:
+        await store.update_one("employees", {"id": emp["id"]}, emp_updates)
 
     # Audit log
     audit = AuditLog(

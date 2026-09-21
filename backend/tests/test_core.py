@@ -537,3 +537,54 @@ def test_manual_override_mode_hours_and_salary_payroll_integration():
     dw_standard_days = len([r for r in hourly_records if r.get("status") in ("PRESENT", "LATE")])
     dw_earned_base = round((dw_standard_days * daily_rate) + direct_manual_salaries, 2)
     assert dw_earned_base == 2100.0
+
+@pytest.mark.anyio
+async def test_manual_override_dynamic_shift_timings():
+    from app.api.v1.operations import create_manual_override, ManualOverridePayload
+    from app.db.store import store
+
+    org_id = "test-org-shift"
+    emp_id = "emp-shift-1"
+
+    await store.delete_many("employees", {"organization_id": org_id})
+    await store.delete_many("manual_overrides", {"organization_id": org_id})
+    await store.delete_many("attendance", {"organization_id": org_id})
+
+    await store.insert_one("employees", {
+        "id": emp_id,
+        "organization_id": org_id,
+        "first_name": "Shift",
+        "last_name": "Tester",
+        "employee_code": "ST01",
+        "department": "Engineering",
+        "assigned_shift": "General Shift (09:00 AM – 05:30 PM • 8.5h)",
+        "shift_start": "09:00",
+        "shift_end": "17:30",
+        "is_active": True
+    })
+
+    payload = ManualOverridePayload(
+        employee_id=emp_id,
+        log_date="2026-09-21",
+        shift="Shift (09:00 AM – 06:00 PM • 9.0h)",
+        shift_start="09:00",
+        shift_end="18:00",
+        mode="Hours",
+        hours=8.5,
+        reason="Overtime production cycle"
+    )
+    auth_ctx = {"sub": "admin-1", "org_id": org_id, "name": "SuperAdmin", "role": "org_admin"}
+
+    res = await create_manual_override(payload, auth_ctx)
+    assert res["punch_out"] == "06:00 PM"
+    assert res["check_out_time"] == "06:00 PM"
+    assert res["shift"] == "Shift (09:00 AM – 06:00 PM • 9.0h)"
+
+    att = await store.find_one("attendance", {"organization_id": org_id, "employee_id": emp_id, "date": "2026-09-21"})
+    assert att is not None
+    assert att["check_out_time"] == "06:00 PM"
+    assert att["check_out"] == "2026-09-21T18:00:00"
+
+    updated_emp = await store.find_one("employees", {"id": emp_id})
+    assert updated_emp["shift_end"] == "18:00"
+    assert updated_emp["assigned_shift"] == "Shift (09:00 AM – 06:00 PM • 9.0h)"

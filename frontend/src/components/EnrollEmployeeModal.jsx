@@ -4,7 +4,7 @@ import { X, Camera, CheckCircle2, AlertCircle, RefreshCw, ShieldCheck, Sparkles 
 
 export const ALL_PERMISSIONS = [
   { id: '/admin', label: 'Employee Dashboard', desc: 'Self-service attendance & logs' },
-  { id: '/kiosk', label: 'Attendance Capture & Reports', desc: 'Kiosk facial recognition' },
+  { id: '/kiosk', label: 'Attendance Capture', desc: 'Kiosk facial recognition' },
   { id: '/enrollment', label: 'Employee Enrollment & Details', desc: 'Face registration & roster' },
   { id: '/manual-entry', label: 'Manual Entry', desc: 'Duty shifts & override logs' },
   { id: '/advance-money', label: 'Advance Money', desc: 'Salary advance & repayment' },

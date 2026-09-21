@@ -1031,8 +1031,15 @@ async def get_attendance_history(
     department: Optional[str] = None,
     auth_ctx: Dict[str, Any] = Depends(require_org_admin)
 ):
-    org_id = auth_ctx["org_id"]
-    query = {"organization_id": org_id}
+    raw_org_id = auth_ctx.get("org_id")
+    org = await store.find_one("organizations", {"id": raw_org_id})
+    if not org:
+        org = await store.find_one("organizations", {"slug": raw_org_id})
+    org_id = org["id"] if org else raw_org_id
+    org_slug = org.get("slug") if org else None
+    org_ids = list(set(filter(None, [org_id, org_slug, raw_org_id])))
+
+    query = {"organization_id": {"$in": org_ids} if len(org_ids) > 1 else org_id}
     
     if employee_id:
         query["employee_id"] = employee_id
@@ -1046,16 +1053,24 @@ async def get_attendance_history(
         query["department"] = department
 
     raw_records = await store.find_many("attendance", query, sort_key="date", sort_desc=True, limit=500)
-    all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
+    all_emps = await store.find_many("employees", {"organization_id": {"$in": org_ids} if len(org_ids) > 1 else org_id})
     emp_map = {e["id"]: e for e in all_emps}
+    emp_map_by_code = {e.get("employee_code"): e for e in all_emps if e.get("employee_code")}
+
     records = []
     for r in raw_records:
-        if r.get("employee_id") in emp_map:
-            emp = emp_map[r["employee_id"]]
-            r["employee_name"] = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+        emp = emp_map.get(r.get("employee_id")) or emp_map_by_code.get(r.get("employee_code"))
+        if emp:
+            fn = emp.get('first_name', '')
+            ln = emp.get('last_name', '')
+            full_name = f"{fn} {ln}".strip()
+            if full_name:
+                r["employee_name"] = full_name
             r["employee_code"] = emp.get("employee_code", r.get("employee_code"))
             r["department"] = emp.get("department", r.get("department"))
-            records.append(r)
+            if not r.get("shift"):
+                r["shift"] = emp.get("assigned_shift", "General Shift")
+        records.append(r)
 
     for r in records:
         if not r.get("shift_status"):
