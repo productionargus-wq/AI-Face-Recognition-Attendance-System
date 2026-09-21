@@ -99,12 +99,13 @@ export const AdminDashboard = () => {
   const fetchDashboardData = async (isSilent = false) => {
     if (!isSilent) setLoading(true);
     try {
+      const clientDate = new Date().toISOString().split('T')[0];
       const [attRes, empRes, leavesRes] = await Promise.all([
-        api.get('/attendance/today'),
+        api.get(`/attendance/today?client_date=${clientDate}`),
         api.get('/employees/'),
         api.get('/leaves').catch(() => ({ data: [] }))
       ]);
-      setTodayData(attRes.data);
+      setTodayData(attRes.data || { summary: {}, records: [] });
       setEmployees(empRes.data || []);
       setLeaves(leavesRes.data || []);
     } catch (err) {
@@ -209,27 +210,25 @@ export const AdminDashboard = () => {
     return map;
   }, [employees]);
 
-  // Live records strictly for active enrolled workforce and enriched with current master data
+  // Live records enriched with current master data
   const records = React.useMemo(() => {
     const raw = todayData.records || [];
-    return raw
-      .filter(r => !r.employee_id || activeEmpIds.has(r.employee_id))
-      .map(r => {
-        const emp = empMap.get(r.employee_id);
-        if (emp) {
-          const fn = emp.first_name || '';
-          const ln = emp.last_name || '';
-          const fullName = `${fn} ${ln}`.trim() || emp.name || r.employee_name;
-          return {
-            ...r,
-            employee_name: fullName,
-            employee_code: emp.employee_code || r.employee_code,
-            department: emp.department || r.department
-          };
-        }
-        return r;
-      });
-  }, [todayData.records, activeEmpIds, empMap]);
+    return raw.map(r => {
+      const emp = empMap.get(r.employee_id);
+      if (emp) {
+        const fn = emp.first_name || '';
+        const ln = emp.last_name || '';
+        const fullName = `${fn} ${ln}`.trim() || emp.name || r.employee_name;
+        return {
+          ...r,
+          employee_name: fullName,
+          employee_code: emp.employee_code || r.employee_code,
+          department: emp.department || r.department
+        };
+      }
+      return r;
+    });
+  }, [todayData.records, empMap]);
 
   // Filtering records by department & search
   const filteredRecords = records.filter(r => {
@@ -289,6 +288,14 @@ export const AdminDashboard = () => {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
+          <button
+            onClick={() => fetchDashboardData()}
+            className="flex-1 sm:flex-none py-2 px-3 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs rounded-xl shadow-2xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            title="Refresh dashboard data"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${loading ? 'animate-spin' : ''}`} />
+            <span>REFRESH</span>
+          </button>
           <button
             onClick={handleExportCSV}
             className="flex-1 sm:flex-none py-2 px-3 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs rounded-xl shadow-2xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"

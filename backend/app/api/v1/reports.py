@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Query
 from fastapi.responses import StreamingResponse
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone, timedelta
@@ -478,6 +478,7 @@ async def kiosk_punch(payload: KioskPunchPayload):
     punch_event = {
         "id": f"EVT-{now_utc.strftime('%Y%m%d%H%M%S%f')}",
         "organization_id": org_id,
+        "employee_id": matched_emp["id"],
         "employee_name": f"{fn} {ln}".strip(),
         "employee_code": matched_emp["employee_code"],
         "employment_type": emp_type,
@@ -849,37 +850,55 @@ async def get_kiosk_stream(organization_slug_or_id: Optional[str] = None, organi
     return events[:10]
 
 @attendance_router.get("/today")
-async def get_today_attendance(auth_ctx: Dict[str, Any] = Depends(require_org_admin)):
-    org_id = auth_ctx["org_id"]
-    today_str = datetime.now(IST_TZ).strftime("%Y-%m-%d")
-    
-    all_emps = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
+async def get_today_attendance(
+    date: Optional[str] = Query(None),
+    client_date: Optional[str] = Query(None),
+    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+):
+    raw_org_id = auth_ctx.get("org_id")
+    org = await store.find_one("organizations", {"id": raw_org_id})
+    if not org:
+        org = await store.find_one("organizations", {"slug": raw_org_id})
+    org_id = org["id"] if org else raw_org_id
+    org_slug = org.get("slug") if org else None
+    org_ids = list(set(filter(None, [org_id, org_slug, raw_org_id])))
+
+    ist_today = datetime.now(IST_TZ).strftime("%Y-%m-%d")
+    utc_today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    target_dates = list(set(filter(None, [date, client_date, ist_today, utc_today])))
+    primary_date = date or client_date or ist_today
+
+    all_emps = await store.find_many("employees", {"organization_id": {"$in": org_ids} if len(org_ids) > 1 else org_id})
     emp_map = {e["id"]: e for e in all_emps}
-    total_emps_count = len(all_emps)
+    emp_map_by_code = {e.get("employee_code"): e for e in all_emps if e.get("employee_code")}
+    total_emps_count = len([e for e in all_emps if e.get("is_active") is not False])
 
-    raw_records = await store.find_many("attendance", {
-        "organization_id": org_id,
-        "date": today_str
-    }, sort_key="check_in", sort_desc=True)
+    query = {
+        "organization_id": {"$in": org_ids} if len(org_ids) > 1 else org_id,
+        "date": {"$in": target_dates} if len(target_dates) > 1 else primary_date
+    }
+    raw_records = await store.find_many("attendance", query, sort_key="check_in", sort_desc=True)
 
-    org = await store.find_one("organizations", {"id": org_id})
     org_work_hours = org.get("work_hours") if org else None
 
-    # Strictly filter records to active employees only and dynamically enrich
+    # Dynamically resolve employee details and reconcile status without dropping any record
     records = []
     for r in raw_records:
-        if r.get("employee_id") in emp_map:
-            emp = emp_map[r["employee_id"]]
-            r["employee_name"] = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+        emp = emp_map.get(r.get("employee_id")) or emp_map_by_code.get(r.get("employee_code"))
+        if emp:
+            fn = emp.get('first_name', '')
+            ln = emp.get('last_name', '')
+            full_name = f"{fn} {ln}".strip()
+            if full_name:
+                r["employee_name"] = full_name
             r["employee_code"] = emp.get("employee_code", r.get("employee_code"))
             r["department"] = emp.get("department", r.get("department"))
 
-            # Reconcile status (distinguishes mid-day lunch break vs EOD half-day)
-            reconciled = reconcile_attendance_status(r, org_work_hours, emp)
-            r["status"] = reconciled["status"]
-            r["shift_status"] = reconciled["shift_status"]
-            r["break_status"] = reconciled["break_status"]
-            records.append(r)
+        reconciled = reconcile_attendance_status(r, org_work_hours, emp)
+        r["status"] = reconciled["status"]
+        r["shift_status"] = reconciled["shift_status"]
+        r["break_status"] = reconciled["break_status"]
+        records.append(r)
 
     present_count = len([r for r in records if r.get("status") in [AttendanceStatus.PRESENT, AttendanceStatus.LATE]])
     half_day_count = len([r for r in records if r.get("status") == AttendanceStatus.HALF_DAY])
@@ -887,7 +906,7 @@ async def get_today_attendance(auth_ctx: Dict[str, Any] = Depends(require_org_ad
     absent_count = max(0, total_emps_count - (present_count + half_day_count))
 
     return {
-        "date": today_str,
+        "date": primary_date,
         "summary": {
             "total_employees": total_emps_count,
             "present": present_count,
