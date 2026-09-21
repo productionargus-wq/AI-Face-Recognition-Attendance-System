@@ -659,7 +659,16 @@ export const EnrollmentPage = () => {
                       step="10"
                       min="0"
                       value={editFormData.hourly_rate}
-                      onChange={(e) => setEditFormData({ ...editFormData, hourly_rate: parseFloat(e.target.value) || 0 })}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        const daily = Math.round(val * 8);
+                        setEditFormData({ 
+                          ...editFormData, 
+                          hourly_rate: val,
+                          daily_wage_rate: daily,
+                          half_day_salary: Math.round(daily / 2)
+                        });
+                      }}
                       className="w-full text-xs font-medium text-slate-900 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                     />
                   </div>

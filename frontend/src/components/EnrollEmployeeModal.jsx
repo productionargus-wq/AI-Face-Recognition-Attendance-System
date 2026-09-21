@@ -65,6 +65,18 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
     }));
   };
 
+  const handleHourlyRateChange = (val) => {
+    const num = parseFloat(val) || 0;
+    const dailyWage = Math.round(num * 8);
+    const halfDay = Math.round(dailyWage / 2);
+    setFormData(prev => ({
+      ...prev,
+      hourly_rate: num,
+      daily_wage_rate: dailyWage,
+      half_day_salary: halfDay
+    }));
+  };
+
   const handleDailyWageChange = (val) => {
     const num = parseFloat(val) || 0;
     setFormData(prev => ({
@@ -413,7 +425,7 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
                   required
                   placeholder="Amount"
                   value={formData.hourly_rate}
-                  onChange={(e) => setFormData({ ...formData, hourly_rate: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => handleHourlyRateChange(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>

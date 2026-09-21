@@ -320,25 +320,59 @@ export const PayrollReport = () => {
     statutory_deductions: 3000
   } : null);
 
+  // Helper to accurately extract worked hours from punch records
+  const extractHours = useCallback((r) => {
+    if (r.total_hours != null && Number(r.total_hours) > 0) return Number(r.total_hours);
+    if (r.punches && r.punches.length >= 2) {
+      let secs = 0;
+      let lastIn = null;
+      for (const p of r.punches) {
+        const action = (p.action || p.punch_type || p.type || '').toUpperCase();
+        let ts = p.timestamp || p.time;
+        if (ts && typeof ts === 'string' && ts.length <= 8 && ts.includes(':')) {
+          ts = `${r.date || '2026-09-01'}T${ts}`;
+        }
+        const dt = ts ? new Date(ts) : null;
+        if (dt && !isNaN(dt.getTime())) {
+          if (action === 'CHECK_IN' || action === 'IN' || action === 'CHECKIN') {
+            lastIn = dt;
+          } else if ((action === 'CHECK_OUT' || action === 'OUT' || action === 'CHECKOUT') && lastIn) {
+            const diff = (dt - lastIn) / 1000;
+            if (diff > 0) secs += diff;
+            lastIn = null;
+          }
+        }
+      }
+      if (secs > 0) return Math.round((secs / 3600) * 100) / 100;
+    }
+    if (r.check_in && r.check_out) {
+      const diff = (new Date(r.check_out) - new Date(r.check_in)) / 1000 / 3600;
+      if (diff > 0) return Math.round(diff * 100) / 100;
+    }
+    return 0;
+  }, []);
+
   // Synchronize compensation fields whenever selected employee, attendance, advances, or cycle change
   useEffect(() => {
     if (!selectedEmployee) return;
 
-    const bSalary = selectedEmployee.base_salary != null ? Number(selectedEmployee.base_salary) : 40000;
     const hRate = selectedEmployee.hourly_rate != null ? Number(selectedEmployee.hourly_rate) : 250;
     const statDed = selectedEmployee.statutory_deductions != null ? Number(selectedEmployee.statutory_deductions) : 3000;
 
     const presentDaysCount = attendanceRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE').length;
     const halfDaysCount = attendanceRecords.filter(r => r.status === 'HALF_DAY').length;
     const effectivePresentDays = presentDaysCount + (0.5 * halfDaysCount);
-    const totalHours = attendanceRecords.reduce((acc, curr) => acc + (Number(curr.total_hours) || 0), 0);
+    const totalHours = attendanceRecords.reduce((acc, curr) => acc + extractHours(curr), 0);
     const autoOT = Math.max(0, totalHours > 0 ? Math.round((totalHours - (effectivePresentDays * 8)) * 10) / 10 : 0);
     const autoBonus = effectivePresentDays >= 20 ? 2500 : 0;
 
     const empAdvances = advances.filter(a => a.employee_id === selectedEmployee.id);
     const autoAdvance = empAdvances.reduce((acc, curr) => acc + (Number(curr.next_deduction || curr.nextDeduction) || 0), 0);
 
-    setBaseSalary(bSalary);
+    // Automatic calculation: punch hours * hourly rate
+    const autoCalculatedBase = Math.round(totalHours * hRate);
+
+    setBaseSalary(autoCalculatedBase);
     setHourlyRate(hRate);
     setStatutoryDeductions(statDed);
     setOvertimeHours(autoOT);
@@ -347,7 +381,15 @@ export const PayrollReport = () => {
     setPayoutApproved(false);
     setSaveSuccess('');
     setSaveError('');
-  }, [selectedEmployeeId, attendanceRecords, advances, selectedCycle]);
+  }, [selectedEmployeeId, attendanceRecords, advances, selectedCycle, extractHours]);
+
+  // Handle hourly rate adjustment and auto-recalculate base salary
+  const handleHourlyRateChange = (newRateVal) => {
+    const val = Number(newRateVal) || 0;
+    setHourlyRate(newRateVal);
+    const totalHours = attendanceRecords.reduce((acc, curr) => acc + extractHours(curr), 0);
+    setBaseSalary(Math.round(totalHours * val));
+  };
 
   // Filtered employees based on search input
   const filteredEmployees = useMemo(() => {
@@ -364,21 +406,22 @@ export const PayrollReport = () => {
   // Reset editable inputs back to computed defaults
   const handleResetDefaults = () => {
     if (!selectedEmployee) return;
-    const bSalary = selectedEmployee.base_salary != null ? Number(selectedEmployee.base_salary) : 40000;
     const hRate = selectedEmployee.hourly_rate != null ? Number(selectedEmployee.hourly_rate) : 250;
     const statDed = selectedEmployee.statutory_deductions != null ? Number(selectedEmployee.statutory_deductions) : 3000;
 
     const presentDaysCount = attendanceRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE').length;
     const halfDaysCount = attendanceRecords.filter(r => r.status === 'HALF_DAY').length;
     const effectivePresentDays = presentDaysCount + (0.5 * halfDaysCount);
-    const totalHours = attendanceRecords.reduce((acc, curr) => acc + (Number(curr.total_hours) || 0), 0);
+    const totalHours = attendanceRecords.reduce((acc, curr) => acc + extractHours(curr), 0);
     const autoOT = Math.max(0, totalHours > 0 ? Math.round((totalHours - (effectivePresentDays * 8)) * 10) / 10 : 0);
     const autoBonus = effectivePresentDays >= 20 ? 2500 : 0;
 
     const empAdvances = advances.filter(a => a.employee_id === selectedEmployee.id);
     const autoAdvance = empAdvances.reduce((acc, curr) => acc + (Number(curr.next_deduction || curr.nextDeduction) || 0), 0);
 
-    setBaseSalary(bSalary);
+    const autoCalculatedBase = Math.round(totalHours * hRate);
+
+    setBaseSalary(autoCalculatedBase);
     setHourlyRate(hRate);
     setStatutoryDeductions(statDed);
     setOvertimeHours(autoOT);
@@ -396,6 +439,8 @@ export const PayrollReport = () => {
       const payload = {
         base_salary: Number(baseSalary) || 0,
         hourly_rate: Number(hourlyRate) || 0,
+        daily_wage_rate: Math.round((Number(hourlyRate) || 0) * 8),
+        half_day_salary: Math.round((Number(hourlyRate) || 0) * 4),
         statutory_deductions: Number(statutoryDeductions) || 0
       };
       await api.put(`/employees/${selectedEmployee.id}`, payload);
@@ -457,7 +502,7 @@ export const PayrollReport = () => {
   const presentDays = attendanceRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE').length;
   const halfDaysCount = attendanceRecords.filter(r => r.status === 'HALF_DAY').length;
   const effectivePresentDays = presentDays + (0.5 * halfDaysCount);
-  const totalLoggedHours = attendanceRecords.reduce((acc, curr) => acc + (Number(curr.total_hours) || 0), 0);
+  const totalLoggedHours = Math.round(attendanceRecords.reduce((acc, curr) => acc + extractHours(curr), 0) * 10) / 10;
   const paidLeavesCount = attendanceRecords.filter(r => r.status === 'LEAVE').length;
   const workingDaysCount = presentDays + halfDaysCount;
   const leaveDaysCount = Math.max(0, 26 - workingDaysCount);
@@ -482,7 +527,7 @@ export const PayrollReport = () => {
   let earnedBasePay = numBaseSalary;
   let calculationBasis = '';
   let effectiveHourlyRate = numHourlyRate;
-  let effectiveDailyRate = selectedEmployee?.daily_wage_rate || 650;
+  let effectiveDailyRate = selectedEmployee?.daily_wage_rate || Math.round(effectiveHourlyRate * 8);
   let effectiveHalfDaySalary = selectedEmployee?.half_day_salary || Math.round(effectiveDailyRate / 2);
   let absentDays = 0;
   let lossOfPay = 0;
@@ -499,20 +544,31 @@ export const PayrollReport = () => {
       ? `${presentDays} Full Days (@₹${effectiveDailyRate}) + ${halfDaysCount} Half-Days (@₹${effectiveHalfDaySalary})`
       : `${presentDays} Days Present × ₹${effectiveDailyRate}/day (Daily Wage Basis)`;
   } else if (empType === 'FIELD_WORKER') {
-    earnedBasePay = numBaseSalary;
-    calculationBasis = `Field Worker Base Pay: ₹${numBaseSalary.toLocaleString('en-IN')} (Includes designated client project site visits)`;
+    if (totalLoggedHours > 0) {
+      earnedBasePay = Math.round(totalLoggedHours * effectiveHourlyRate);
+      calculationBasis = `${totalLoggedHours.toFixed(1)} hrs logged × ₹${effectiveHourlyRate}/hr (Field Worker Punch Basis)`;
+    } else {
+      earnedBasePay = numBaseSalary;
+      calculationBasis = `Field Worker Base Pay: ₹${numBaseSalary.toLocaleString('en-IN')} (Includes designated client project site visits)`;
+    }
   } else {
-    // FULL_TIME Office Staff: Full monthly base salary by default
-    // Deduct LOP only for recorded unexcused absences and half-days
-    const standardDays = 26;
-    const perDayRate = Math.round(numBaseSalary / standardDays);
-    const explicitAbsentDays = attendanceRecords.filter(r => r.status === 'ABSENT').length;
-    absentDays = Math.round((explicitAbsentDays + (halfDaysCount * 0.5)) * 10) / 10;
-    lossOfPay = Math.round(absentDays * perDayRate);
-    earnedBasePay = Math.max(0, numBaseSalary - lossOfPay);
-    calculationBasis = absentDays > 0 
-      ? `Fixed Monthly ₹${numBaseSalary.toLocaleString('en-IN')} (26 days base; -${absentDays} absent/half-day LOP @ ₹${perDayRate}/day)`
-      : `Fixed Monthly ₹${numBaseSalary.toLocaleString('en-IN')} (100% full attendance credit)`;
+    // Standard Office / FULL_TIME:
+    // Automatic calculation from punch hours * hourly rate
+    const autoBase = Math.round(totalLoggedHours * effectiveHourlyRate);
+    if (totalLoggedHours > 0) {
+      if (numBaseSalary === autoBase || Math.abs(numBaseSalary - autoBase) < 1) {
+        earnedBasePay = autoBase;
+        calculationBasis = `${totalLoggedHours.toFixed(1)} hrs logged × ₹${effectiveHourlyRate}/hr = ₹${earnedBasePay.toLocaleString('en-IN')}.00 (Automatic Punch Basis)`;
+      } else {
+        earnedBasePay = numBaseSalary;
+        calculationBasis = `Manual Base: ₹${numBaseSalary.toLocaleString('en-IN')}.00 (Auto: ${totalLoggedHours.toFixed(1)}h × ₹${effectiveHourlyRate} = ₹${autoBase.toLocaleString('en-IN')})`;
+      }
+    } else {
+      earnedBasePay = numBaseSalary;
+      calculationBasis = numBaseSalary > 0 
+        ? `Fixed Monthly ₹${numBaseSalary.toLocaleString('en-IN')} (Awaiting cycle punches)`
+        : `₹0.00 (No punches logged for this cycle)`;
+    }
   }
 
   const overtimePay = Math.round(numOvertimeHours * (effectiveHourlyRate || 250) * 1.5);
@@ -1359,11 +1415,56 @@ export const PayrollReport = () => {
                       </div>
                       
                       <div className="space-y-3">
-                        {/* Base Salary */}
+                        {/* Hourly Base Rate (Primary Basis) */}
+                        <div className="p-3.5 bg-blue-50/60 border border-blue-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-blue-950">Standard Hourly Rate (₹/hr)</span>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-blue-600 text-white uppercase tracking-wider">
+                                PRIMARY BASIS
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-blue-700 font-mono">
+                              Automatically multiplies logged punch hours ({totalLoggedHours.toFixed(1)}h) to compute earned basic pay
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono font-bold text-blue-700">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="10"
+                              disabled={isEmployee}
+                              value={hourlyRate}
+                              onChange={(e) => handleHourlyRateChange(e.target.value)}
+                              className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-slate-900 text-right ${
+                                isEmployee ? 'bg-slate-100 border-slate-200 cursor-not-allowed' : 'bg-white border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                              }`}
+                            />
+                            <span className="text-[10px] font-mono text-slate-500">/hr</span>
+                          </div>
+                        </div>
+
+                        {/* Base Monthly Salary */}
                         <div className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                           <div>
-                            <div className="text-xs font-bold text-slate-900">Base Monthly Salary (₹)</div>
-                            <div className="text-[10px] text-slate-500 font-mono">Standard monthly compensation for 160.0 hours quota</div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-900">Earned Basic Salary (₹)</span>
+                              {numBaseSalary === Math.round(totalLoggedHours * effectiveHourlyRate) ? (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-100 text-emerald-800 uppercase tracking-wider">
+                                  PUNCH AUTO-CALCULATED
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-100 text-amber-900 uppercase tracking-wider">
+                                  MANUAL OVERRIDE
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              {totalLoggedHours > 0 
+                                ? `Auto: ${totalLoggedHours.toFixed(1)}h logged × ₹${effectiveHourlyRate}/hr = ₹${Math.round(totalLoggedHours * effectiveHourlyRate).toLocaleString('en-IN')}`
+                                : 'Editable base monthly salary (auto-calculated from attendance punch hours)'}
+                            </div>
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-mono font-bold text-slate-500">₹</span>
@@ -1378,29 +1479,6 @@ export const PayrollReport = () => {
                                 isEmployee ? 'bg-slate-100 border-slate-200 cursor-not-allowed' : 'bg-white border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
                               }`}
                             />
-                          </div>
-                        </div>
-
-                        {/* Hourly Base Rate */}
-                        <div className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div>
-                            <div className="text-xs font-bold text-slate-900">Standard Hourly Rate (₹/hr)</div>
-                            <div className="text-[10px] text-slate-500 font-mono">Used to compute overtime at 1.5x multiplier</div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono font-bold text-slate-500">₹</span>
-                            <input
-                              type="number"
-                              min="0"
-                              step="10"
-                              disabled={isEmployee}
-                              value={hourlyRate}
-                              onChange={(e) => setHourlyRate(e.target.value)}
-                              className={`w-32 px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-slate-900 text-right ${
-                                isEmployee ? 'bg-slate-100 border-slate-200 cursor-not-allowed' : 'bg-white border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
-                              }`}
-                            />
-                            <span className="text-[10px] font-mono text-slate-500">/hr</span>
                           </div>
                         </div>
 

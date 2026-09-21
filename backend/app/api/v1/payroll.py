@@ -7,7 +7,49 @@ from app.core.security import require_tenant_context, require_org_admin
 from app.db.store import store
 from app.models.schemas import PayrollComputeResult
 
-payroll_router = APIRouter(prefix="/payroll", tags=["Payroll: Auto-Generation & Calculations"])
+from app.api.v1.reports import calculate_punches_total_hours
+
+payroll_router = APIRouter(prefix="/payroll", tags=["Payroll"])
+
+def extract_record_hours(r: Dict[str, Any]) -> float:
+    """Extracts actual worked hours from total_hours, alternating punches, or check-in/out."""
+    th = r.get("total_hours")
+    if th is not None:
+        try:
+            val = float(th)
+            if val > 0:
+                return round(val, 2)
+        except Exception:
+            pass
+    punches = r.get("punches") or []
+    if punches:
+        norm_punches = []
+        rec_date = r.get("date", "2026-09-01")
+        for p in punches:
+            action = (p.get("action") or p.get("punch_type") or p.get("type") or "").upper()
+            if action in ("IN", "CHECKIN", "CHECK_IN"):
+                action = "CHECK_IN"
+            elif action in ("OUT", "CHECKOUT", "CHECK_OUT"):
+                action = "CHECK_OUT"
+            ts = p.get("timestamp") or p.get("time")
+            if ts and len(str(ts)) <= 8 and ":" in str(ts):
+                ts = f"{rec_date}T{ts}+05:30"
+            norm_punches.append({"action": action, "timestamp": str(ts) if ts else None})
+        calc_h = calculate_punches_total_hours(norm_punches)
+        if calc_h > 0:
+            return round(calc_h, 2)
+    ci = r.get("check_in")
+    co = r.get("check_out")
+    if ci and co:
+        try:
+            ci_dt = datetime.fromisoformat(ci.replace("Z", "+00:00"))
+            co_dt = datetime.fromisoformat(co.replace("Z", "+00:00"))
+            diff_h = (co_dt - ci_dt).total_seconds() / 3600.0
+            if diff_h > 0:
+                return round(diff_h, 2)
+        except Exception:
+            pass
+    return 0.0
 
 # Standard Indian Standard Time (UTC+5:30)
 IST_TZ = timezone(timedelta(hours=5, minutes=30))
@@ -120,7 +162,7 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
     half_days = len([r for r in cycle_records if r.get("status") == "HALF_DAY"])
     paid_leaves = len([r for r in cycle_records if r.get("status") == "LEAVE"])
     effective_present_days = present_days + (0.5 * half_days)
-    total_logged_hours = sum(float(r.get("total_hours") or 0.0) for r in cycle_records)
+    total_logged_hours = round(sum(extract_record_hours(r) for r in cycle_records), 2)
     
     # Working Days & Leave Days
     working_days = present_days + half_days
@@ -135,38 +177,46 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
         auto_ot = 0.0
 
     # 3. Wage & Rate Structure
-    base_salary = float(emp.get("base_salary") if emp.get("base_salary") is not None else 40000.0)
     hourly_rate = float(emp.get("hourly_rate") if emp.get("hourly_rate") is not None else 250.0)
-    daily_wage_rate = float(emp.get("daily_wage_rate") if emp.get("daily_wage_rate") is not None else 600.0)
+    daily_wage_rate = float(emp.get("daily_wage_rate") if emp.get("daily_wage_rate") is not None else round(hourly_rate * 8.0, 2))
     half_day_salary = float(emp.get("half_day_salary") if emp.get("half_day_salary") is not None else round(daily_wage_rate / 2.0, 2))
+    base_salary = float(emp.get("base_salary") if emp.get("base_salary") is not None else 40000.0)
     statutory_deductions = float(emp.get("statutory_deductions") if emp.get("statutory_deductions") is not None else 3000.0)
 
     # 4. Multi-Model Calculation Logic
-    earned_base_pay = base_salary
-    calculation_basis = ""
+    # Automatic concept: calculate earned salary from actual punch timings: total_logged_hours * hourly_rate
+    earned_base_pay = round(total_logged_hours * hourly_rate, 2)
+    calculation_basis = f"{total_logged_hours:.1f} hrs logged × ₹{hourly_rate:.2f}/hr (Punch-Hours Basis)"
     lop_days = 0.0
 
-    if emp_type == "PART_TIME":
-        earned_base_pay = round(total_logged_hours * hourly_rate, 2)
-        calculation_basis = f"{total_logged_hours:.1f} hrs logged × ₹{hourly_rate}/hr (Hourly Part-Time Basis)"
-    elif emp_type == "DAILY_WAGE":
+    if emp_type == "DAILY_WAGE":
         earned_base_pay = round((present_days * daily_wage_rate) + (half_days * half_day_salary), 2)
         calculation_basis = f"{present_days} Full Days (@₹{daily_wage_rate}) + {half_days} Half-Days (@₹{half_day_salary})"
+    elif emp_type == "PART_TIME":
+        earned_base_pay = round(total_logged_hours * hourly_rate, 2)
+        calculation_basis = f"{total_logged_hours:.1f} hrs logged × ₹{hourly_rate:.2f}/hr (Hourly Part-Time Basis)"
     elif emp_type == "FIELD_WORKER":
-        earned_base_pay = base_salary
-        calculation_basis = f"Field Worker Base Pay: ₹{base_salary:,.2f}"
+        if total_logged_hours > 0:
+            earned_base_pay = round(total_logged_hours * hourly_rate, 2)
+            calculation_basis = f"{total_logged_hours:.1f} hrs logged × ₹{hourly_rate:.2f}/hr (Field Worker Punch Basis)"
+        else:
+            earned_base_pay = base_salary
+            calculation_basis = f"Field Worker Base Pay: ₹{base_salary:,.2f}"
     else:
-        # FULL_TIME Office Staff: Full monthly base salary by default
-        # Deduct LOP for explicit unexcused absences and half-days
-        per_day_rate = round(base_salary / standard_working_days, 2)
-        explicit_absents = len([r for r in cycle_records if r.get("status") == "ABSENT"])
-        lop_days = round(explicit_absents + (half_days * 0.5), 1)
-        loss_of_pay = round(lop_days * per_day_rate, 2)
-        earned_base_pay = max(0.0, round(base_salary - loss_of_pay, 2))
-        calculation_basis = (
-            f"Fixed Monthly ₹{base_salary:,.2f} (26 days base; -{lop_days} absent/half-day LOP @ ₹{per_day_rate}/day)"
-            if lop_days > 0 else f"Fixed Monthly ₹{base_salary:,.2f} (100% attendance credit)"
-        )
+        # Standard FULL_TIME: If punch records exist, automatically compute from punch hours
+        if total_logged_hours > 0:
+            earned_base_pay = round(total_logged_hours * hourly_rate, 2)
+            calculation_basis = f"{total_logged_hours:.1f} hrs logged × ₹{hourly_rate:.2f}/hr (Punch-Hours Basis)"
+        else:
+            per_day_rate = round(base_salary / standard_working_days, 2)
+            explicit_absents = len([r for r in cycle_records if r.get("status") == "ABSENT"])
+            lop_days = round(explicit_absents + (half_days * 0.5), 1)
+            loss_of_pay = round(lop_days * per_day_rate, 2)
+            earned_base_pay = max(0.0, round(base_salary - loss_of_pay, 2))
+            calculation_basis = (
+                f"Fixed Monthly ₹{base_salary:,.2f} (26 days base; -{lop_days} absent/half-day LOP @ ₹{per_day_rate}/day)"
+                if lop_days > 0 else f"Fixed Monthly ₹{base_salary:,.2f} (Awaiting cycle punches)"
+            )
 
     # 5. Overtime Compensation
     overtime_pay = round(auto_ot * hourly_rate * 1.5, 2)
@@ -266,10 +316,12 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
         "total_working_hours_formatted": total_hours_formatted,
         "overtime_hours": auto_ot,
         # Rates
+        "hourly_rate": hourly_rate,
         "hours_salary": hourly_rate,
         "day_salary": daily_wage_rate,
         "half_day_salary": half_day_salary,
         # Earnings Breakdown
+        "base_salary": earned_base_pay,
         "basic_salary": earned_base_pay,
         "allowance": allowance,
         "incentive": incentive,

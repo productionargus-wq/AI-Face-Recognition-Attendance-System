@@ -414,3 +414,39 @@ def test_financial_entries_and_payroll_reconciliation():
 
     net_pay = total_earnings - total_deductions
     assert net_pay == 38000.0
+
+def test_extract_record_hours_and_automatic_punch_payroll():
+    """Verify attendance records extract punch hours and calculate earned pay via hourly_rate."""
+    from app.api.v1.payroll import extract_record_hours
+
+    # 1. Record with explicit total_hours
+    r1 = {"total_hours": 8.5}
+    assert extract_record_hours(r1) == 8.5
+
+    # 2. Record with punches list
+    r2 = {
+        "punches": [
+            {"time": "09:00:00", "punch_type": "IN"},
+            {"time": "13:00:00", "punch_type": "OUT"},
+            {"time": "14:00:00", "punch_type": "IN"},
+            {"time": "18:00:00", "punch_type": "OUT"},
+        ]
+    }
+    assert extract_record_hours(r2) == 8.0
+
+    # 3. Record with check_in and check_out timestamps
+    r3 = {
+        "check_in": "2026-09-18T09:00:00+05:30",
+        "check_out": "2026-09-18T17:30:00+05:30"
+    }
+    assert extract_record_hours(r3) == 8.5
+
+    # 4. Total hours for employee across days
+    all_records = [r1, r2, r3]
+    total_logged_hours = sum(extract_record_hours(r) for r in all_records)
+    assert total_logged_hours == 25.0
+
+    # 5. Automatic salary calculation: worked_hours * hourly_salary
+    hourly_rate = 300.0
+    earned_base_pay = round(total_logged_hours * hourly_rate, 2)
+    assert earned_base_pay == 7500.0
