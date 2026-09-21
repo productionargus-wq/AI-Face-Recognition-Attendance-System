@@ -475,6 +475,18 @@ async def kiosk_punch(payload: KioskPunchPayload):
     initials = ((fn[:1] if fn else "") + (ln[:1] if ln else "")).upper() or "EM"
 
     operation_label = f"PUNCH #{punch_num} [{punch_action.replace('CHECK_', '')}]"
+
+    # Format entry distance for live stream display
+    office_name = (geofence_cfg.get("office_name") if geofence_cfg else None) or (org.get("name") if org else "Office")
+    if distance_meters is not None:
+        radius = geofence_cfg.get("radius_meters", 150) if geofence_cfg else 150
+        if geofence_status == "INSIDE" or distance_meters <= radius:
+            entry_dist_str = f"{int(distance_meters)}m (Within {office_name})"
+        else:
+            entry_dist_str = f"{int(distance_meters)}m (Off-Site)"
+    else:
+        entry_dist_str = f"0m ({office_name} Kiosk)"
+
     punch_event = {
         "id": f"EVT-{now_utc.strftime('%Y%m%d%H%M%S%f')}",
         "organization_id": org_id,
@@ -495,7 +507,8 @@ async def kiosk_punch(payload: KioskPunchPayload):
         "latitude": payload.latitude,
         "longitude": payload.longitude,
         "geofence_status": geofence_status,
-        "distance_meters": distance_meters
+        "distance_meters": distance_meters,
+        "entry_distance": entry_dist_str
     }
     await store.insert_one("attendance_events", punch_event)
 
@@ -519,7 +532,8 @@ async def kiosk_punch(payload: KioskPunchPayload):
         "confidence": round(confidence * 100, 1),
         "total_hours": res_record.get("total_hours", 0.0),
         "geofence_status": geofence_status,
-        "distance_meters": distance_meters
+        "distance_meters": distance_meters,
+        "entry_distance": entry_dist_str
     }
 
 @attendance_router.post("/field-punch")
@@ -782,7 +796,19 @@ async def get_kiosk_stream(organization_slug_or_id: Optional[str] = None, organi
     }, sort_key="timestamp", sort_desc=True, limit=20)
     events = [e for e in events if e.get("employee_id") in active_emp_ids or e.get("employee_code") in active_emp_codes]
 
-    # Dynamically resolve latest employee details on events
+    geofence_cfg = (org.get("geofence") if org else None) or {
+        "is_enabled": True,
+        "latitude": 13.0827,
+        "longitude": 80.2707,
+        "radius_meters": 200,
+        "office_name": org.get("name", "Headquarters") if org else "Headquarters"
+    }
+    base_lat = geofence_cfg.get("latitude", 13.0827)
+    base_lon = geofence_cfg.get("longitude", 80.2707)
+    radius = geofence_cfg.get("radius_meters", 200)
+    office_name = geofence_cfg.get("office_name") or (org.get("name") if org else "Headquarters")
+
+    # Dynamically resolve latest employee details and entry_distance on events
     for ev in events:
         emp = emp_map_by_id.get(ev.get("employee_id")) or emp_map_by_code.get(ev.get("employee_code"))
         if emp:
@@ -792,6 +818,24 @@ async def get_kiosk_stream(organization_slug_or_id: Optional[str] = None, organi
             ev["employee_code"] = emp.get("employee_code", ev.get("employee_code"))
             ev["department"] = emp.get("department", ev.get("department"))
             ev["avatar"] = ((fn[:1] if fn else "") + (ln[:1] if ln else "")).upper() or "EM"
+
+        if not ev.get("entry_distance"):
+            dist = ev.get("distance_meters")
+            if dist is None and ev.get("latitude") is not None and ev.get("longitude") is not None and base_lat is not None and base_lon is not None:
+                try:
+                    dist = calculate_haversine_distance(float(ev["latitude"]), float(ev["longitude"]), float(base_lat), float(base_lon))
+                    ev["distance_meters"] = dist
+                except Exception:
+                    dist = None
+
+            if dist is not None:
+                if dist <= radius:
+                    ev["entry_distance"] = f"{int(dist)}m (Within {office_name})"
+                else:
+                    ev["entry_distance"] = f"{int(dist)}m (Off-Site)"
+            else:
+                ev["entry_distance"] = f"0m ({office_name} Kiosk)"
+                ev["distance_meters"] = 0.0
 
     if not events:
         # Graceful fallback: construct event list from today's attendance table
@@ -818,6 +862,15 @@ async def get_kiosk_stream(organization_slug_or_id: Optional[str] = None, organi
                 name_parts = name.split()
                 av = (name_parts[0][:1] + (name_parts[1][:1] if len(name_parts) > 1 else "")).upper() or "EM"
 
+            rec_dist = r.get("distance_meters")
+            rec_entry_dist = r.get("entry_distance")
+            if not rec_entry_dist:
+                if rec_dist is not None:
+                    rec_entry_dist = f"{int(rec_dist)}m (Within {office_name})" if rec_dist <= radius else f"{int(rec_dist)}m (Off-Site)"
+                else:
+                    rec_entry_dist = f"0m ({office_name} Kiosk)"
+                    rec_dist = 0.0
+
             if r.get("check_out_time"):
                 fallback_events.append({
                     "id": f"{r['id']}-out",
@@ -829,7 +882,9 @@ async def get_kiosk_stream(organization_slug_or_id: Optional[str] = None, organi
                     "timestamp": r.get("check_out") or r.get("date"),
                     "operation": "SHIFT END [OUT]",
                     "is_in": False,
-                    "avatar": av
+                    "avatar": av,
+                    "entry_distance": rec_entry_dist,
+                    "distance_meters": rec_dist
                 })
             if r.get("check_in_time"):
                 fallback_events.append({
@@ -842,7 +897,9 @@ async def get_kiosk_stream(organization_slug_or_id: Optional[str] = None, organi
                     "timestamp": r.get("check_in") or r.get("date"),
                     "operation": "SHIFT START [IN]",
                     "is_in": True,
-                    "avatar": av
+                    "avatar": av,
+                    "entry_distance": rec_entry_dist,
+                    "distance_meters": rec_dist
                 })
         fallback_events.sort(key=lambda x: str(x.get("timestamp") or ""), reverse=True)
         return fallback_events[:10]

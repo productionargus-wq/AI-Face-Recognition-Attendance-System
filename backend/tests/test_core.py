@@ -666,3 +666,11 @@ async def test_entry_distance_and_daily_breakdown():
     assert day_entry["hours"] == 9.0
     assert day_entry["daily_earned"] == 2700.0  # 9.0h * 300/hr
     assert "300" in day_entry["rate_label"]
+
+    # Test get_kiosk_stream includes entry_distance
+    from app.api.v1.reports import get_kiosk_stream
+    stream_res = await get_kiosk_stream(organization_id=test_org_id)
+    assert len(stream_res) >= 1
+    stream_ev = stream_res[0]
+    assert "entry_distance" in stream_ev
+    assert stream_ev["entry_distance"] is not None

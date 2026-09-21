@@ -13,7 +13,8 @@ import {
   Radio,
   ArrowRight,
   Sparkles,
-  ChevronDown
+  ChevronDown,
+  MapPin
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import api from '../utils/api';
@@ -244,7 +245,9 @@ export const AttendanceTerminalModal = ({ isOpen, onClose }) => {
         time: data.timestamp,
         operation: opLabel,
         is_in: data.action === 'CHECK_IN',
-        avatar: initials
+        avatar: initials,
+        entry_distance: data.entry_distance || (data.distance_meters != null ? `${Math.round(data.distance_meters)}m` : '0m (On-Site)'),
+        distance_meters: data.distance_meters
       };
       setRecentPunches(prev => [newEntry, ...prev.slice(0, 8)]);
 
@@ -560,8 +563,13 @@ export const AttendanceTerminalModal = ({ isOpen, onClose }) => {
                             <div className="font-bold text-slate-900 truncate">
                               {p.employee_name}
                             </div>
-                            <div className="text-[10px] text-slate-400 font-mono truncate">
-                              {p.employee_code} • {p.department}
+                            <div className="text-[10px] text-slate-400 font-mono truncate flex items-center gap-1.5 mt-0.5">
+                              <span>{p.employee_code} • {p.department}</span>
+                              <span className="text-slate-300">•</span>
+                              <span className="inline-flex items-center gap-0.5 text-emerald-600 font-bold">
+                                <MapPin className="w-2.5 h-2.5 shrink-0" />
+                                <span>{p.entry_distance || (p.distance_meters != null ? `${Math.round(p.distance_meters)}m` : '0m (On-Site)')}</span>
+                              </span>
                             </div>
                           </div>
                         </div>

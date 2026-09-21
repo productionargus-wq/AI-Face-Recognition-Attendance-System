@@ -16,7 +16,8 @@ import {
   Camera, 
   ChevronRight,
   Shield,
-  Activity
+  Activity,
+  MapPin
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -193,7 +194,9 @@ export const KioskMode = () => {
         time: punchData.timestamp,
         operation: opLabel,
         is_in: punchData.action === 'CHECK_IN',
-        avatar: punchData.employee_name ? punchData.employee_name.split(' ').map(n=>n[0]).join('').slice(0,2) : 'EM'
+        avatar: punchData.employee_name ? punchData.employee_name.split(' ').map(n=>n[0]).join('').slice(0,2) : 'EM',
+        entry_distance: punchData.entry_distance || (punchData.distance_meters != null ? `${Math.round(punchData.distance_meters)}m` : '0m (On-Site)'),
+        distance_meters: punchData.distance_meters
       };
 
       setRecentPunches(prev => [newEntry, ...prev.filter(p => p.id !== newEntry.id).slice(0, 9)]);
@@ -531,13 +534,14 @@ export const KioskMode = () => {
                 <th className="py-2.5 px-3">EMPLOYEE & ID</th>
                 <th className="py-2.5 px-3">DEPARTMENT</th>
                 <th className="py-2.5 px-3">PUNCH TIME</th>
+                <th className="py-2.5 px-3">ENTRY DISTANCE</th>
                 <th className="py-2.5 px-3 text-right">OPERATION</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {recentPunches.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="p-8 text-center text-slate-400">
+                  <td colSpan={5} className="p-8 text-center text-slate-400">
                     <div className="flex flex-col items-center justify-center gap-1.5">
                       <Clock className="w-6 h-6 text-slate-300 stroke-1" />
                       <p className="text-xs font-bold text-slate-600">
@@ -573,6 +577,23 @@ export const KioskMode = () => {
 
                   <td className="py-3 px-3 font-mono text-blue-600 font-bold">
                     {item.time}
+                  </td>
+
+                  <td className="py-3 px-3">
+                    <div className="flex items-center gap-1.5 whitespace-nowrap">
+                      <MapPin className={`w-3.5 h-3.5 shrink-0 ${
+                        (item.distance_meters != null && item.distance_meters > 200) || (item.entry_distance && item.entry_distance.includes('Off-Site'))
+                          ? 'text-amber-500'
+                          : 'text-emerald-500'
+                      }`} />
+                      <span className={`text-[10px] font-mono font-bold ${
+                        (item.distance_meters != null && item.distance_meters > 200) || (item.entry_distance && item.entry_distance.includes('Off-Site'))
+                          ? 'text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200'
+                          : 'text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200'
+                      }`}>
+                        {item.entry_distance || (item.distance_meters != null ? `${Math.round(item.distance_meters)}m` : '0m (On-Site)')}
+                      </span>
+                    </div>
                   </td>
 
                   <td className="py-3 px-3 text-right">
