@@ -125,7 +125,7 @@ export const ManualEntry = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.employeeId) {
-      setErrorMessage('Please select an employee first. If no employees are enrolled, add them under Employee Enrollment & Details.');
+      setErrorMessage('Please select an employee first. If no employees are enrolled, add them under Employee Directory.');
       return;
     }
     if (!formData.confirmed) {

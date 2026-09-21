@@ -263,7 +263,7 @@ export const EnrollmentPage = () => {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base sm:text-lg font-black tracking-tight text-slate-900 uppercase font-mono">
-                EMPLOYEE ENROLLMENT &amp; DETAILS
+                EMPLOYEE DIRECTORY
               </h1>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-200">
                 {employees.length} REGISTERED

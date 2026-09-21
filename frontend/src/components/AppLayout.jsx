@@ -99,7 +99,7 @@ export const AppLayout = ({ children }) => {
       id: '/kiosk'
     },
     {
-      name: 'Employee Enrollment & Details',
+      name: 'Employee Directory',
       path: '/enrollment',
       icon: Fingerprint,
       id: '/enrollment'
