@@ -350,6 +350,7 @@ class LeaveRequestPayload(BaseModel):
     employee_id: Optional[str] = None
 
 @operations_router.get("/leaves")
+@operations_router.get("/operations/leaves")
 async def list_leaves(
     auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
 ):

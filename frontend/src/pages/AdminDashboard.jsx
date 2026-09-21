@@ -102,7 +102,7 @@ export const AdminDashboard = () => {
       const [attRes, empRes, leavesRes] = await Promise.all([
         api.get('/attendance/today'),
         api.get('/employees/'),
-        api.get('/operations/leaves').catch(() => ({ data: [] }))
+        api.get('/leaves').catch(() => ({ data: [] }))
       ]);
       setTodayData(attRes.data);
       setEmployees(empRes.data || []);

@@ -152,6 +152,9 @@ export const Login = () => {
 
   const [googleReady, setGoogleReady] = useState(false);
   const googleBtnRef = useRef(null);
+  const callbackRef = useRef(handleGoogleCallback);
+  callbackRef.current = handleGoogleCallback;
+  const isInitializedRef = useRef(false);
 
   // Initialize and render Google Sign-In button
   useEffect(() => {
@@ -160,13 +163,16 @@ export const Login = () => {
     const renderGoogleBtn = () => {
       if (window.google?.accounts?.id && googleBtnRef.current) {
         try {
-          window.google.accounts.id.initialize({
-            client_id: GOOGLE_CLIENT_ID,
-            callback: handleGoogleCallback,
-            use_fedcm_for_prompt: true,
-            auto_select: false,
-            cancel_on_tap_outside: true,
-          });
+          if (!isInitializedRef.current) {
+            window.google.accounts.id.initialize({
+              client_id: GOOGLE_CLIENT_ID,
+              callback: (res) => callbackRef.current(res),
+              use_fedcm_for_prompt: true,
+              auto_select: false,
+              cancel_on_tap_outside: true,
+            });
+            isInitializedRef.current = true;
+          }
 
           googleBtnRef.current.innerHTML = '';
           const containerWidth = googleBtnRef.current.parentElement?.clientWidth || 360;
@@ -201,7 +207,7 @@ export const Login = () => {
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [handleGoogleCallback]);
+  }, []);
 
   return (
     <div className="min-h-screen relative flex flex-col justify-between text-slate-800 overflow-x-hidden bg-[#f8f9ff]/40">
