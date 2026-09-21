@@ -20,7 +20,7 @@ class EmployeeUpdate(BaseModel):
     employee_code: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     department: Optional[str] = None
     designation: Optional[str] = None
     phone: Optional[str] = None
@@ -181,7 +181,7 @@ async def create_employee(
             )
 
     # Check unique email within organization
-    target_email = payload.email
+    target_email = payload.email.strip().lower() if payload.email and payload.email.strip() else None
     if target_email:
         existing_email_emp = await store.find_one("employees", {
             "organization_id": org_id,
@@ -202,6 +202,7 @@ async def create_employee(
 
     daily_wage = payload.daily_wage_rate if payload.daily_wage_rate is not None else 600.0
     half_day_sal = payload.half_day_salary if payload.half_day_salary is not None else round(daily_wage / 2.0, 2)
+    emp_designation = (payload.designation or "").strip() or payload.department or "Production"
 
     emp_dict = Employee(
         organization_id=org_id,
@@ -210,7 +211,7 @@ async def create_employee(
         last_name=last_name,
         email=target_email,
         department=payload.department or "Operations",
-        designation=payload.designation,
+        designation=emp_designation,
         phone=payload.phone,
         hourly_rate=payload.hourly_rate if payload.hourly_rate is not None else 250.0,
         daily_wage_rate=daily_wage,
@@ -439,7 +440,8 @@ async def update_employee(
     if payload.last_name is not None:
         update_fields["last_name"] = payload.last_name.strip()
     if payload.email is not None:
-        update_fields["email"] = str(payload.email).strip().lower()
+        clean_email = str(payload.email).strip().lower()
+        update_fields["email"] = clean_email if clean_email else None
     if payload.department is not None:
         update_fields["department"] = payload.department.strip()
     if payload.designation is not None:

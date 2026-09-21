@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import api from '../utils/api';
+import api, { extractErrorMessage } from '../utils/api';
 import { X, Camera, CheckCircle2, AlertCircle, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
 
 export const ALL_PERMISSIONS = [
@@ -256,11 +256,13 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
         payload.first_name = parts[0];
         payload.last_name = parts.slice(1).join(' ');
       }
+      payload.email = payload.email?.trim() || null;
+      payload.designation = payload.designation?.trim() || payload.department || 'Production';
       const res = await api.post('/employees/', payload);
       setCreatedEmployee(res.data);
       setStep(2);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to create employee profile.');
+      setError(extractErrorMessage(err, 'Failed to create employee profile.'));
     }
   };
 
@@ -318,7 +320,7 @@ export const EnrollEmployeeModal = ({ isOpen, onClose, onEmployeeCreated }) => {
         onClose();
       }, 1500);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Facial vectorization failed. Ensure face is clear.');
+      setError(extractErrorMessage(err, 'Facial vectorization failed. Ensure face is clear.'));
     } finally {
       setEnrolling(false);
     }

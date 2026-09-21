@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import api from '../utils/api';
+import api, { extractErrorMessage } from '../utils/api';
 import { 
   Fingerprint, 
   ShieldCheck, 
@@ -196,12 +196,15 @@ export const EnrollmentPage = () => {
     setEditError('');
 
     try {
-      const res = await api.put(`/employees/${editingEmployee.id}`, editFormData);
+      const payload = { ...editFormData };
+      payload.email = payload.email?.trim() || null;
+      payload.designation = payload.designation?.trim() || payload.department || 'Production';
+      const res = await api.put(`/employees/${editingEmployee.id}`, payload);
       setEmployees(prev => prev.map(emp => emp.id === editingEmployee.id ? { ...emp, ...res.data } : emp));
       setEditingEmployee(null);
       showNotice('success', `Employee ${res.data.first_name} ${res.data.last_name} updated successfully.`);
     } catch (err) {
-      setEditError(err.response?.data?.detail || 'Failed to update employee details.');
+      setEditError(extractErrorMessage(err, 'Failed to update employee details.'));
     } finally {
       setEditSaving(false);
     }
@@ -223,7 +226,7 @@ export const EnrollmentPage = () => {
       showNotice('success', `Employee "${fullName}" removed and credentials revoked.`);
       setEmployeeToDelete(null);
     } catch (err) {
-      showNotice('error', err.response?.data?.detail || 'Failed to remove employee.');
+      showNotice('error', extractErrorMessage(err, 'Failed to remove employee.'));
     } finally {
       setDeleteLoading(false);
     }

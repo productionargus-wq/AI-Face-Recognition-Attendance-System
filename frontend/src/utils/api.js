@@ -21,9 +21,34 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+export const extractErrorMessage = (err, fallback = 'An unexpected error occurred.') => {
+  if (!err) return fallback;
+  const detail = err.response?.data?.detail ?? err.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((d) => {
+        if (typeof d === 'string') return d;
+        const field = Array.isArray(d?.loc) ? d.loc.filter((l) => l !== 'body').join('.') : '';
+        const msg = d?.msg || JSON.stringify(d);
+        return field ? `${field}: ${msg}` : msg;
+      })
+      .join('; ');
+  }
+  if (detail && typeof detail === 'object') {
+    return detail.message || detail.msg || JSON.stringify(detail);
+  }
+  if (typeof err === 'string' && err.trim()) return err;
+  if (err.message) return err.message;
+  return fallback;
+};
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    if (error.response?.data && error.response.data.detail && typeof error.response.data.detail !== 'string') {
+      error.response.data.detail = extractErrorMessage(error);
+    }
     const config = error.config;
     // Auto-retry GET requests on network failures or Render spin-up 502/503/504
     const isNetworkOrGateway = !error.response || [502, 503, 504].includes(error.response?.status);

@@ -450,3 +450,22 @@ def test_extract_record_hours_and_automatic_punch_payroll():
     hourly_rate = 300.0
     earned_base_pay = round(total_logged_hours * hourly_rate, 2)
     assert earned_base_pay == 7500.0
+
+def test_employee_create_optional_fields():
+    """Verify EmployeeCreate accepts empty/None email and defaults designation to Production."""
+    from app.models.schemas import EmployeeCreate
+    
+    # 1. Empty string email
+    emp1 = EmployeeCreate(first_name="Ravi", email="")
+    assert emp1.first_name == "Ravi"
+    assert emp1.email == ""
+    assert emp1.designation == "Production"
+
+    # 2. None email
+    emp2 = EmployeeCreate(first_name="Ananya", email=None)
+    assert emp2.email is None
+    assert emp2.designation == "Production"
+
+    # 3. Custom designation
+    emp3 = EmployeeCreate(first_name="Kavitha", designation="Quality Lead")
+    assert emp3.designation == "Quality Lead"

@@ -97,9 +97,9 @@ class EmployeeCreate(BaseModel):
     employee_code: Optional[str] = None
     first_name: str
     last_name: Optional[str] = ""
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     department: Optional[str] = "Operations"
-    designation: str
+    designation: Optional[str] = "Production"
     phone: Optional[str] = None
     hourly_rate: Optional[float] = 250.0
     daily_wage_rate: Optional[float] = 600.0
@@ -129,9 +129,9 @@ class Employee(BaseModel):
     employee_code: str
     first_name: str
     last_name: Optional[str] = ""
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     department: Optional[str] = "Operations"
-    designation: str
+    designation: Optional[str] = "Production"
     phone: Optional[str] = None
     hourly_rate: Optional[float] = 250.0
     daily_wage_rate: Optional[float] = 600.0

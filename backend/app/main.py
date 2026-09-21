@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -71,6 +72,21 @@ def root():
 @app.get("/api/v1/health")
 def health_check():
     return {"status": "healthy"}
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    msgs = []
+    for err in errors:
+        loc = " -> ".join(str(l) for l in err.get("loc", []) if l != "body")
+        msg = err.get("msg", "Invalid field")
+        msgs.append(f"{loc}: {msg}" if loc else msg)
+    detail_str = "; ".join(msgs) or "Invalid form payload."
+    logger.warning(f"Request validation error on {request.method} {request.url}: {detail_str}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": detail_str, "errors": errors}
+    )
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
