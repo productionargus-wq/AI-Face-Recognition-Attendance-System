@@ -876,6 +876,7 @@ async def test_salary_advance_allocation_and_repayment_scenarios():
     cycle = "2026-09"
     comp = await compute_single_employee_payroll(test_org_id, emp_record, cycle)
     assert comp["advance_repayment"] == 6000.0
+    assert comp["other_deductions"] == 0.0
     assert comp["payout_status"] == "PENDING"
     # Net salary = Gross - Deductions (including Advance Deduction ₹6,000)
     assert comp["net_pay"] == round(comp["total_earnings"] - comp["total_deductions"], 2)
@@ -899,4 +900,5 @@ async def test_salary_advance_allocation_and_repayment_scenarios():
     comp_after = await compute_single_employee_payroll(test_org_id, emp_record, cycle)
     assert comp_after["payout_status"] == "PAID"
     assert comp_after["advance_repayment"] == 6000.0
+    assert comp_after["other_deductions"] == 0.0
     assert comp_after["net_pay"] == round(comp_after["total_earnings"] - comp_after["total_deductions"], 2)

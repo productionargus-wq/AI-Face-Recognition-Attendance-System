@@ -28,7 +28,7 @@ VALID_PAYMENT_TYPES = [
 ]
 
 def derive_entry_type(reason: str, explicit_type: Optional[str] = None) -> str:
-    if explicit_type and explicit_type.upper() in ("BONUS", "DEDUCTION", "REIMBURSEMENT", "ADVANCE"):
+    if explicit_type and explicit_type.upper() in ("BONUS", "DEDUCTION", "REIMBURSEMENT", "ADVANCE", "REPAYMENT"):
         return explicit_type.upper()
     r = (reason or "").strip()
     if r in ("Salary Advance", "Advance"):
@@ -39,7 +39,9 @@ def derive_entry_type(reason: str, explicit_type: Optional[str] = None) -> str:
         return "REIMBURSEMENT"
     elif r == "Salary":
         return "SALARY"
-    elif r in ("Advance Repayment", "Other Deductions", "Deduction"):
+    elif r in ("Advance Repayment", "Repayment"):
+        return "REPAYMENT"
+    elif r in ("Other Deductions", "Deduction"):
         return "DEDUCTION"
     elif r == "Other Earnings":
         return "BONUS"

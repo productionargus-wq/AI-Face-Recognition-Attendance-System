@@ -264,7 +264,14 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
     manual_other_earnings = sum(float(e.get("amount") or 0.0) for e in fin_entries if e.get("reason") == "Other Earnings")
     
     manual_advance_repayment = sum(float(e.get("amount") or 0.0) for e in fin_entries if e.get("reason") == "Advance Repayment")
-    manual_other_deductions = sum(float(e.get("amount") or 0.0) for e in fin_entries if e.get("reason") in ("Other Deductions", "Deduction") or e.get("type") == "DEDUCTION")
+    manual_other_deductions = sum(
+        float(e.get("amount") or 0.0)
+        for e in fin_entries
+        if (e.get("reason") in ("Other Deductions", "Deduction") or e.get("type") == "DEDUCTION")
+        and e.get("reason") not in ("Advance Repayment", "Salary Advance")
+        and e.get("payment_type") != "Repayment"
+        and e.get("type") not in ("ADVANCE", "REPAYMENT")
+    )
 
     # Add manual salary additions to base pay
     earned_base_pay = round(earned_base_pay + manual_salary, 2)
@@ -676,7 +683,7 @@ async def disburse_payroll_payouts(
                 "employee_code": comp["employee_code"],
                 "department": comp.get("department", "Operations"),
                 "amount": comp["advance_repayment"],
-                "type": "DEDUCTION",
+                "type": "REPAYMENT",
                 "reason": "Advance Repayment",
                 "payment_type": "Salary Deduction",
                 "bank": "Payroll Deduction",
