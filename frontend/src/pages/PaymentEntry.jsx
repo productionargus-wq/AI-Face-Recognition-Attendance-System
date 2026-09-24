@@ -226,7 +226,7 @@ export const PaymentEntry = () => {
     try {
       if (showAddAdvanceModal) {
         // Issuing a Salary Advance (No installments - full lump sum)
-        await api.post('/operations/advances', {
+        await api.post('/advances', {
           employee_id: formData.employee_id,
           total_advance: amt,
           date: formData.date,

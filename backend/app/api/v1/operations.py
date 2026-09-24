@@ -41,6 +41,7 @@ def format_time_12h(time_str: str) -> str:
         return time_str
 
 @operations_router.post("/attendance/manual")
+@operations_router.post("/operations/attendance/manual")
 async def create_manual_override(
     payload: ManualOverridePayload,
     auth_ctx: Dict[str, Any] = Depends(require_org_admin)
@@ -183,6 +184,7 @@ async def create_manual_override(
     return record
 
 @operations_router.get("/attendance/manual")
+@operations_router.get("/operations/attendance/manual")
 async def list_manual_overrides(
     auth_ctx: Dict[str, Any] = Depends(require_org_admin)
 ):
@@ -226,6 +228,7 @@ class StatusUpdatePayload(BaseModel):
     comment: Optional[str] = None
 
 @operations_router.get("/advances")
+@operations_router.get("/operations/advances")
 async def list_advances(
     cycle: Optional[str] = None,
     auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
@@ -285,6 +288,7 @@ async def list_advances(
     return res
 
 @operations_router.post("/advances")
+@operations_router.post("/operations/advances")
 async def issue_salary_advance(
     payload: AdvanceRequestPayload,
     auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
@@ -365,6 +369,7 @@ async def issue_salary_advance(
     return record
 
 @operations_router.patch("/advances/{advance_id}/status")
+@operations_router.patch("/operations/advances/{advance_id}/status")
 async def update_advance_status(
     advance_id: str,
     payload: StatusUpdatePayload,
@@ -461,6 +466,7 @@ async def list_leaves(
     return res
 
 @operations_router.post("/leaves")
+@operations_router.post("/operations/leaves")
 async def submit_leave(
     payload: LeaveRequestPayload,
     auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
@@ -505,6 +511,7 @@ async def submit_leave(
     return record
 
 @operations_router.patch("/leaves/{leave_id}/status")
+@operations_router.patch("/operations/leaves/{leave_id}/status")
 async def update_leave_status(
     leave_id: str,
     payload: StatusUpdatePayload,
