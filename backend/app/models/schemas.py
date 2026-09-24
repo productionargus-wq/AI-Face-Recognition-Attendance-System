@@ -247,22 +247,45 @@ class AuditLog(BaseModel):
     ip_address: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-# ----------------- FINANCIAL ENTRIES (MANUAL ADJUSTMENTS) -----------------
+# ----------------- FINANCIAL / PAYMENT ENTRIES (MANUAL ADJUSTMENTS) -----------------
 class FinancialEntryCreate(BaseModel):
     employee_id: str
-    type: str  # BONUS | DEDUCTION | REIMBURSEMENT
     amount: float
-    cycle: str  # "YYYY-MM"
-    reason: Optional[str] = ""
+    reason: str  # Advance Repayment | Salary | Incentive | Allowance | Other Earnings | Other Deductions
+    date: Optional[str] = None  # "YYYY-MM-DD"
+    cycle: Optional[str] = None  # "YYYY-MM"
+    type: Optional[str] = None  # BONUS | DEDUCTION | REIMBURSEMENT
+    bank: Optional[str] = ""
+    payment_type: Optional[str] = "UPI"  # UPI | Cash | Net Banking | Mobile Banking | Repayment | Others
+    receipt: Optional[str] = None
+    receipt_filename: Optional[str] = None
+
+class FinancialEntryUpdate(BaseModel):
+    employee_id: Optional[str] = None
+    amount: Optional[float] = None
+    reason: Optional[str] = None
+    date: Optional[str] = None
+    cycle: Optional[str] = None
+    bank: Optional[str] = None
+    payment_type: Optional[str] = None
+    receipt: Optional[str] = None
+    receipt_filename: Optional[str] = None
 
 class FinancialEntry(BaseModel):
     id: str = Field(default_factory=generate_uuid)
     organization_id: str
     employee_id: str
-    type: str  # BONUS | DEDUCTION | REIMBURSEMENT
-    amount: float
-    cycle: str  # "YYYY-MM"
+    employee_name: Optional[str] = None
+    employee_code: Optional[str] = None
+    type: str = "OTHER"
+    amount: float = 0.0
     reason: str = ""
+    date: Optional[str] = None
+    cycle: str = ""
+    bank: Optional[str] = ""
+    payment_type: Optional[str] = "UPI"
+    receipt: Optional[str] = None
+    receipt_filename: Optional[str] = None
     created_by: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

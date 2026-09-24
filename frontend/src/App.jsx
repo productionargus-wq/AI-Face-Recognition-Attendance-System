@@ -16,6 +16,8 @@ import { OrgSettings } from './pages/OrgSettings';
 import { LiveMapGeofence } from './pages/LiveMapGeofence';
 import { PublicTerminal } from './pages/PublicTerminal';
 import { AttendanceReports } from './pages/AttendanceReports';
+import { PaymentEntry } from './pages/PaymentEntry';
+import { MonthlyPayslip } from './pages/MonthlyPayslip';
 
 const ProtectedRoute = ({ children, requiredPath = null }) => {
   const { user, loading } = useAuth();
@@ -28,7 +30,7 @@ const ProtectedRoute = ({ children, requiredPath = null }) => {
   }
   // Employee permissions check
   if (requiredPath) {
-    const perms = user.permissions || ['/admin', '/kiosk', '/attendance-reports', '/leave-apply', '/advance-money', '/payroll'];
+    const perms = user.permissions || ['/admin', '/kiosk', '/attendance-reports', '/leave-apply', '/advance-money', '/payment-entry', '/payroll', '/monthly-payslip'];
     const hasPerm = perms.includes(requiredPath) || (requiredPath === '/admin' && (perms.includes('/admin') || perms.includes('/portal')));
     if (!hasPerm) {
       const fallback = perms.find(p => p !== requiredPath) || '/portal';
@@ -136,11 +138,33 @@ function App() {
           />
 
           <Route
+            path="/payment-entry"
+            element={
+              <ProtectedRoute requiredPath="/payment-entry">
+                <AppLayout>
+                  <PaymentEntry />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/payroll"
             element={
-              <ProtectedRoute requiredPath="/payroll">
+              <ProtectedRoute requiredPath="/payment-entry">
                 <AppLayout>
-                  <PayrollReport />
+                  <PaymentEntry />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/monthly-payslip"
+            element={
+              <ProtectedRoute requiredPath="/monthly-payslip">
+                <AppLayout>
+                  <MonthlyPayslip />
                 </AppLayout>
               </ProtectedRoute>
             }

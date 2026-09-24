@@ -249,26 +249,34 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
     # 5. Overtime Compensation
     overtime_pay = round(auto_ot * hourly_rate * 1.5, 2)
 
-    # 6. Query Manual Financial Adjustments (Bonus, Deduction, Reimbursement)
+    # 6. Query Manual Financial Adjustments (Bonus, Deduction, Reimbursement, Salary, Incentive, Allowance, Other Earnings, Advance Repayment, Other Deductions)
     fin_entries = await store.find_many("financial_entries", {
         "organization_id": org_id,
         "employee_id": emp_id,
         "cycle": cycle
     })
+
+    # Classify by reason and type dynamically
+    manual_salary = sum(float(e.get("amount") or 0.0) for e in fin_entries if e.get("reason") == "Salary")
+    manual_bonus = sum(float(e.get("amount") or 0.0) for e in fin_entries if e.get("reason") in ("Incentive", "Bonus") or e.get("type") == "BONUS")
+    manual_allowance = sum(float(e.get("amount") or 0.0) for e in fin_entries if e.get("reason") == "Allowance" or e.get("type") == "REIMBURSEMENT")
+    manual_other_earnings = sum(float(e.get("amount") or 0.0) for e in fin_entries if e.get("reason") == "Other Earnings")
     
-    manual_bonus = sum(float(e.get("amount") or 0.0) for e in fin_entries if e.get("type") == "BONUS")
-    manual_deduction = sum(float(e.get("amount") or 0.0) for e in fin_entries if e.get("type") == "DEDUCTION")
-    manual_reimbursement = sum(float(e.get("amount") or 0.0) for e in fin_entries if e.get("type") == "REIMBURSEMENT")
+    manual_advance_repayment = sum(float(e.get("amount") or 0.0) for e in fin_entries if e.get("reason") == "Advance Repayment")
+    manual_other_deductions = sum(float(e.get("amount") or 0.0) for e in fin_entries if e.get("reason") in ("Other Deductions", "Deduction") or e.get("type") == "DEDUCTION")
+
+    # Add manual salary additions to base pay
+    earned_base_pay = round(earned_base_pay + manual_salary, 2)
 
     # Incentive = Manual Bonus + Automatic Punctuality Reward (if >= 20 present days)
     auto_punctuality = 2500.0 if effective_present_days >= 20 else 0.0
     incentive = round(manual_bonus + auto_punctuality, 2)
 
-    # Allowance = Reimbursements
-    allowance = round(manual_reimbursement, 2)
+    # Allowance
+    allowance = round(manual_allowance, 2)
 
-    # Others Earnings = Overtime pay + any non-base additions
-    others_earnings = round(overtime_pay, 2)
+    # Others Earnings = Overtime pay + manual other earnings
+    others_earnings = round(overtime_pay + manual_other_earnings, 2)
 
     # Total Gross Earnings
     total_earnings = round(earned_base_pay + allowance + incentive + others_earnings, 2)
@@ -284,11 +292,13 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
         balance = float(adv.get("balance", 0.0))
         installment = float(adv.get("next_deduction") or adv.get("nextDeduction") or 0.0)
         advance_repayment += min(balance, installment)
-    advance_repayment = round(advance_repayment, 2)
+    
+    # Add manual advance repayments logged in Payment Entry
+    advance_repayment = round(advance_repayment + manual_advance_repayment, 2)
 
     # 8. Deductions: Statutory PF/taxes capped at gross earnings so net cannot be negative
     paid_salary = min(statutory_deductions, total_earnings) if total_earnings > 0 else 0.0
-    other_deductions = round(manual_deduction, 2)
+    other_deductions = round(manual_other_deductions, 2)
     total_deductions = round(paid_salary + advance_repayment + other_deductions, 2)
 
     # 9. Net Pay
@@ -443,6 +453,8 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
         "net_pay_words": net_pay_words,
         "calculation_basis": calculation_basis,
         "daily_breakdown": daily_breakdown,
+        "financial_entries": fin_entries,
+        "payment_entries": fin_entries,
         "payout_status": payout_status,
         "payout_id": existing_payout.get("id") if existing_payout else None,
         "disbursed_at": existing_payout.get("disbursed_at") if existing_payout else None,

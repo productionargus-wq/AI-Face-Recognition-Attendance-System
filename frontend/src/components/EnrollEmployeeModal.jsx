@@ -10,12 +10,13 @@ export const ALL_PERMISSIONS = [
   { id: '/manual-entry', label: 'Manual Entry', desc: 'Duty shifts & override logs' },
   { id: '/advance-money', label: 'Advance Money', desc: 'Salary advance & repayment' },
   { id: '/leave-apply', label: 'Leave Apply', desc: 'Leave applications & tracking' },
-  { id: '/payroll', label: 'My Salary & Payslip', desc: 'Personal compensation, breakdown & payout history' },
+  { id: '/payment-entry', label: 'Payment Entry', desc: 'Manual money entry, allowances, incentives & repayment' },
+  { id: '/monthly-payslip', label: 'Monthly Payslip', desc: 'Generate & download employee monthly payslip in A4' },
   { id: '/geofence', label: 'Live Map & Geofence', desc: 'Realtime map & geofence perimeter tracking' },
   { id: '/settings', label: 'Settings', desc: 'Organization configurations' }
 ];
 
-export const DEFAULT_PERMISSIONS = ['/admin', '/kiosk', '/attendance-reports', '/leave-apply', '/advance-money', '/payroll', '/geofence'];
+export const DEFAULT_PERMISSIONS = ['/admin', '/kiosk', '/attendance-reports', '/leave-apply', '/advance-money', '/payment-entry', '/payroll', '/monthly-payslip', '/geofence'];
 
 const INITIAL_FORM_DATA = {
   employee_code: '',

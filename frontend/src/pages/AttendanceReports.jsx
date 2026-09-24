@@ -402,7 +402,7 @@ export const AttendanceReports = () => {
       {/* ------------------------------------------------------------- */}
       {/* SUMMARY KPI CARDS */}
       {/* ------------------------------------------------------------- */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 mb-1">
             <span className="text-[11px] font-bold uppercase font-mono tracking-wider">Total Records</span>
@@ -413,19 +413,6 @@ export const AttendanceReports = () => {
           </div>
           <div className="text-[10px] text-slate-400 font-medium mt-0.5">
             Matching current filter
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-[11px] font-bold uppercase font-mono tracking-wider">Present Count</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-          </div>
-          <div className="text-2xl font-black text-emerald-600 font-mono">
-            {summaryKPI.presentCount}
-          </div>
-          <div className="text-[10px] text-slate-400 font-medium mt-0.5">
-            Logs with active punch
           </div>
         </div>
 
@@ -455,7 +442,7 @@ export const AttendanceReports = () => {
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs col-span-2 sm:col-span-1">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 mb-1">
             <span className="text-[11px] font-bold uppercase font-mono tracking-wider">Late / Half-Day</span>
             <AlertTriangle className="w-4 h-4 text-amber-500" />

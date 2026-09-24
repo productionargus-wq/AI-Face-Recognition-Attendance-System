@@ -18,7 +18,8 @@ import {
   ChevronRight,
   Bell,
   MapPin,
-  FileSpreadsheet
+  FileSpreadsheet,
+  ScrollText
 } from 'lucide-react';
 
 export const AppLayout = ({ children }) => {
@@ -27,7 +28,7 @@ export const AppLayout = ({ children }) => {
   const { user, organization, logout } = useAuth();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const isEmployee = user?.role === 'employee';
-  const userPermissions = user?.permissions || (isEmployee ? ['/admin', '/kiosk', '/attendance-reports', '/leave-apply', '/advance-money', '/payroll'] : null);
+  const userPermissions = user?.permissions || (isEmployee ? ['/admin', '/kiosk', '/attendance-reports', '/leave-apply', '/advance-money', '/payment-entry', '/payroll', '/monthly-payslip'] : null);
 
   // Notification state
   const [notifications, setNotifications] = useState([]);
@@ -130,10 +131,17 @@ export const AppLayout = ({ children }) => {
       id: '/leave-apply'
     },
     {
-      name: isEmployee ? 'My Salary & Payslip' : 'Salary & Payroll',
-      path: '/payroll',
+      name: 'Payment Entry',
+      path: '/payment-entry',
+      altPaths: ['/payroll'],
       icon: CreditCard,
-      id: '/payroll'
+      id: '/payment-entry'
+    },
+    {
+      name: 'Monthly Payslip',
+      path: '/monthly-payslip',
+      icon: ScrollText,
+      id: '/monthly-payslip'
     },
     {
       name: 'Live Map & Geofence',
