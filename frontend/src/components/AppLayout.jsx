@@ -119,12 +119,6 @@ export const AppLayout = ({ children }) => {
       id: '/manual-entry'
     },
     {
-      name: 'Advance Money',
-      path: '/advance-money',
-      icon: Banknote,
-      id: '/advance-money'
-    },
-    {
       name: 'Leave Apply',
       path: '/leave-apply',
       icon: CalendarDays,

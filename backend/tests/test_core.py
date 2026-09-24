@@ -795,3 +795,108 @@ async def test_comprehensive_attendance_history_endpoint():
     )
     assert len(filtered_dept) == 1
     assert filtered_dept[0]["employee_name"] == "Priya Nair"
+
+@pytest.mark.anyio
+async def test_salary_advance_allocation_and_repayment_scenarios():
+    """Verify salary advance allocation without installments, in-person repayment (Scenario 1), and payslip disburse settlement (Scenario 2)."""
+    from app.api.v1.operations import issue_salary_advance, AdvanceRequestPayload
+    from app.api.v1.financial_entries import create_financial_entry, get_balance_summary
+    from app.api.v1.payroll import compute_single_employee_payroll, disburse_payroll_payouts
+    from app.models.schemas import FinancialEntryCreate
+    from app.db.store import store
+    import uuid
+
+    uid = uuid.uuid4().hex[:6]
+    test_org_id = f"org_adv_{uid}"
+    emp_id = f"emp_adv_{uid}"
+    emp_code = f"ADV_{uid.upper()}"
+
+    # Setup employee
+    emp_record = {
+        "id": emp_id,
+        "organization_id": test_org_id,
+        "employee_code": emp_code,
+        "first_name": "Rohan",
+        "last_name": "Sharma",
+        "email": f"rohan_{uid}@test.com",
+        "department": "Engineering",
+        "designation": "Developer",
+        "employment_type": "SALARIED",
+        "base_salary": 50000.0,
+        "is_active": True
+    }
+    await store.insert_one("employees", emp_record)
+
+    admin_ctx = {
+        "org_id": test_org_id,
+        "role": "org_admin",
+        "name": "Admin Tester",
+        "email": "admin@test.com"
+    }
+
+    # 1. Allocate Salary Advance of ₹10,000 (Lump sum, no installments)
+    payload = AdvanceRequestPayload(
+        employee_id=emp_id,
+        total_advance=10000.0,
+        reason="Personal Advance",
+        payment_type="Cash"
+    )
+    adv_res = await issue_salary_advance(payload, auth_ctx=admin_ctx)
+    assert adv_res["total_advance"] == 10000.0
+    assert adv_res["balance"] == 10000.0
+    assert adv_res["approval_type"] == "active"
+
+    # Check that financial_entries logged it
+    fin_entries = await store.find_many("financial_entries", {"organization_id": test_org_id, "employee_id": emp_id})
+    assert any(e["reason"] == "Salary Advance" and e["amount"] == 10000.0 for e in fin_entries)
+
+    # 2. Scenario 1: Employee repays ₹4,000 in-person before payroll
+    repay_payload = FinancialEntryCreate(
+        employee_id=emp_id,
+        amount=4000.0,
+        reason="Advance Repayment",
+        payment_type="Cash",
+        bank="Cash at Desk"
+    )
+    repay_res = await create_financial_entry(repay_payload, auth_ctx=admin_ctx)
+    assert repay_res["amount"] == 4000.0
+
+    # Active advance balance must now be dynamically reduced to ₹6,000
+    updated_adv = await store.find_one("advances", {"id": adv_res["id"]})
+    assert updated_adv["balance"] == 6000.0
+    assert updated_adv["approval_type"] == "active"
+
+    # Balance summary check
+    bal_summary = await get_balance_summary(auth_ctx=admin_ctx)
+    assert bal_summary["outstanding_advance_balance"] == 6000.0
+    assert bal_summary["total_advances_disbursed"] == 10000.0
+    assert bal_summary["total_advance_repaid"] == 4000.0
+
+    # 3. Monthly Payslip Generation: Remaining active advance (₹6,000) must appear as advance deduction
+    cycle = "2026-09"
+    comp = await compute_single_employee_payroll(test_org_id, emp_record, cycle)
+    assert comp["advance_repayment"] == 6000.0
+    assert comp["payout_status"] == "PENDING"
+    # Net salary = Gross - Deductions (including Advance Deduction ₹6,000)
+    assert comp["net_pay"] == round(comp["total_earnings"] - comp["total_deductions"], 2)
+
+    # 4. Scenario 2: Admin clicks "Disburse" on the payslip
+    disb_res = await disburse_payroll_payouts(
+        employee_ids=[emp_id],
+        cycle=cycle,
+        auth_ctx=admin_ctx
+    )
+    assert disb_res["status"] == "success"
+    assert disb_res["disbursed_count"] == 1
+
+    # Active advance should now be fully settled and completed!
+    final_adv = await store.find_one("advances", {"id": adv_res["id"]})
+    assert final_adv["balance"] == 0.0
+    assert final_adv["approval_type"] == "completed"
+    assert "Completed & Paid Off" in final_adv["approval"]
+
+    # Re-computing payslip shows status PAID and retains historical deduction
+    comp_after = await compute_single_employee_payroll(test_org_id, emp_record, cycle)
+    assert comp_after["payout_status"] == "PAID"
+    assert comp_after["advance_repayment"] == 6000.0
+    assert comp_after["net_pay"] == round(comp_after["total_earnings"] - comp_after["total_deductions"], 2)

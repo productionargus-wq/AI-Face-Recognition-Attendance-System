@@ -168,10 +168,11 @@ export const PaymentEntry = () => {
       receipt: null,
       receipt_filename: ''
     });
+    setShowAddAdvanceModal(false);
     setShowAddPaymentModal(true);
   };
 
-  // Open Modal for Add Advance
+  // Open Modal for Add Advance (Giving Advance to Employee)
   const openAddAdvance = () => {
     setEditingEntry(null);
     setErrorMsg('');
@@ -181,10 +182,11 @@ export const PaymentEntry = () => {
       amount: '',
       bank: '',
       payment_type: 'Cash',
-      reason: 'Advance Repayment',
+      reason: 'Salary Advance',
       receipt: null,
       receipt_filename: ''
     });
+    setShowAddPaymentModal(false);
     setShowAddAdvanceModal(true);
   };
 
@@ -202,10 +204,11 @@ export const PaymentEntry = () => {
       receipt: entry.receipt || null,
       receipt_filename: entry.receipt_filename || ''
     });
+    setShowAddAdvanceModal(false);
     setShowAddPaymentModal(true);
   };
 
-  // Save Payment Entry
+  // Save Payment Entry or Salary Advance
   const handleSave = async (e) => {
     e.preventDefault();
     if (!formData.employee_id) {
@@ -221,7 +224,20 @@ export const PaymentEntry = () => {
     setSaving(true);
     setErrorMsg('');
     try {
-      if (editingEntry) {
+      if (showAddAdvanceModal) {
+        // Issuing a Salary Advance (No installments - full lump sum)
+        await api.post('/operations/advances', {
+          employee_id: formData.employee_id,
+          total_advance: amt,
+          date: formData.date,
+          bank: formData.bank,
+          payment_type: formData.payment_type,
+          reason: formData.reason || 'Salary Advance',
+          receipt: formData.receipt,
+          receipt_filename: formData.receipt_filename
+        });
+        setSuccessMsg(`Salary advance of ₹${amt.toLocaleString('en-IN')} allocated successfully!`);
+      } else if (editingEntry) {
         await api.put(`/financial-entries/${editingEntry.id}`, {
           employee_id: formData.employee_id,
           date: formData.date,
@@ -244,7 +260,11 @@ export const PaymentEntry = () => {
           receipt: formData.receipt,
           receipt_filename: formData.receipt_filename
         });
-        setSuccessMsg('Payment entry created successfully!');
+        if (formData.reason === 'Advance Repayment') {
+          setSuccessMsg(`Advance repayment of ₹${amt.toLocaleString('en-IN')} recorded successfully! Active advance balance deducted.`);
+        } else {
+          setSuccessMsg('Payment entry created successfully!');
+        }
       }
 
       setShowAddPaymentModal(false);
@@ -252,8 +272,8 @@ export const PaymentEntry = () => {
       fetchAllData();
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
-      console.error('Failed to save payment entry', err);
-      setErrorMsg(err.response?.data?.detail || 'Failed to save payment entry.');
+      console.error('Failed to save payment/advance entry', err);
+      setErrorMsg(err.response?.data?.detail || 'Failed to save entry.');
     } finally {
       setSaving(false);
     }
@@ -701,6 +721,7 @@ export const PaymentEntry = () => {
                     className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[11px] focus:outline-none"
                   >
                     <option value="All">All</option>
+                    <option value="Salary Advance">Salary Advance</option>
                     <option value="Advance Repayment">Advance Repayment</option>
                     <option value="Salary">Salary</option>
                     <option value="Incentive">Incentive</option>
@@ -756,6 +777,7 @@ export const PaymentEntry = () => {
                   const name = entry.employee_name || (emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : 'Employee');
                   const code = entry.employee_code || emp?.employee_code || '';
                   const isDeduction = entry.reason === 'Advance Repayment' || entry.reason === 'Other Deductions';
+                  const isAdvance = entry.reason === 'Salary Advance' || entry.type === 'ADVANCE';
 
                   return (
                     <tr key={entry.id} className="hover:bg-slate-50 transition-colors">
@@ -777,7 +799,7 @@ export const PaymentEntry = () => {
 
                       {/* Amount */}
                       <td className="p-2.5 border-r border-slate-200 text-right font-mono font-bold text-xs whitespace-nowrap">
-                        <span className={isDeduction ? 'text-amber-700' : 'text-emerald-700'}>
+                        <span className={isDeduction ? 'text-amber-700' : isAdvance ? 'text-blue-700' : 'text-emerald-700'}>
                           {isDeduction ? '-' : '+'} ₹{Number(entry.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </span>
                       </td>
@@ -799,6 +821,8 @@ export const PaymentEntry = () => {
                         <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
                           isDeduction 
                             ? 'bg-amber-50 text-amber-800 border border-amber-200' 
+                            : isAdvance
+                            ? 'bg-blue-50 text-blue-800 border border-blue-200'
                             : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                         }`}>
                           {entry.reason || 'Salary'}
@@ -893,8 +917,8 @@ export const PaymentEntry = () => {
             
             {/* Header with 'x' close button (Matching Image 3) */}
             <div className="px-5 pt-4 pb-2 flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400">
-                {editingEntry ? 'Edit Payment Entry' : (showAddAdvanceModal ? 'Record Salary Advance' : 'Add Manual Payment')}
+              <span className="text-xs font-bold text-slate-800">
+                {editingEntry ? 'Edit Payment Entry' : (showAddAdvanceModal ? 'Issue Salary Advance (Allocate Advance)' : 'Add Manual Payment')}
               </span>
               <button
                 type="button"
@@ -996,23 +1020,32 @@ export const PaymentEntry = () => {
                 </select>
               </div>
 
-              {/* Field 6: Reason (Matching Image 4) */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                <label className="w-28 font-medium text-slate-700">Reason</label>
-                <select
-                  name="reason"
-                  value={formData.reason}
-                  onChange={handleInputChange}
-                  className="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-500"
-                >
-                  <option value="Advance Repayment">Advance Repayment</option>
-                  <option value="Salary">Salary</option>
-                  <option value="Incentive">Incentive</option>
-                  <option value="Allowance">Allowance</option>
-                  <option value="Other Earnings">Other Earnings</option>
-                  <option value="Other Deductions">Other Deductions</option>
-                </select>
-              </div>
+              {/* Field 6: Reason / Category */}
+              {showAddAdvanceModal ? (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <label className="w-28 font-medium text-slate-700">Category</label>
+                  <div className="flex-1 px-2.5 py-1.5 bg-blue-50 border border-blue-200 rounded text-xs font-bold text-blue-800">
+                    Salary Advance (Lump Sum Allocation)
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <label className="w-28 font-medium text-slate-700">Reason</label>
+                  <select
+                    name="reason"
+                    value={formData.reason}
+                    onChange={handleInputChange}
+                    className="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="Advance Repayment">Advance Repayment</option>
+                    <option value="Salary">Salary</option>
+                    <option value="Incentive">Incentive</option>
+                    <option value="Allowance">Allowance</option>
+                    <option value="Other Earnings">Other Earnings</option>
+                    <option value="Other Deductions">Other Deductions</option>
+                  </select>
+                </div>
+              )}
 
               {/* Field 7: Receipt Upload (Matching Image 3) */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
@@ -1114,8 +1147,10 @@ export const PaymentEntry = () => {
                     <tr>
                       <th className="p-2 border-b">Employee</th>
                       <th className="p-2 border-b">Dept</th>
+                      <th className="p-2 border-b text-right">Advance Received</th>
+                      <th className="p-2 border-b text-right">Advance Repaid</th>
                       <th className="p-2 border-b text-right">Outstanding Advance</th>
-                      <th className="p-2 border-b text-right">Total Payments</th>
+                      <th className="p-2 border-b text-right">Payments Logged</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1126,6 +1161,12 @@ export const PaymentEntry = () => {
                           <div className="text-[10px] font-mono text-slate-400">{emp.employee_code}</div>
                         </td>
                         <td className="p-2 text-slate-600">{emp.department}</td>
+                        <td className="p-2 text-right font-mono font-bold text-blue-700">
+                          ₹{Number(emp.total_advances_received || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="p-2 text-right font-mono font-bold text-emerald-700">
+                          ₹{Number(emp.total_advance_repaid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
                         <td className="p-2 text-right font-mono font-bold text-amber-700">
                           ₹{Number(emp.active_advance_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>

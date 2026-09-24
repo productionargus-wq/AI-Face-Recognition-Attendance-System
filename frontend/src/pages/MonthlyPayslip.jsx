@@ -32,9 +32,39 @@ export const MonthlyPayslip = () => {
   });
 
   const [loading, setLoading] = useState(false);
+  const [disbursing, setDisbursing] = useState(false);
   const [payslipData, setPayslipData] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [successToast, setSuccessToast] = useState('');
   const [generated, setGenerated] = useState(false);
+
+  // Disburse Monthly Payslip & Settle Active Advance
+  const handleDisburse = async () => {
+    if (!payslipData || !selectedEmployeeId) return;
+    const advDed = Number(payslipData.advance_repayment || payslipData.advance_deduction || 0);
+    const confirmMsg = advDed > 0
+      ? `Disburse monthly payslip for ${payslipData.employee_name}? This will mark salary as PAID and settle ₹${advDed.toLocaleString('en-IN')} against active salary advance.`
+      : `Disburse monthly payslip for ${payslipData.employee_name}? This will mark salary as PAID.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setDisbursing(true);
+    setErrorMsg('');
+    try {
+      await api.post('/payroll/disburse', {
+        employee_ids: [selectedEmployeeId],
+        cycle: selectedCycle
+      });
+      setSuccessToast(`Payslip disbursed successfully! ${advDed > 0 ? `₹${advDed.toLocaleString('en-IN')} advance deduction settled.` : ''}`);
+      setTimeout(() => setSuccessToast(''), 6000);
+      await handleGenerate(selectedEmployeeId, selectedCycle);
+    } catch (err) {
+      console.error('Failed to disburse payslip', err);
+      setErrorMsg(err.response?.data?.detail || 'Failed to disburse payslip.');
+    } finally {
+      setDisbursing(false);
+    }
+  };
 
   // Fetch employees list
   const fetchEmployees = async () => {
@@ -223,6 +253,14 @@ export const MonthlyPayslip = () => {
         </div>
       </div>
 
+      {/* Success Notification */}
+      {successToast && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-bold rounded-lg flex items-center gap-2 print:hidden animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{successToast}</span>
+        </div>
+      )}
+
       {/* Error Message Notification */}
       {errorMsg && (
         <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-xs font-semibold rounded-lg flex items-center gap-2 print:hidden animate-in fade-in">
@@ -232,10 +270,10 @@ export const MonthlyPayslip = () => {
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* ACTION CONTROLS FOR GENERATED PAYSLIP (PRINT, PDF, CSV) */}
+      {/* ACTION CONTROLS FOR GENERATED PAYSLIP (PRINT, PDF, CSV, DISBURSE) */}
       {/* ------------------------------------------------------------- */}
       {generated && payslipData && (
-        <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-2xs print:hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs print:hidden">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span className="text-xs font-bold text-slate-800">
@@ -243,7 +281,7 @@ export const MonthlyPayslip = () => {
             </span>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
             <button
               type="button"
               onClick={handleExportCSV}
@@ -261,6 +299,24 @@ export const MonthlyPayslip = () => {
               <Printer className="w-4 h-4" />
               <span>Print / Download PDF</span>
             </button>
+
+            {payslipData.payout_status === 'PAID' ? (
+              <div className="px-3.5 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Disbursed</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleDisburse}
+                disabled={disbursing}
+                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                title="Finalize payout and settle advance deduction"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>{disbursing ? 'Disbursing...' : 'Disburse'}</span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -450,9 +506,9 @@ export const MonthlyPayslip = () => {
                           </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-slate-700">Advance Repayment:</span>
+                          <span className="text-slate-700">Advance Deduction:</span>
                           <span className="font-mono font-semibold text-slate-800">
-                            ₹{Number(payslipData.advance_repayment || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            ₹{Number(payslipData.advance_repayment || payslipData.advance_deduction || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </span>
                         </div>
                         <div className="flex justify-between">

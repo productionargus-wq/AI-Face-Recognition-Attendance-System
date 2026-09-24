@@ -30,7 +30,7 @@ const ProtectedRoute = ({ children, requiredPath = null }) => {
   }
   // Employee permissions check
   if (requiredPath) {
-    const perms = user.permissions || ['/admin', '/kiosk', '/attendance-reports', '/leave-apply', '/advance-money', '/payment-entry', '/payroll', '/monthly-payslip'];
+    const perms = user.permissions || ['/admin', '/kiosk', '/attendance-reports', '/leave-apply', '/payment-entry', '/payroll', '/monthly-payslip'];
     const hasPerm = perms.includes(requiredPath) || (requiredPath === '/admin' && (perms.includes('/admin') || perms.includes('/portal')));
     if (!hasPerm) {
       const fallback = perms.find(p => p !== requiredPath) || '/portal';
@@ -117,13 +117,7 @@ function App() {
 
           <Route
             path="/advance-money"
-            element={
-              <ProtectedRoute requiredPath="/advance-money">
-                <AppLayout>
-                  <AdvanceMoney />
-                </AppLayout>
-              </ProtectedRoute>
-            }
+            element={<Navigate to="/payment-entry" replace />}
           />
 
           <Route

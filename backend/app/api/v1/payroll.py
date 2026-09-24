@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Query
+from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone, timedelta
 import calendar
@@ -281,33 +282,8 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
     # Total Gross Earnings
     total_earnings = round(earned_base_pay + allowance + incentive + others_earnings, 2)
 
-    # 7. Query Active Advance for Installment Repayment
-    emp_advances = await store.find_many("advances", {
-        "organization_id": org_id,
-        "employee_id": emp_id,
-        "approval_type": "active"
-    })
-    advance_repayment = 0.0
-    for adv in emp_advances:
-        balance = float(adv.get("balance", 0.0))
-        installment = float(adv.get("next_deduction") or adv.get("nextDeduction") or 0.0)
-        advance_repayment += min(balance, installment)
-    
-    # Add manual advance repayments logged in Payment Entry
-    advance_repayment = round(advance_repayment + manual_advance_repayment, 2)
-
-    # 8. Deductions: Statutory PF/taxes capped at gross earnings so net cannot be negative
-    paid_salary = min(statutory_deductions, total_earnings) if total_earnings > 0 else 0.0
-    other_deductions = round(manual_other_deductions, 2)
-    total_deductions = round(paid_salary + advance_repayment + other_deductions, 2)
-
-    # 9. Net Pay
-    net_pay = max(0.0, round(total_earnings - total_deductions, 2))
-    net_pay_words = number_to_indian_words(net_pay)
-
-    # 10. Check Payout Disbursement Status
+    # 7. Check Payout Disbursement Status
     cycle_label_pattern = cycle  # "2026-09"
-    # Also check full month name like "September 2026"
     month_name_cycle = f"{calendar.month_name[month]} {year}"
     
     payouts = await store.find_many("salary_payouts", {
@@ -320,6 +296,29 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
         None
     )
     payout_status = "PAID" if existing_payout else "PENDING"
+
+    # 8. Advance Deduction: If already paid, use recorded deduction; otherwise query active advance balance
+    if existing_payout:
+        advance_repayment = float(existing_payout.get("advance_repayment") or existing_payout.get("advance_deduction") or 0.0)
+    else:
+        emp_advances = await store.find_many("advances", {
+            "organization_id": org_id,
+            "employee_id": emp_id,
+            "approval_type": "active"
+        })
+        total_active_advance_bal = sum(float(adv.get("balance", 0.0)) for adv in emp_advances)
+        # Advance deduction is the employee's active advance balance, capped at available net earnings
+        available_for_advance = max(0.0, total_earnings - statutory_deductions)
+        advance_repayment = round(min(total_active_advance_bal, available_for_advance), 2)
+
+    # 9. Deductions: Statutory PF/taxes capped at gross earnings so net cannot be negative
+    paid_salary = min(statutory_deductions, total_earnings) if total_earnings > 0 else 0.0
+    other_deductions = round(manual_other_deductions, 2)
+    total_deductions = round(paid_salary + advance_repayment + other_deductions, 2)
+
+    # 10. Net Pay
+    net_pay = max(0.0, round(total_earnings - total_deductions, 2))
+    net_pay_words = number_to_indian_words(net_pay)
 
     fn = emp.get("first_name", "")
     ln = emp.get("last_name", "")
@@ -549,28 +548,37 @@ async def get_bank_advice(
     return advice
 
 
+class DisburseRequestPayload(BaseModel):
+    cycle: Optional[str] = None
+    employee_ids: Optional[List[str]] = None
+
+@payroll_router.post("/disburse")
 @payroll_router.post("/batch-disburse")
-async def batch_disburse_payroll(
-    cycle: str,
+async def disburse_payroll_payouts(
+    payload: Optional[DisburseRequestPayload] = None,
+    cycle: Optional[str] = Query(None),
     employee_ids: Optional[List[str]] = None,
     auth_ctx: Dict[str, Any] = Depends(require_org_admin)
 ):
     """
-    Disburses monthly salary in batch for all (or specified) pending employees.
-    Creates salary_payouts records, amortizes advances, and sends employee notifications.
+    Disburses monthly salary for specified (or all) employees for a designated billing cycle.
+    Creates salary_payouts records, amortizes active advances, records financial deduction entry, and sends employee notifications.
     """
     org_id = auth_ctx["org_id"]
     admin_name = auth_ctx.get("name", "Payroll Administrator")
 
+    target_cycle = (payload.cycle if payload and payload.cycle else cycle) or datetime.utcnow().strftime("%Y-%m")
+    target_emp_ids = (payload.employee_ids if payload and payload.employee_ids is not None else employee_ids)
+
     employees = await store.find_many("employees", {"organization_id": org_id, "is_active": True})
-    if employee_ids:
-        employees = [e for e in employees if e["id"] in employee_ids]
+    if target_emp_ids:
+        employees = [e for e in employees if e["id"] in target_emp_ids or e.get("employee_code") in target_emp_ids]
 
     disbursed = []
     skipped = []
 
     for emp in employees:
-        comp = await compute_single_employee_payroll(org_id, emp, cycle)
+        comp = await compute_single_employee_payroll(org_id, emp, target_cycle)
         if comp["payout_status"] == "PAID":
             skipped.append(comp["employee_code"])
             continue
@@ -624,18 +632,44 @@ async def batch_disburse_payroll(
 
         # Amortize active advances if advance_repayment > 0
         if comp["advance_repayment"] > 0:
-            active_adv = await store.find_one("advances", {
+            rem_to_settle = float(comp["advance_repayment"])
+            emp_advs = await store.find_many("advances", {
                 "employee_id": emp["id"],
                 "organization_id": org_id,
                 "approval_type": "active"
+            }, sort_key="created_at", sort_desc=False)
+            for adv in emp_advs:
+                cur_b = float(adv.get("balance", 0.0))
+                if cur_b > 0 and rem_to_settle > 0:
+                    ded = min(cur_b, rem_to_settle)
+                    nb = round(cur_b - ded, 2)
+                    rem_to_settle = round(rem_to_settle - ded, 2)
+                    adv_upd = {"balance": nb}
+                    if nb <= 0:
+                        adv_upd["approval"] = "Completed & Paid Off"
+                        adv_upd["approval_type"] = "completed"
+                    await store.update_one("advances", {"id": adv["id"], "organization_id": org_id}, adv_upd)
+
+            # Record this advance repayment in financial_entries
+            now_ts = datetime.utcnow()
+            await store.insert_one("financial_entries", {
+                "id": f"PAY-REP-{uuid.uuid4().hex[:6].upper()}",
+                "organization_id": org_id,
+                "employee_id": emp["id"],
+                "employee_name": emp_name,
+                "employee_code": comp["employee_code"],
+                "department": comp.get("department", "Operations"),
+                "amount": comp["advance_repayment"],
+                "type": "DEDUCTION",
+                "reason": "Advance Repayment",
+                "payment_type": "Salary Deduction",
+                "bank": "Payroll Deduction",
+                "cycle": comp.get("cycle_display") or cycle,
+                "date": now_ts.strftime("%Y-%m-%d"),
+                "created_by": admin_name,
+                "created_at": now_ts.isoformat(),
+                "timestamp": now_ts.strftime("%Y-%m-%d %I:%M %p")
             })
-            if active_adv:
-                new_bal = max(0.0, float(active_adv.get("balance", 0.0)) - float(comp["advance_repayment"]))
-                adv_update = {"balance": new_bal}
-                if new_bal <= 0:
-                    adv_update["approval"] = "Completed & Paid Off"
-                    adv_update["approval_type"] = "completed"
-                await store.update_one("advances", {"id": active_adv["id"]}, adv_update)
 
         # Dispatch notification
         notif = {
@@ -657,10 +691,14 @@ async def batch_disburse_payroll(
 
     return {
         "status": "success",
-        "cycle": cycle,
+        "cycle": target_cycle,
         "disbursed_count": len(disbursed),
         "disbursed_employees": disbursed,
         "skipped_count": len(skipped),
         "skipped_employees": skipped,
         "message": f"Successfully processed payroll disbursement for {len(disbursed)} employees."
     }
+
+# Backward compatibility alias
+batch_disburse_payroll = disburse_payroll_payouts
+

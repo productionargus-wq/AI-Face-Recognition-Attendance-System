@@ -10,6 +10,7 @@ financial_entries_router = APIRouter(prefix="/financial-entries", tags=["Payroll
 
 VALID_REASONS = [
     "Advance Repayment",
+    "Salary Advance",
     "Salary",
     "Incentive",
     "Allowance",
@@ -27,10 +28,12 @@ VALID_PAYMENT_TYPES = [
 ]
 
 def derive_entry_type(reason: str, explicit_type: Optional[str] = None) -> str:
-    if explicit_type and explicit_type.upper() in ("BONUS", "DEDUCTION", "REIMBURSEMENT"):
+    if explicit_type and explicit_type.upper() in ("BONUS", "DEDUCTION", "REIMBURSEMENT", "ADVANCE"):
         return explicit_type.upper()
     r = (reason or "").strip()
-    if r in ("Incentive", "Bonus"):
+    if r in ("Salary Advance", "Advance"):
+        return "ADVANCE"
+    elif r in ("Incentive", "Bonus"):
         return "BONUS"
     elif r in ("Allowance", "Reimbursement"):
         return "REIMBURSEMENT"
@@ -88,6 +91,35 @@ async def create_financial_entry(
 
     await store.insert_one("financial_entries", record)
 
+    # If this is a Salary Advance, also allocate it into the advances collection as an active advance
+    if record["reason"] in ("Salary Advance", "Advance") or record.get("type") == "ADVANCE":
+        existing_adv = await store.find_one("advances", {"id": record["id"], "organization_id": org_id})
+        if not existing_adv:
+            adv_record = {
+                "id": record["id"],
+                "organization_id": org_id,
+                "employee_id": emp["id"],
+                "name": emp_name,
+                "emp_code": emp.get("employee_code", "EMP"),
+                "dept": emp.get("department", "Operations"),
+                "email": emp.get("email", ""),
+                "total_advance": record["amount"],
+                "next_deduction": record["amount"],
+                "balance": record["amount"],
+                "approval": "Approved & Active",
+                "approval_type": "active",
+                "cycle": cycle_str,
+                "date": date_str,
+                "bank": record["bank"],
+                "payment_type": record["payment_type"],
+                "receipt": record["receipt"],
+                "receipt_filename": record["receipt_filename"],
+                "cycle_impact": f"Will deduct ₹{record['amount']:,.0f} in monthly payslip",
+                "reason": "Salary Advance",
+                "created_at": now.isoformat()
+            }
+            await store.insert_one("advances", adv_record)
+
     # If this is an Advance Repayment, also apply it towards the employee's active advance balance if one exists
     if record["reason"] == "Advance Repayment" or record["payment_type"] == "Repayment":
         advances = await store.find_many("advances", {
@@ -104,9 +136,10 @@ async def create_financial_entry(
                 remaining = round(remaining - deduct, 2)
                 upd = {"balance": new_bal}
                 if new_bal <= 0:
-                    upd["approval_type"] = "closed"
+                    upd["approval_type"] = "completed"
+                    upd["approval"] = "Completed & Paid Off"
                     upd["status"] = "Completed"
-                await store.update_one("advances", {"id": adv["id"], "organization_id": org_id}, {"$set": upd})
+                await store.update_one("advances", {"id": adv["id"], "organization_id": org_id}, upd)
 
     return record
 
@@ -244,7 +277,7 @@ async def get_balance_summary(auth_ctx: Dict[str, Any] = Depends(require_tenant_
     emp_map = {e["id"]: e for e in employees}
 
     total_paid = sum(float(e.get("amount") or 0.0) for e in entries)
-    total_advances_given = sum(float(a.get("amount") or a.get("advance_amount") or 0.0) for a in advances)
+    total_advances_given = sum(float(a.get("total_advance") or a.get("amount") or a.get("advance_amount") or 0.0) for a in advances)
     total_repayments = sum(
         float(e.get("amount") or 0.0) for e in entries 
         if e.get("reason") == "Advance Repayment" or e.get("payment_type") == "Repayment"
@@ -257,8 +290,13 @@ async def get_balance_summary(auth_ctx: Dict[str, Any] = Depends(require_tenant_
         emp_adv = [a for a in advances if a.get("employee_id") == emp_id]
         emp_ent = [e for e in entries if e.get("employee_id") == emp_id]
         adv_bal = sum(float(a.get("balance") or 0.0) for a in emp_adv if a.get("approval_type") == "active")
+        adv_received = sum(float(a.get("total_advance") or a.get("amount") or 0.0) for a in emp_adv)
+        adv_repaid = sum(
+            float(e.get("amount") or 0.0) for e in emp_ent 
+            if e.get("reason") == "Advance Repayment" or e.get("payment_type") == "Repayment"
+        )
         total_emp_paid = sum(float(e.get("amount") or 0.0) for e in emp_ent)
-        if adv_bal > 0 or total_emp_paid > 0:
+        if adv_bal > 0 or adv_received > 0 or total_emp_paid > 0:
             fn = emp.get("first_name", "")
             ln = emp.get("last_name", "")
             name = f"{fn} {ln}".strip() or emp.get("name", "Employee")
@@ -268,6 +306,8 @@ async def get_balance_summary(auth_ctx: Dict[str, Any] = Depends(require_tenant_
                 "employee_code": emp.get("employee_code", "EMP"),
                 "department": emp.get("department", "Operations"),
                 "active_advance_balance": round(adv_bal, 2),
+                "total_advances_received": round(adv_received, 2),
+                "total_advance_repaid": round(adv_repaid, 2),
                 "total_payments_logged": round(total_emp_paid, 2)
             })
 

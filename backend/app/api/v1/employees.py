@@ -202,7 +202,7 @@ async def create_employee(
                     detail=f"An employee with email '{target_email}' already exists in your organization."
                 )
 
-    default_perms = payload.permissions if payload.permissions is not None else ["/admin", "/kiosk", "/leave-apply", "/advance-money", "/payroll"]
+    default_perms = payload.permissions if payload.permissions is not None else ["/admin", "/kiosk", "/attendance-reports", "/leave-apply", "/payment-entry", "/payroll", "/monthly-payslip", "/geofence"]
 
     daily_wage = payload.daily_wage_rate if payload.daily_wage_rate is not None else 600.0
     half_day_sal = payload.half_day_salary if payload.half_day_salary is not None else round(daily_wage / 2.0, 2)

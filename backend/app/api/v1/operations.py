@@ -212,9 +212,14 @@ async def list_manual_overrides(
 class AdvanceRequestPayload(BaseModel):
     employee_id: Optional[str] = None
     total_advance: float
-    installments: int = 2
+    installments: Optional[int] = 1
     reason: Optional[str] = None
     cycle: Optional[str] = None
+    date: Optional[str] = None
+    bank: Optional[str] = None
+    payment_type: Optional[str] = "Cash"
+    receipt: Optional[str] = None
+    receipt_filename: Optional[str] = None
 
 class StatusUpdatePayload(BaseModel):
     status: str  # 'APPROVED', 'REJECTED'
@@ -299,13 +304,13 @@ async def issue_salary_advance(
     if not emp:
         raise HTTPException(status_code=404, detail="Employee record not found.")
 
-    months = max(1, payload.installments)
-    monthly_deduction = round(payload.total_advance / months, 2)
-    emp_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
-
+    emp_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip() or emp.get("name") or "Employee"
     approval_text = "Approved & Active" if is_admin else "Pending Approval"
     approval_type = "active" if is_admin else "pending"
-    current_cycle = payload.cycle or datetime.now().strftime("%B %Y")
+    now_dt = datetime.utcnow()
+    date_str = payload.date or now_dt.strftime("%Y-%m-%d")
+    current_cycle = payload.cycle or date_str[:7]
+    adv_amt = round(float(payload.total_advance), 2)
 
     record = {
         "id": f"ADV-{uuid.uuid4().hex[:6].upper()}",
@@ -315,21 +320,48 @@ async def issue_salary_advance(
         "emp_code": emp.get("employee_code", "EMP"),
         "dept": emp.get("department", "General"),
         "email": emp.get("email", auth_ctx.get("email", "")),
-        "total_advance": payload.total_advance,
-        "next_deduction": monthly_deduction,
-        "instalment_text": f"Instalment 1/{months}",
-        "progress_text": f"0 of {months} mos",
-        "progress_percent": 0,
-        "balance": payload.total_advance,
+        "total_advance": adv_amt,
+        "next_deduction": adv_amt,
+        "balance": adv_amt,
         "approval": approval_text,
         "approval_type": approval_type,
         "cycle": current_cycle,
-        "cycle_impact": f"Will deduct ₹{monthly_deduction:,.0f} on cycle cut" if is_admin else "Awaiting Supervisor Approval",
+        "date": date_str,
+        "bank": payload.bank or "",
+        "payment_type": payload.payment_type or "Cash",
+        "receipt": payload.receipt,
+        "receipt_filename": payload.receipt_filename,
+        "cycle_impact": f"Will deduct ₹{adv_amt:,.0f} in monthly payslip" if is_admin else "Awaiting Supervisor Approval",
         "reason": payload.reason or ("Authorized Salary Advance" if is_admin else "Employee Advance Request"),
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": now_dt.isoformat()
     }
 
     await store.insert_one("advances", record)
+
+    # When active/approved, also log directly into financial_entries so it is tracked in Payment Entry
+    if approval_type == "active":
+        fin_record = {
+            "id": f"PAY-ADV-{uuid.uuid4().hex[:6].upper()}",
+            "organization_id": org_id,
+            "employee_id": emp["id"],
+            "employee_name": emp_name,
+            "employee_code": emp.get("employee_code", "EMP"),
+            "department": emp.get("department", "General"),
+            "amount": adv_amt,
+            "date": date_str,
+            "cycle": current_cycle,
+            "bank": (payload.bank or "").strip(),
+            "payment_type": (payload.payment_type or "Cash").strip(),
+            "reason": "Salary Advance",
+            "type": "ADVANCE",
+            "receipt": payload.receipt,
+            "receipt_filename": payload.receipt_filename,
+            "created_by": auth_ctx.get("name", "Admin"),
+            "created_at": now_dt.isoformat(),
+            "timestamp": now_dt.strftime("%Y-%m-%d %I:%M %p")
+        }
+        await store.insert_one("financial_entries", fin_record)
+
     return record
 
 @operations_router.patch("/advances/{advance_id}/status")

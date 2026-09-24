@@ -182,7 +182,7 @@ async def login(req: LoginRequest):
 
     # Guarantee an active employee user record exists
     if not user:
-        default_perms = emp.get("permissions") if emp else ["/admin", "/kiosk", "/leave-apply", "/advance-money"]
+        default_perms = emp.get("permissions") if emp else ["/admin", "/kiosk", "/attendance-reports", "/leave-apply", "/payment-entry", "/payroll", "/monthly-payslip", "/geofence"]
         user = User(
             organization_id=org_id,
             name=f"{emp['first_name']} {emp['last_name']}",
