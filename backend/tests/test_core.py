@@ -4,6 +4,10 @@ from app.services.face_service import cosine_similarity, find_best_match
 from app.services.liveness_service import liveness_service
 from app.core.security import verify_password, get_password_hash, create_access_token, decode_token
 
+@pytest.fixture
+def anyio_backend():
+    return 'asyncio'
+
 def test_password_hashing():
     pw = "ArgusSecurePass2026!"
     hashed = get_password_hash(pw)
@@ -606,6 +610,7 @@ async def test_entry_distance_and_daily_breakdown():
 
     await store.insert_one("organizations", {
         "id": test_org_id,
+        "slug": test_org_id,
         "name": "Argus Systems HQ",
         "geofence": {
             "is_enabled": True,
@@ -629,6 +634,10 @@ async def test_entry_distance_and_daily_breakdown():
     }
     await store.insert_one("employees", emp)
 
+    from datetime import datetime
+    from app.api.v1.reports import IST_TZ
+    test_today = datetime.now(IST_TZ).strftime("%Y-%m-%d")
+
     # Insert attendance record with GPS coordinates (approx 50m away from 13.0827, 80.2707)
     await store.insert_one("attendance", {
         "id": "ATT-DIST-1",
@@ -637,10 +646,10 @@ async def test_entry_distance_and_daily_breakdown():
         "employee_code": "RS100",
         "employee_name": "Rahul Sharma",
         "department": "Engineering",
-        "date": "2026-09-21",
-        "check_in": "2026-09-21T09:00:00",
+        "date": test_today,
+        "check_in": f"{test_today}T09:00:00",
         "check_in_time": "09:00 AM",
-        "check_out": "2026-09-21T18:00:00",
+        "check_out": f"{test_today}T18:00:00",
         "check_out_time": "06:00 PM",
         "total_hours": 9.0,
         "status": "PRESENT",
@@ -650,7 +659,7 @@ async def test_entry_distance_and_daily_breakdown():
 
     # Test get_today_attendance includes entry_distance
     auth_ctx = {"org_id": test_org_id, "role": "org_admin"}
-    today_res = await get_today_attendance(date="2026-09-21", auth_ctx=auth_ctx)
+    today_res = await get_today_attendance(date=test_today, auth_ctx=auth_ctx)
     assert len(today_res["records"]) == 1
     rec = today_res["records"][0]
     assert "entry_distance" in rec
@@ -658,11 +667,12 @@ async def test_entry_distance_and_daily_breakdown():
     assert rec["distance_meters"] is not None
 
     # Test compute_single_employee_payroll includes daily_breakdown
-    payroll_res = await compute_single_employee_payroll(test_org_id, emp, "2026-09")
+    month_str = test_today[:7]
+    payroll_res = await compute_single_employee_payroll(test_org_id, emp, month_str)
     assert "daily_breakdown" in payroll_res
     assert len(payroll_res["daily_breakdown"]) == 1
     day_entry = payroll_res["daily_breakdown"][0]
-    assert day_entry["date"] == "2026-09-21"
+    assert day_entry["date"] == test_today
     assert day_entry["hours"] == 9.0
     assert day_entry["daily_earned"] == 2700.0  # 9.0h * 300/hr
     assert "300" in day_entry["rate_label"]
@@ -674,3 +684,114 @@ async def test_entry_distance_and_daily_breakdown():
     stream_ev = stream_res[0]
     assert "entry_distance" in stream_ev
     assert stream_ev["entry_distance"] is not None
+
+
+@pytest.mark.anyio
+async def test_comprehensive_attendance_history_endpoint():
+    from app.db.store import store
+    from app.api.v1.reports import get_attendance_history
+
+    test_org_id = "org-history-test"
+    await store.delete_many("organizations", {"id": test_org_id})
+    await store.delete_many("employees", {"organization_id": test_org_id})
+    await store.delete_many("attendance", {"organization_id": test_org_id})
+
+    await store.insert_one("organizations", {
+        "id": test_org_id,
+        "slug": test_org_id,
+        "name": "Argus Global Corp",
+        "geofence": {
+            "latitude": 12.9716,
+            "longitude": 77.5946,
+            "radius_meters": 100
+        }
+    })
+
+    emp1 = {
+        "id": "emp-h-1",
+        "organization_id": test_org_id,
+        "first_name": "Aarav",
+        "last_name": "Patel",
+        "employee_code": "AP01",
+        "department": "Engineering",
+        "is_active": True
+    }
+    emp2 = {
+        "id": "emp-h-2",
+        "organization_id": test_org_id,
+        "first_name": "Priya",
+        "last_name": "Nair",
+        "employee_code": "PN02",
+        "department": "Design",
+        "is_active": True
+    }
+    await store.insert_one("employees", emp1)
+    await store.insert_one("employees", emp2)
+
+    # Insert records spanning multiple years and months
+    records = [
+        {
+            "id": "att-2024-1",
+            "organization_id": test_org_id,
+            "employee_id": "emp-h-1",
+            "date": "2024-05-10",
+            "check_in": "2024-05-10T09:00:00",
+            "check_out": "2024-05-10T17:30:00",
+            "total_hours": 8.5,
+            "status": "PRESENT"
+        },
+        {
+            "id": "att-2025-1",
+            "organization_id": test_org_id,
+            "employee_id": "emp-h-2",
+            "date": "2025-11-20",
+            "check_in": "2025-11-20T09:30:00",
+            "check_out": "2025-11-20T18:00:00",
+            "total_hours": 8.5,
+            "status": "LATE"
+        },
+        {
+            "id": "att-2026-1",
+            "organization_id": test_org_id,
+            "employee_id": "emp-h-1",
+            "date": "2026-03-15",
+            "check_in": "2026-03-15T09:00:00",
+            "check_out": "2026-03-15T13:00:00",
+            "total_hours": 4.0,
+            "status": "HALF_DAY"
+        }
+    ]
+    for r in records:
+        await store.insert_one("attendance", r)
+
+    auth_ctx = {"org_id": test_org_id, "role": "employee", "emp_id": "emp-h-1"}
+
+    # 1. Fetch all history (all years, months, days)
+    all_history = await get_attendance_history(auth_ctx=auth_ctx)
+    assert len(all_history) == 3
+    # Check enriched fields
+    first_rec = next(r for r in all_history if r["id"] == "att-2024-1")
+    assert first_rec["employee_name"] == "Aarav Patel"
+    assert first_rec["employee_code"] == "AP01"
+    assert first_rec["department"] == "Engineering"
+    assert "entry_distance" in first_rec
+    assert first_rec["shift_status"] == "ON-TIME"
+
+    # 2. Filter by date range (e.g., 2025-01-01 to 2026-12-31)
+    filtered_date = await get_attendance_history(
+        start_date="2025-01-01",
+        end_date="2026-12-31",
+        auth_ctx=auth_ctx
+    )
+    assert len(filtered_date) == 2
+    dates = {r["date"] for r in filtered_date}
+    assert "2025-11-20" in dates
+    assert "2026-03-15" in dates
+
+    # 3. Filter by department
+    filtered_dept = await get_attendance_history(
+        department="Design",
+        auth_ctx=auth_ctx
+    )
+    assert len(filtered_dept) == 1
+    assert filtered_dept[0]["employee_name"] == "Priya Nair"

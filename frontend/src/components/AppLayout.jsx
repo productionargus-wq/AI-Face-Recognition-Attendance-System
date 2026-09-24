@@ -17,7 +17,8 @@ import {
   X,
   ChevronRight,
   Bell,
-  MapPin
+  MapPin,
+  FileSpreadsheet
 } from 'lucide-react';
 
 export const AppLayout = ({ children }) => {
@@ -26,7 +27,7 @@ export const AppLayout = ({ children }) => {
   const { user, organization, logout } = useAuth();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const isEmployee = user?.role === 'employee';
-  const userPermissions = user?.permissions || (isEmployee ? ['/admin', '/kiosk', '/leave-apply', '/advance-money', '/payroll'] : null);
+  const userPermissions = user?.permissions || (isEmployee ? ['/admin', '/kiosk', '/attendance-reports', '/leave-apply', '/advance-money', '/payroll'] : null);
 
   // Notification state
   const [notifications, setNotifications] = useState([]);
@@ -97,6 +98,12 @@ export const AppLayout = ({ children }) => {
       path: '/kiosk',
       icon: ScanFace,
       id: '/kiosk'
+    },
+    {
+      name: 'Attendance Reports',
+      path: '/attendance-reports',
+      icon: FileSpreadsheet,
+      id: '/attendance-reports'
     },
     {
       name: 'Employee Directory',

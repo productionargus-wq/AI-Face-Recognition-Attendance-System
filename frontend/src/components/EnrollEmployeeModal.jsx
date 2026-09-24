@@ -5,6 +5,7 @@ import { X, Camera, CheckCircle2, AlertCircle, RefreshCw, ShieldCheck, Sparkles 
 export const ALL_PERMISSIONS = [
   { id: '/admin', label: 'Employee Dashboard', desc: 'Self-service attendance & logs' },
   { id: '/kiosk', label: 'Attendance Capture', desc: 'Kiosk facial recognition' },
+  { id: '/attendance-reports', label: 'Attendance Reports', desc: 'All employees attendance history, filters & PDF/CSV export' },
   { id: '/enrollment', label: 'Employee Directory', desc: 'Face registration & roster' },
   { id: '/manual-entry', label: 'Manual Entry', desc: 'Duty shifts & override logs' },
   { id: '/advance-money', label: 'Advance Money', desc: 'Salary advance & repayment' },
@@ -14,7 +15,7 @@ export const ALL_PERMISSIONS = [
   { id: '/settings', label: 'Settings', desc: 'Organization configurations' }
 ];
 
-export const DEFAULT_PERMISSIONS = ['/admin', '/kiosk', '/leave-apply', '/advance-money', '/payroll', '/geofence'];
+export const DEFAULT_PERMISSIONS = ['/admin', '/kiosk', '/attendance-reports', '/leave-apply', '/advance-money', '/payroll', '/geofence'];
 
 const INITIAL_FORM_DATA = {
   employee_code: '',

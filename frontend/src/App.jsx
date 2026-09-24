@@ -15,6 +15,7 @@ import { PayrollReport } from './pages/PayrollReport';
 import { OrgSettings } from './pages/OrgSettings';
 import { LiveMapGeofence } from './pages/LiveMapGeofence';
 import { PublicTerminal } from './pages/PublicTerminal';
+import { AttendanceReports } from './pages/AttendanceReports';
 
 const ProtectedRoute = ({ children, requiredPath = null }) => {
   const { user, loading } = useAuth();
@@ -27,7 +28,7 @@ const ProtectedRoute = ({ children, requiredPath = null }) => {
   }
   // Employee permissions check
   if (requiredPath) {
-    const perms = user.permissions || ['/admin', '/kiosk', '/leave-apply', '/advance-money', '/payroll'];
+    const perms = user.permissions || ['/admin', '/kiosk', '/attendance-reports', '/leave-apply', '/advance-money', '/payroll'];
     const hasPerm = perms.includes(requiredPath) || (requiredPath === '/admin' && (perms.includes('/admin') || perms.includes('/portal')));
     if (!hasPerm) {
       const fallback = perms.find(p => p !== requiredPath) || '/portal';
@@ -74,6 +75,17 @@ function App() {
               <ProtectedRoute requiredPath="/admin">
                 <AppLayout>
                   <DashboardRouter />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/attendance-reports"
+            element={
+              <ProtectedRoute requiredPath="/attendance-reports">
+                <AppLayout>
+                  <AttendanceReports />
                 </AppLayout>
               </ProtectedRoute>
             }

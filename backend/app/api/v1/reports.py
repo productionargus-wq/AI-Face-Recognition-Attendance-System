@@ -1132,7 +1132,9 @@ async def get_attendance_history(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     department: Optional[str] = None,
-    auth_ctx: Dict[str, Any] = Depends(require_org_admin)
+    status: Optional[str] = None,
+    limit: Optional[int] = None,
+    auth_ctx: Dict[str, Any] = Depends(require_tenant_context)
 ):
     raw_org_id = auth_ctx.get("org_id")
     org = await store.find_one("organizations", {"id": raw_org_id})
@@ -1151,14 +1153,24 @@ async def get_attendance_history(
         query["date"] = {"$gte": start_date, "$lte": end_date}
     elif start_date:
         query["date"] = {"$gte": start_date}
+    elif end_date:
+        query["date"] = {"$lte": end_date}
 
-    if department:
-        query["department"] = department
+    if status and status != "ALL":
+        query["status"] = status
 
-    raw_records = await store.find_many("attendance", query, sort_key="date", sort_desc=True, limit=500)
+    fetch_limit = limit if (limit and limit > 0) else 10000
+    raw_records = await store.find_many("attendance", query, sort_key="date", sort_desc=True, limit=fetch_limit)
     all_emps = await store.find_many("employees", {"organization_id": {"$in": org_ids} if len(org_ids) > 1 else org_id})
     emp_map = {e["id"]: e for e in all_emps}
     emp_map_by_code = {e.get("employee_code"): e for e in all_emps if e.get("employee_code")}
+
+    cfg = org.get("settings", {}) if org else {}
+    geofence = cfg.get("geofence", {})
+    base_lat = geofence.get("latitude")
+    base_lon = geofence.get("longitude")
+    radius = float(geofence.get("radius_meters", 150))
+    office_name = org.get("name", "Argus HQ") if org else "Argus HQ"
 
     records = []
     for r in raw_records:
@@ -1173,9 +1185,45 @@ async def get_attendance_history(
             r["department"] = emp.get("department", r.get("department"))
             if not r.get("shift"):
                 r["shift"] = emp.get("assigned_shift", "General Shift")
-        records.append(r)
 
-    for r in records:
+        # Entry distance & meters resolution
+        dist = r.get("distance_meters")
+        if dist is None and r.get("latitude") is not None and r.get("longitude") is not None and base_lat is not None and base_lon is not None:
+            try:
+                dist = calculate_haversine_distance(float(r["latitude"]), float(r["longitude"]), float(base_lat), float(base_lon))
+                r["distance_meters"] = dist
+            except Exception:
+                dist = None
+
+        if not r.get("entry_distance"):
+            if r.get("verification_mode") == "MANUAL_OVERRIDE":
+                r["entry_distance"] = "0m (HQ Authorized)"
+                r["distance_meters"] = 0.0
+            elif dist is not None:
+                if dist <= radius:
+                    r["entry_distance"] = f"{int(dist)}m (Within {office_name})"
+                else:
+                    r["entry_distance"] = f"{int(dist)}m (Off-Site)"
+            elif r.get("site_visit_verified") or r.get("client_site_name"):
+                r["entry_distance"] = f"0m ({r.get('client_site_name', 'Client Site')})"
+                r["distance_meters"] = 0.0
+            elif r.get("kiosk_id") or r.get("verification_mode") == "FACE_KIOSK":
+                r["entry_distance"] = f"0m ({office_name} Kiosk)"
+                r["distance_meters"] = 0.0
+            else:
+                r["entry_distance"] = f"0m (Within {office_name})"
+                r["distance_meters"] = 0.0
+
+        # Calculate or refine total_hours if not set
+        if not r.get("total_hours") and r.get("check_in") and r.get("check_out"):
+            try:
+                cin = datetime.fromisoformat(str(r["check_in"]).replace("Z", "+00:00"))
+                cout = datetime.fromisoformat(str(r["check_out"]).replace("Z", "+00:00"))
+                diff_sec = max(0, (cout - cin).total_seconds())
+                r["total_hours"] = round(diff_sec / 3600.0, 2)
+            except Exception:
+                pass
+
         if not r.get("shift_status"):
             if r.get("status") == AttendanceStatus.HALF_DAY:
                 r["shift_status"] = "HALF-DAY"
@@ -1185,6 +1233,17 @@ async def get_attendance_history(
                 r["shift_status"] = "ON-TIME"
             else:
                 r["shift_status"] = "—"
+
+        records.append(r)
+
+    if department and department != "All Departments":
+        dept_lower = department.lower()
+        dept_emp_ids = {e["id"] for e in all_emps if (e.get("department") or "").lower() == dept_lower}
+        records = [
+            r for r in records
+            if (r.get("department") or "").lower() == dept_lower or r.get("employee_id") in dept_emp_ids
+        ]
+
     return records
 
 @attendance_router.get("/my-history")

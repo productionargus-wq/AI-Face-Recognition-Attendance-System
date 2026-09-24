@@ -62,3 +62,16 @@
 .animate-scanline {
   animation: scanline 4s linear infinite;
 }
+
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+  .print\:hidden, aside, nav, header {
+    display: none !important;
+  }
+  .print\:block {
+    display: block !important;
+  }
+}

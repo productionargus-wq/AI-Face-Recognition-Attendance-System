@@ -26,6 +26,17 @@ class UnifiedDataStore:
         self._load_local_storage()
 
     async def get_active_db(self):
+        try:
+            if db_manager.client is not None:
+                loop = asyncio.get_running_loop()
+                client_loop = getattr(db_manager.client, "get_io_loop", lambda: None)()
+                if client_loop and (client_loop != loop or client_loop.is_closed()):
+                    db_manager.client = None
+                    db_manager.db = None
+        except Exception:
+            db_manager.client = None
+            db_manager.db = None
+
         if db_manager.db is None:
             try:
                 await ensure_mongo_connected()
