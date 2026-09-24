@@ -282,7 +282,15 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
     # Total Gross Earnings
     total_earnings = round(earned_base_pay + allowance + incentive + others_earnings, 2)
 
-    # 7. Check Payout Disbursement Status
+    # 7. Query Active Advance Balance
+    emp_advances = await store.find_many("advances", {
+        "organization_id": org_id,
+        "employee_id": emp_id,
+        "approval_type": "active"
+    })
+    total_active_advance_bal = sum(float(adv.get("balance", 0.0)) for adv in emp_advances if float(adv.get("balance", 0.0)) > 0)
+
+    # 8. Check Payout Disbursement Status
     cycle_label_pattern = cycle  # "2026-09"
     month_name_cycle = f"{calendar.month_name[month]} {year}"
     
@@ -295,21 +303,19 @@ async def compute_single_employee_payroll(org_id: str, emp: Dict[str, Any], cycl
         (p for p in payouts if p.get("cycle") in (cycle_label_pattern, month_name_cycle) or cycle_label_pattern in str(p.get("cycle", ""))),
         None
     )
-    payout_status = "PAID" if existing_payout else "PENDING"
 
-    # 8. Advance Deduction: If already paid, use recorded deduction; otherwise query active advance balance
-    if existing_payout:
+    # If the employee currently has an active/unsettled advance balance (> 0):
+    # This advance MUST be deducted on the payslip and can be disbursed!
+    if total_active_advance_bal > 0:
+        available_for_advance = max(0.0, total_earnings - statutory_deductions) if total_earnings > 0 else total_active_advance_bal
+        advance_repayment = round(min(total_active_advance_bal, available_for_advance), 2) if total_earnings > 0 else round(total_active_advance_bal, 2)
+        payout_status = "PENDING"
+    elif existing_payout:
         advance_repayment = float(existing_payout.get("advance_repayment") or existing_payout.get("advance_deduction") or 0.0)
+        payout_status = existing_payout.get("status", "PAID")
     else:
-        emp_advances = await store.find_many("advances", {
-            "organization_id": org_id,
-            "employee_id": emp_id,
-            "approval_type": "active"
-        })
-        total_active_advance_bal = sum(float(adv.get("balance", 0.0)) for adv in emp_advances)
-        # Advance deduction is the employee's active advance balance, capped at available net earnings
-        available_for_advance = max(0.0, total_earnings - statutory_deductions)
-        advance_repayment = round(min(total_active_advance_bal, available_for_advance), 2)
+        advance_repayment = 0.0
+        payout_status = "PENDING"
 
     # 9. Deductions: Statutory PF/taxes capped at gross earnings so net cannot be negative
     paid_salary = min(statutory_deductions, total_earnings) if total_earnings > 0 else 0.0
@@ -628,7 +634,17 @@ async def disburse_payroll_payouts(
             "disbursed_at": datetime.utcnow().isoformat(),
             "created_at": datetime.utcnow().isoformat()
         }
-        await store.insert_one("salary_payouts", disb_record)
+        # Upsert payout record to avoid duplicates and update stale payout figures cleanly
+        cycle_candidates = [comp.get("cycle_display"), target_cycle]
+        existing_p = next(
+            (p for p in await store.find_many("salary_payouts", {"organization_id": org_id, "employee_id": emp["id"]})
+             if p.get("cycle") in cycle_candidates or target_cycle in str(p.get("cycle", ""))),
+            None
+        )
+        if existing_p:
+            await store.update_one("salary_payouts", {"id": existing_p["id"], "organization_id": org_id}, disb_record)
+        else:
+            await store.insert_one("salary_payouts", disb_record)
 
         # Amortize active advances if advance_repayment > 0
         if comp["advance_repayment"] > 0:
